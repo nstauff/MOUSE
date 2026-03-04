@@ -291,18 +291,11 @@ def monitor_heat_flux(params):
 
 def run_openmc(build_openmc_model, heat_flux_monitor, params):
 
-    # These are set to False by default unless the user specify them
     params.setdefault('SD Margin Calc', False)
     params.setdefault('Isothermal Temperature Coefficients', False)
-    # Save the original user-specified values so we can restore them at the end.
-    # The workflow temporarily flips these flags during intermediate runs, and we
-    # must restore them so the parameters sheet correctly reflects the user's intent.
     original_sd_margin_calc = params['SD Margin Calc']
     original_itc = params['Isothermal Temperature Coefficients']
-    # Temperature perturbation used for isothermal temperature coefficient calculation.
-    # Must be large enough to produce a keff difference above OpenMC's Monte Carlo
-    # statistical noise, but small enough to stay in the linear reactivity regime.
-    # Typical range: 50-300K. This must always be specified by the user in their params.
+
     if params['Isothermal Temperature Coefficients']:
         if 'Temperature Perturbation' not in params.keys():
             raise ValueError(
@@ -315,7 +308,7 @@ def run_openmc(build_openmc_model, heat_flux_monitor, params):
 
     if heat_flux_monitor == "High Heat Flux":
         print("ERROR: HIGH HEAT FLUX")
-    else:    
+    else:
         try:
             print(f"\n\nThe results/plots are saved at: {watts.Database().path}\n\n")
             if params['SD Margin Calc']:
@@ -323,7 +316,7 @@ def run_openmc(build_openmc_model, heat_flux_monitor, params):
                     params['SD Margin Calc'] = False
                     temp_T = copy.deepcopy(params['Common Temperature'])
                     params['Common Temperature'] = params['Common Temperature'] + params['Temperature Perturbation']
-                    openmc_plugin = watts.PluginOpenMC(build_openmc_model, show_stderr=True)
+                    openmc_plugin = watts.PluginOpenMC(build_openmc_model, show_stderr=True, use_cache=False)  # fix: use_cache=False
                     openmc_plugin(params, function=lambda: run_depletion_analysis(params))
 
                     params['keff 2D high temp'] = params['keff 2D']
@@ -331,22 +324,21 @@ def run_openmc(build_openmc_model, heat_flux_monitor, params):
 
                     params['Common Temperature'] = temp_T
 
-                    openmc_plugin = watts.PluginOpenMC(build_openmc_model, show_stderr=True)
+                    openmc_plugin = watts.PluginOpenMC(build_openmc_model, show_stderr=True, use_cache=False)  # fix: use_cache=False
                     openmc_plugin(params, function=lambda: run_depletion_analysis(params))
                     params['Temp Coeff 2D'] = np.max([(y - x) / (y*x) / (params['Temperature Perturbation'])*1e5 for x,y in zip(params['keff 2D'],params['keff 2D high temp'])])
                     params['Temp Coeff 3D (2D corrected)'] = np.max([(y - x) / (y*x) / (params['Temperature Perturbation'])*1e5 for x,y in zip(params['keff 3D (2D corrected)'],params['keff 3D (2D corrected) high temp'])])
                     params['SD Margin Calc'] = True
                 else:
-                    # Isothermal Temperature Coefficients not requested — set to nan so downstream code doesn't get a KeyError
                     params['Temp Coeff 2D'] = np.nan
                     params['Temp Coeff 3D (2D corrected)'] = np.nan
 
-                openmc_plugin = watts.PluginOpenMC(build_openmc_model, show_stderr=True)
+                openmc_plugin = watts.PluginOpenMC(build_openmc_model, show_stderr=True, use_cache=False)  # fix: use_cache=False
                 openmc_plugin(params, function=lambda: run_depletion_analysis(params))
                 params['keff 2D ARI'] = params['keff 2D']
                 params['keff 3D (2D corrected) ARI'] = params['keff 3D (2D corrected)']
                 params['SD Margin Calc'] = False
-                openmc_plugin = watts.PluginOpenMC(build_openmc_model, show_stderr=True)
+                openmc_plugin = watts.PluginOpenMC(build_openmc_model, show_stderr=True, use_cache=False)  # fix: use_cache=False
                 openmc_plugin(params, function=lambda: run_depletion_analysis(params))
                 params['SDM 2D'] = np.max([(y - x)*1e5 for x,y in zip(params['keff 2D'],params['keff 2D ARI'])])
                 params['SDM 3D (2D corrected)'] = np.max([(y - x)*1e5 for x,y in zip(params['keff 3D (2D corrected)'],params['keff 3D (2D corrected) ARI'])])
@@ -356,7 +348,7 @@ def run_openmc(build_openmc_model, heat_flux_monitor, params):
                 if params['Isothermal Temperature Coefficients']:
                     temp_T = copy.deepcopy(params['Common Temperature'])
                     params['Common Temperature'] = params['Common Temperature'] + params['Temperature Perturbation']
-                    openmc_plugin = watts.PluginOpenMC(build_openmc_model, show_stderr=True)
+                    openmc_plugin = watts.PluginOpenMC(build_openmc_model, show_stderr=True, use_cache=False)  # fix: use_cache=False
                     openmc_plugin(params, function=lambda: run_depletion_analysis(params))
 
                     params['keff 2D high temp'] = params['keff 2D']
@@ -364,22 +356,22 @@ def run_openmc(build_openmc_model, heat_flux_monitor, params):
 
                     params['Common Temperature'] = temp_T
 
-                    openmc_plugin = watts.PluginOpenMC(build_openmc_model, show_stderr=True)
+                    openmc_plugin = watts.PluginOpenMC(build_openmc_model, show_stderr=True, use_cache=False)  # fix: use_cache=False
                     openmc_plugin(params, function=lambda: run_depletion_analysis(params))
                     params['Temp Coeff 2D'] = np.max([(y - x) / (y*x) / (params['Temperature Perturbation'])*1e5 for x,y in zip(params['keff 2D'],params['keff 2D high temp'])])
                     params['Temp Coeff 3D (2D corrected)'] = np.max([(y - x) / (y*x) / (params['Temperature Perturbation'])*1e5 for x,y in zip(params['keff 3D (2D corrected)'],params['keff 3D (2D corrected) high temp'])])
                 else:
                     params['Temp Coeff 2D'] = np.nan
                     params['Temp Coeff 3D (2D corrected)'] = np.nan
-                    openmc_plugin = watts.PluginOpenMC(build_openmc_model, show_stderr=True)
+                    openmc_plugin = watts.PluginOpenMC(build_openmc_model, show_stderr=True, use_cache=False)  # fix: use_cache=False
                     openmc_plugin(params, function=lambda: run_depletion_analysis(params))
+
         except Exception as e:
             print("\n\n\033[91mAn error occurred while running the OpenMC simulation:\033[0m\n\n")
             traceback.print_exc()
+            raise  # fix: re-raise so the outer try/except in the main script can catch it
+
         finally:
-            # Restore original user-specified values regardless of whether the run
-            # succeeded or failed — so the parameters sheet always reflects the
-            # user's intent, not the internal intermediate state of the workflow.
             params['SD Margin Calc'] = original_sd_margin_calc
             params['Isothermal Temperature Coefficients'] = original_itc
 
