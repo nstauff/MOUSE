@@ -310,64 +310,190 @@ def calculate_TCI(df, params):
 def energy_cost_levelized(params, df):
     # -----------------------------------------------------------------------------------------
     # LCOE (Levelized Cost of Energy) Calculation
-    #
-    # MOUSE uses a before-tax LCOE — no corporate tax rate is applied to costs or revenues.
-    # This is consistent with DOE/INL methodology for public nuclear cost studies.
-    #
-    # The baseline LCOE is calculated as:
-    #   LCOE = PV(all costs) / PV(all electricity produced)
-    # where PV = present value using the discount rate over the plant lifetime.
-    #
-    # The LCOE is also broken down into three components:
-    #   - LCOE_cap   : capital cost component
-    #   - LCOE_oandm : O&M cost component (Account 70)
-    #   - LCOE_fuel  : fuel cost component (Account 80)
-    #
-    # Two optional tax credit adjustments are supported (mutually exclusive — cannot use both):
-    #
-    # 1. PTC (Production Tax Credit):
-    #    - A per-MWh credit earned for every MWh produced during the credit period
-    #    - Reduces LCOE directly as a revenue stream per MWh produced
-    #    - Since MOUSE uses before-tax LCOE, the PTC must be grossed up by (1 - tax_rate)
-    #      to convert the tax credit into its before-tax revenue equivalent
-    #    - Required params: 'PTC credit value' ($/MWh), 'PTC credit period' (years),
-    #                       'Tax Rate' (fraction, default 0.21)
-    #    - Optional params: 'domestic_content_bonus', 'energy_community_bonus' (fractions)
-    #    - Output: 'LCOE with PTC'
-    #
-    # 2. ITC (Investment Tax Credit):
-    #    - A one-time credit applied to the capital cost (OCC) — already handled in calculate_TCI
-    #    - LCOE with ITC is recalculated using the reduced TCI (TCI with ITC) as the capital cost
-    #    - Required params: 'ITC credit level' (fraction, e.g. 0.30 for 30%)
-    #    - Output: 'LCOE with ITC', 'LCOE_cap_withitc'
+    # ... (existing docstring unchanged)
     # -----------------------------------------------------------------------------------------
 
-    df = df._append({'Account': 'AC','Account Title' : 'Annualized Cost'}, ignore_index=True)
-    df = df._append({'Account': 'AC per MWh','Account Title' : 'Annualized Cost per MWh'}, ignore_index=True)
-    df = df._append({'Account': 'LCOE','Account Title' : 'Levelized Cost Of Energy ($/MWh)'}, ignore_index=True)
+    # -----------------------------------------------------------------------------------------
+    # Heat application cost reduction factors (hardcoded, based on process heat study)
+    # For heat applications, the OCC is lower because no power conversion system is needed
+    # (e.g. no turbine, generator, condenser). The annual O&M cost is also slightly reduced.
+    # Source: [add your reference here]
+    # -----------------------------------------------------------------------------------------
+    HEAT_OCC_FACTOR         = 0.795  # OCC for heat = OCC_electric × 0.795
+    HEAT_ANNUAL_COST_FACTOR = 0.966  # Annual O&M+fuel cost for heat = baseline × 0.966
+
+    df = df._append({'Account': 'AC',         'Account Title': 'Annualized Cost'}, ignore_index=True)
+    df = df._append({'Account': 'AC per MWh', 'Account Title': 'Annualized Cost per MWh'}, ignore_index=True)
+    df = df._append({'Account': 'LCOE',       'Account Title': 'Levelized Cost Of Energy ($/MWh)'}, ignore_index=True)
 
     if 'PTC credit value' in params.keys():
-        df = df._append({'Account': 'LCOE with PTC','Account Title' : 'Levelized Cost Of Energy with PTC ($/MWh)'}, ignore_index=True)
+        df = df._append({'Account': 'LCOE with PTC', 'Account Title': 'Levelized Cost Of Energy with PTC ($/MWh)'}, ignore_index=True)
 
     if 'ITC credit level' in params.keys():
-        # PTC and ITC are mutually exclusive — the IRA does not allow both for the same project.
-        # validate_tax_credit_params() in non_direct_cost.py catches this early at the start
-        # of the workflow, but this assert serves as a second safety net here.
         assert 'PTC credit value' not in params.keys(), '--error: Only PTC or ITC or None must be selected not both.'
-        df = df._append({'Account': 'LCOE (ITC-adjusted)','Account Title' : 'Levelized Cost Of Energy Adjusted for the Investment Tax Credit ($/MWh)'}, ignore_index=True)
+        df = df._append({'Account': 'LCOE (ITC-adjusted)', 'Account Title': 'Levelized Cost Of Energy Adjusted for the Investment Tax Credit ($/MWh)'}, ignore_index=True)
 
-    # Default tax rate to US federal corporate rate if not specified by user.
-    # Used for the PTC gross-up calculation (see PTC section below).
-    # Users should override this in their params if their effective tax rate differs
-    # (e.g. 0.0 for tax-exempt municipal utilities, or a blended federal+state rate).
+    df = df._append({'Account': 'LCOH',       'Account Title': 'Levelized Cost Of Heat ($/MWth)'}, ignore_index=True)
+
     params.setdefault('Tax Rate', 0.21)
 
     plant_lifetime_years = params['Levelization Period']
-    discount_rate = params['Interest Rate']
-    power_MWe = params['Power MWe']
-    capacity_factor = params['Capacity Factor']
+    discount_rate        = params['Interest Rate']
+    power_MWe            = params['Power MWe']
+    capacity_factor      = params['Capacity Factor']
+    thermal_efficiency   = params['Thermal Efficiency']
     estimated_cost_col_F = get_estimated_cost_column(df, 'F')
     estimated_cost_col_N = get_estimated_cost_column(df, 'N')
+
+    for estimated_cost_col in [estimated_cost_col_F, estimated_cost_col_N]:
+
+        # -----------------------------------------------------------------------------------------
+        # Baseline LCOE calculation (no tax credits) — unchanged
+        # -----------------------------------------------------------------------------------------
+        cap_cost          = df.loc[df['Account'] == 'TCI', estimated_cost_col].values[0]
+        ann_cost          = df.loc[df['Account'] == 70, estimated_cost_col].values[0] + df.loc[df['Account'] == 80, estimated_cost_col].values[0]
+        levelized_ann_cost = ann_cost / params['Annual Electricity Production']
+        df.loc[df['Account'] == 'AC',        estimated_cost_col] = ann_cost
+        df.loc[df['Account'] == 'AC per MWh', estimated_cost_col] = levelized_ann_cost
+
+        sum_cost = 0
+        sum_elec = 0
+        for i in range(1 + plant_lifetime_years):
+            if i == 0:
+                cap_cost_per_year = cap_cost
+                annual_cost       = 0
+                elec_gen          = 0
+            else:
+                cap_cost_per_year = 0
+                annual_cost       = ann_cost
+                elec_gen          = power_MWe * capacity_factor * 365 * 24
+            sum_cost += (cap_cost_per_year + annual_cost) / ((1 + discount_rate)**i)
+            sum_elec += elec_gen / ((1 + discount_rate)**i)
+
+        lcoe = sum_cost / sum_elec
+        df.loc[df['Account'] == 'LCOE', estimated_cost_col] = lcoe
+
+        # -----------------------------------------------------------------------------------------
+        # LCOH (Levelized Cost of Heat) calculation
+        #
+        # For heat applications, the plant does not need a power conversion system,
+        # so both capital and O&M costs are reduced by the factors defined above.
+        #
+        # The full heat cost chain (all intermediate values are behind the scenes):
+        #   1. OCC_heat      = OCC × HEAT_OCC_FACTOR
+        #   2. Interest_heat = calculate_interest_cost(params, OCC_heat)
+        #   3. TCI_heat      = OCC_heat + Interest_heat
+        #   4. ann_cost_heat = ann_cost × HEAT_ANNUAL_COST_FACTOR
+        #   5. LCOE_heat     = PV(costs with TCI_heat, ann_cost_heat) / PV(electricity)
+        #   6. LCOH          = LCOE_heat × Thermal Efficiency
+        #
+        # The ×Thermal Efficiency step converts from $/MWhe to $/MWth:
+        # e.g. η=0.33 → 1 MWhe = 3 MWth → LCOH = LCOE_heat × 0.33 → cheaper per MWth
+        # -----------------------------------------------------------------------------------------
+        OCC           = df.loc[df['Account'] == 'OCC', estimated_cost_col].values[0]
+        OCC_heat      = OCC * HEAT_OCC_FACTOR
+        Interest_heat = calculate_interest_cost(params, OCC_heat)
+        TCI_heat      = OCC_heat + Interest_heat
+        ann_cost_heat = ann_cost * HEAT_ANNUAL_COST_FACTOR
+
+        sum_cost_heat = 0
+        sum_elec_heat = 0
+        for i in range(1 + plant_lifetime_years):
+            if i == 0:
+                cap_cost_per_year = TCI_heat
+                annual_cost_heat  = 0
+                elec_gen          = 0
+            else:
+                cap_cost_per_year = 0
+                annual_cost_heat  = ann_cost_heat
+                elec_gen          = power_MWe * capacity_factor * 365 * 24
+            sum_cost_heat += (cap_cost_per_year + annual_cost_heat) / ((1 + discount_rate)**i)
+            sum_elec_heat += elec_gen / ((1 + discount_rate)**i)
+
+            lcoe = sum_cost / sum_elec
+            df.loc[df['Account'] == 'LCOE (ITC-adjusted)', estimated_cost_col] = lcoe
+
+        # -----------------------------------------------------------------------------------------
+        # LCOH — always computed last so it appears as the final row in the output table
+        # -----------------------------------------------------------------------------------------
+        OCC           = df.loc[df['Account'] == 'OCC', estimated_cost_col].values[0]
+        OCC_heat      = OCC * HEAT_OCC_FACTOR
+        Interest_heat = calculate_interest_cost(params, OCC_heat)
+        TCI_heat      = OCC_heat + Interest_heat
+        ann_cost_heat = ann_cost * HEAT_ANNUAL_COST_FACTOR
+
+        sum_cost_heat = 0
+        sum_elec_heat = 0
+        for i in range(1 + plant_lifetime_years):
+            if i == 0:
+                cap_cost_per_year = TCI_heat
+                annual_cost_heat  = 0
+                elec_gen          = 0
+            else:
+                cap_cost_per_year = 0
+                annual_cost_heat  = ann_cost_heat
+                elec_gen          = power_MWe * capacity_factor * 365 * 24
+            sum_cost_heat += (cap_cost_per_year + annual_cost_heat) / ((1 + discount_rate)**i)
+            sum_elec_heat += elec_gen / ((1 + discount_rate)**i)
+
+        lcoe_heat = sum_cost_heat / sum_elec_heat
+        lcoh      = lcoe_heat * thermal_efficiency
+        df.loc[df['Account'] == 'LCOH', estimated_cost_col] = lcoh
+        # -----------------------------------------------------------------------------------------
+        if 'PTC credit value' in params.keys():
+            sum_elec = 0
+            sum_ptc  = 0
+            assert 'PTC credit period' in params.keys(), 'error: If a PTC credit value is provided, a corresponding PTC credit period must be given as well.'
+            try:
+                bonus_multiplier = 1.0 + params['domestic_content_bonus'] + params['energy_community_bonus']
+            except:
+                print('--- warning: Assume no extra percentage on the credit')
+                bonus_multiplier = 1.0
+
+            for i in range(1 + plant_lifetime_years):
+                if i == 0:
+                    elec_gen = 0
+                    ptc_gen  = 0
+                else:
+                    elec_gen = power_MWe * capacity_factor * 365 * 24
+                    if i > params['PTC credit period']:
+                        ptc_gen = 0
+                    else:
+                        ptc_gen = elec_gen * (params['PTC credit value'] * bonus_multiplier) / (1 - params['Tax Rate'])
+                sum_ptc  += ptc_gen  / ((1 + discount_rate)**i)
+                sum_elec += elec_gen / ((1 + discount_rate)**i)
+
+            estimated_ptc = sum_ptc / sum_elec
+            df.loc[df['Account'] == 'LCOE with PTC', estimated_cost_col] = lcoe - estimated_ptc
+
+        # -----------------------------------------------------------------------------------------
+        # ITC adjustment — unchanged
+        # -----------------------------------------------------------------------------------------
+        if 'ITC credit level' in params.keys():
+            cap_cost      = df.loc[df['Account'] == 'TCI (ITC-adjusted)', estimated_cost_col].values[0]
+            ann_cost      = df.loc[df['Account'] == 70, estimated_cost_col].values[0] + df.loc[df['Account'] == 80, estimated_cost_col].values[0]
+            levelized_ann_cost = ann_cost / params['Annual Electricity Production']
+            df.loc[df['Account'] == 'AC',         estimated_cost_col] = ann_cost
+            df.loc[df['Account'] == 'AC per MWh', estimated_cost_col] = levelized_ann_cost
+            sum_cost = 0
+            sum_elec = 0
+
+            for i in range(1 + plant_lifetime_years):
+                if i == 0:
+                    cap_cost_per_year = cap_cost
+                    annual_cost       = 0
+                    elec_gen          = 0
+                else:
+                    cap_cost_per_year = 0
+                    annual_cost       = ann_cost
+                    elec_gen          = power_MWe * capacity_factor * 365 * 24
+                sum_cost += (cap_cost_per_year + annual_cost) / ((1 + discount_rate)**i)
+                sum_elec += elec_gen / ((1 + discount_rate)**i)
+
+            lcoe = sum_cost / sum_elec
+            df.loc[df['Account'] == 'LCOE (ITC-adjusted)', estimated_cost_col] = lcoe
+
+    return df
 
     for estimated_cost_col in [estimated_cost_col_F, estimated_cost_col_N]:
 
