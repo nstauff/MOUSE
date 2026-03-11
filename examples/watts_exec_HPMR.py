@@ -49,7 +49,7 @@ update_params({
     'Radial Reflector': 'Graphite',
     'Axial Reflector': 'Graphite',
     'Moderator': 'monolith_graphite',
-    'Secondary Coolant': 'Helium',
+    'Coolant': 'Helium',
     'Control Drum Absorber': 'B4C_natural',
     'Control Drum Reflector': 'Graphite',
     'Cooling Device': 'heatpipe',
@@ -148,7 +148,7 @@ params.update({
     'Primary Loop Purification': True,
     'Secondary HX Mass': 0,
     'Primary Loop Count': 2,
-    'Primary Loop Inlet Temperature': 900 + 273.15, # K
+    'Primary Loop Inlet Temperature': 650 + 273.15, # K
     'Primary Loop Outlet Temperature': 650 + 273.15, # K
     'Secondary Loop Inlet Temperature': 300 + 273.15, # K
     'Secondary Loop Outlet Temperature': 630 + 273.15, # K,
@@ -215,8 +215,8 @@ update_params({
 })
 
 params['Onsite Coolant Inventory'] = 1 * 24.417 * 8.2402 # kg
-params['Replacement Coolant Inventory'] = params['Onsite Coolant Inventory'] / 4
-params['Annual Coolant Supply Frequency'] = 1 if params['Primary Loop Purification'] else 6
+params['Replacement Coolant Inventory'] = 0
+# params['Annual Coolant Supply Frequency'] = 1 if params['Primary Loop Purification'] else 6
 
 total_refueling_period = params['Fuel Lifetime'] + params['Refueling Period'] + params['Startup Duration after Refueling'] # days
 total_refueling_period_yr = total_refueling_period/365
