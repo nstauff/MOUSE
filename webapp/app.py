@@ -24,8 +24,6 @@ from unittest.mock import MagicMock
 
 
 class _MaterialStub:
-    """Minimal stub for openmc.Material that stores density correctly."""
-
     def __init__(self, name=None, temperature=None):
         self.name = name
         self.temperature = temperature
@@ -81,6 +79,7 @@ sys.modules['watts'] = MagicMock()
 # Standard imports (after stubs are in place)
 # ---------------------------------------------------------------------------
 import io
+import math
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -95,7 +94,6 @@ from cost.cost_drivers import cost_drivers_estimate, is_double_digit_excluding_m
 
 # ---------------------------------------------------------------------------
 # Performance patch: cache the per-row Excel read inside calculate_inflation_multiplier.
-# Without this, pd.read_excel is called once per cost-database row on every run.
 # ---------------------------------------------------------------------------
 import functools
 import cost.cost_escalation as _ce
@@ -202,11 +200,6 @@ _REACTOR_IMAGES = {
 
 # ---------------------------------------------------------------------------
 # Cached cost estimate (module-level so cache persists across reruns)
-# Returns: (display_df, enriched_df_raw, params)
-#   display_df     — transformed (integer costs) table for display and Excel export,
-#                    includes FOAK LCOE / NOAK LCOE columns from cost_drivers_estimate
-#   enriched_df_raw — raw float version of the enriched table, used for the plot
-#   params         — fully-populated params dict
 # ---------------------------------------------------------------------------
 @st.cache_data(show_spinner=False)
 def _run_estimate(reactor_type, power_mwt, enrichment, interest_rate,
@@ -226,17 +219,60 @@ def _run_estimate(reactor_type, power_mwt, enrichment, interest_rate,
         overrides['PTC credit value'] = tax_credit_value
         overrides['PTC credit period'] = 10
         overrides['Tax Rate'] = 0.21
-        # Bonus multipliers are already baked into the selected PTC credit value.
     elif tax_credit_type == 'ITC':
         overrides['ITC credit level'] = tax_credit_value
 
     p = build_params(reactor_type, power_mwt, enrichment, overrides)
     raw_df = bottom_up_cost_estimate('cost/Cost_Database.xlsx', p)
-
-    # Enrich with per-account LCOE contributions (no PNG — plotting key not set).
     enriched_df = cost_drivers_estimate(raw_df, p)
-
     return transform_dataframe(enriched_df), enriched_df, p
+
+
+# ---------------------------------------------------------------------------
+# Formatting helpers
+# ---------------------------------------------------------------------------
+def _get_mean_std(df, account, which='FOAK'):
+    """Return (mean, std) for a given account row. Returns (nan, nan) if missing."""
+    row = df[df['Account'] == account]
+    if row.empty:
+        return float('nan'), float('nan')
+    mean_prefix = 'FOAK Estimated Cost (' if which == 'FOAK' else 'NOAK Estimated Cost ('
+    std_prefix  = 'FOAK Estimated Cost std (' if which == 'FOAK' else 'NOAK Estimated Cost std ('
+    mean_cols = [c for c in df.columns if c.startswith(mean_prefix)]
+    std_cols  = [c for c in df.columns if c.startswith(std_prefix)]
+    try:
+        mean = float(row[mean_cols[0]].iloc[0]) if mean_cols else float('nan')
+    except (TypeError, ValueError):
+        mean = float('nan')
+    try:
+        std = float(row[std_cols[0]].iloc[0]) if std_cols else float('nan')
+    except (TypeError, ValueError):
+        std = float('nan')
+    return mean, std
+
+
+def _fmt_cost(mean, std):
+    """Format a capital cost as $XM or $XM – $YM (rounded to nearest $M)."""
+    if math.isnan(mean):
+        return 'N/A'
+    m = round(mean / 1e6)
+    if math.isnan(std) or std == 0:
+        return f'${m}M'
+    lo = round((mean - std) / 1e6)
+    hi = round((mean + std) / 1e6)
+    return f'${lo}M – ${hi}M'
+
+
+def _fmt_lcoe(mean, std):
+    """Format an LCOE as $X/MWh or $X – $Y/MWh (rounded to nearest 10)."""
+    if math.isnan(mean):
+        return 'N/A'
+    m = round(mean / 10) * 10
+    if math.isnan(std) or std == 0:
+        return f'${m}/MWh'
+    lo = round((mean - std) / 10) * 10
+    hi = round((mean + std) / 10) * 10
+    return f'${lo} – ${hi}/MWh'
 
 
 # ---------------------------------------------------------------------------
@@ -374,8 +410,7 @@ with st.sidebar:
             index=3,
             format_func=lambda x: f'${x:.1f}/MWh',
             help=(
-                'Total PTC value including any applicable IRA bonus multipliers '
-                '(domestic content, energy community). '
+                'Total PTC value including any applicable IRA bonus multipliers. '
                 'Base rate: $3/MWh; full prevailing-wage rate: $15/MWh.'
             ),
         )
@@ -391,28 +426,14 @@ with st.sidebar:
     run_button = st.button('Run Cost Estimate', type='primary', use_container_width=True)
 
 # ---------------------------------------------------------------------------
-# Reactor design section — always visible
-# ---------------------------------------------------------------------------
-main_img, main_caption = _REACTOR_IMAGES[reactor_type]['main']
-st.subheader(f'{reactor_label} — Core Design')
-st.image(main_img, use_container_width=True)
-st.caption(main_caption)
-
-with st.expander('View more design details'):
-    for img_path, img_caption in _REACTOR_IMAGES[reactor_type]['details']:
-        st.image(img_path, use_container_width=True)
-        st.caption(img_caption)
-        st.divider()
-
-# ---------------------------------------------------------------------------
-# Placeholder for results
+# Placeholder until Run is clicked
 # ---------------------------------------------------------------------------
 if not run_button:
     st.info('Configure inputs in the sidebar and click **Run Cost Estimate** to begin.')
     st.stop()
 
 # ---------------------------------------------------------------------------
-# Build params and run cost estimate
+# Run cost estimate
 # ---------------------------------------------------------------------------
 with st.spinner('Running cost estimate…'):
     try:
@@ -441,67 +462,61 @@ with st.spinner('Running cost estimate…'):
         st.stop()
 
 # ---------------------------------------------------------------------------
-# Helper: extract a single cost value from the display dataframe
+# Reactor design images (shown only after Run is clicked)
 # ---------------------------------------------------------------------------
-def _get_value(df, account, which='FOAK'):
-    """Return the cost for a given account label (FOAK or NOAK), or NaN."""
-    row = df[df['Account'] == account]
-    if row.empty:
-        return float('nan')
-    prefix = 'FOAK Estimated Cost (' if which == 'FOAK' else 'NOAK Estimated Cost ('
-    cols = [c for c in df.columns if c.startswith(prefix)]
-    if not cols:
-        return float('nan')
-    val = row[cols[0]].iloc[0]
-    try:
-        return float(val)
-    except (TypeError, ValueError):
-        return float('nan')
+main_img, main_caption = _REACTOR_IMAGES[reactor_type]['main']
+st.subheader(f'{reactor_label} — Core Design')
+st.image(main_img, use_container_width=True)
+st.caption(main_caption)
 
+with st.expander('View more design details'):
+    for img_path, img_caption in _REACTOR_IMAGES[reactor_type]['details']:
+        st.image(img_path, use_container_width=True)
+        st.caption(img_caption)
+        st.divider()
 
 # ---------------------------------------------------------------------------
-# Summary metrics — FOAK and NOAK side by side
+# Summary metrics
 # ---------------------------------------------------------------------------
 st.subheader('Summary')
 
 fuel_lifetime = params.get('Fuel Lifetime', float('nan'))
 power_mwe     = params.get('Power MWe', float('nan'))
 
-occ_foak  = _get_value(display_df, 'OCC',  'FOAK')
-tci_foak  = _get_value(display_df, 'TCI',  'FOAK')
-lcoe_foak = _get_value(display_df, 'LCOE', 'FOAK')
-occ_noak  = _get_value(display_df, 'OCC',  'NOAK')
-tci_noak  = _get_value(display_df, 'TCI',  'NOAK')
-lcoe_noak = _get_value(display_df, 'LCOE', 'NOAK')
-
-# Row 1: FOAK values + reactor info
-c1, c2, c3, c4, c5 = st.columns(5)
-c1.metric('FOAK OCC',  f'${occ_foak:,.0f}'  if not pd.isna(occ_foak)  else 'N/A')
-c2.metric('FOAK TCI',  f'${tci_foak:,.0f}'  if not pd.isna(tci_foak)  else 'N/A')
-c3.metric('FOAK LCOE', f'${lcoe_foak:,.1f} /MWh' if not pd.isna(lcoe_foak) else 'N/A')
-c4.metric('Power Output', f'{power_mwe:.2f} MWe')
-c5.metric('Fuel Lifetime', f'{fuel_lifetime:,} days' if not pd.isna(float(fuel_lifetime)) else 'N/A')
-
-# Row 2: NOAK values
-n1, n2, n3 = st.columns(3)
-n1.metric('NOAK OCC',  f'${occ_noak:,.0f}'  if not pd.isna(occ_noak)  else 'N/A')
-n2.metric('NOAK TCI',  f'${tci_noak:,.0f}'  if not pd.isna(tci_noak)  else 'N/A')
-n3.metric('NOAK LCOE', f'${lcoe_noak:,.1f} /MWh' if not pd.isna(lcoe_noak) else 'N/A')
-
-# Tax-credit adjusted metrics (if applicable)
+# Choose the right account names depending on tax credit selection
 if tax_credit_type == 'ITC':
-    occ_itc  = _get_value(display_df, 'OCC (ITC-adjusted)',  'FOAK')
-    tci_itc  = _get_value(display_df, 'TCI (ITC-adjusted)',  'FOAK')
-    lcoe_itc = _get_value(display_df, 'LCOE (ITC-adjusted)', 'FOAK')
-    st.caption('With ITC applied:')
-    ci1, ci2, ci3 = st.columns(3)
-    ci1.metric('OCC (ITC-adjusted)',  f'${occ_itc:,.0f}'       if not pd.isna(occ_itc)  else 'N/A')
-    ci2.metric('TCI (ITC-adjusted)',  f'${tci_itc:,.0f}'       if not pd.isna(tci_itc)  else 'N/A')
-    ci3.metric('LCOE (ITC-adjusted)', f'${lcoe_itc:,.1f} /MWh' if not pd.isna(lcoe_itc) else 'N/A')
+    occ_account  = 'OCC (ITC-adjusted)'
+    tci_account  = 'TCI (ITC-adjusted)'
+    lcoe_account = 'LCOE (ITC-adjusted)'
 elif tax_credit_type == 'PTC':
-    lcoe_ptc = _get_value(display_df, 'LCOE with PTC', 'FOAK')
-    st.caption('With PTC applied:')
-    st.metric('LCOE with PTC', f'${lcoe_ptc:,.1f} /MWh' if not pd.isna(lcoe_ptc) else 'N/A')
+    occ_account  = 'OCC'
+    tci_account  = 'TCI'
+    lcoe_account = 'LCOE with PTC'
+else:
+    occ_account  = 'OCC'
+    tci_account  = 'TCI'
+    lcoe_account = 'LCOE'
+
+occ_f,  occ_f_std  = _get_mean_std(display_df, occ_account,  'FOAK')
+tci_f,  tci_f_std  = _get_mean_std(display_df, tci_account,  'FOAK')
+lcoe_f, lcoe_f_std = _get_mean_std(display_df, lcoe_account, 'FOAK')
+occ_n,  occ_n_std  = _get_mean_std(display_df, occ_account,  'NOAK')
+tci_n,  tci_n_std  = _get_mean_std(display_df, tci_account,  'NOAK')
+lcoe_n, lcoe_n_std = _get_mean_std(display_df, lcoe_account, 'NOAK')
+
+# Row 1: FOAK + reactor info
+c1, c2, c3, c4, c5 = st.columns(5)
+c1.metric('FOAK OCC',  _fmt_cost(occ_f,  occ_f_std))
+c2.metric('FOAK TCI',  _fmt_cost(tci_f,  tci_f_std))
+c3.metric('FOAK LCOE', _fmt_lcoe(lcoe_f, lcoe_f_std))
+c4.metric('Power Output', f'{power_mwe:.2f} MWe')
+c5.metric('Fuel Lifetime', f'{int(fuel_lifetime):,} days' if not math.isnan(float(fuel_lifetime)) else 'N/A')
+
+# Row 2: NOAK
+n1, n2, n3 = st.columns(3)
+n1.metric('NOAK OCC',  _fmt_cost(occ_n,  occ_n_std))
+n2.metric('NOAK TCI',  _fmt_cost(tci_n,  tci_n_std))
+n3.metric('NOAK LCOE', _fmt_lcoe(lcoe_n, lcoe_n_std))
 
 # ---------------------------------------------------------------------------
 # Cost drivers plot
@@ -542,6 +557,7 @@ else:
 # Full cost table
 # ---------------------------------------------------------------------------
 st.subheader('Detailed Cost Breakdown')
+
 
 def _highlight_parents(row):
     acct = row.get('Account', None)
