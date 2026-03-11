@@ -300,7 +300,7 @@ update_params({
     
     'Interest Rate': 0.07,
     'Construction Duration': 12,  # months
-    'Debt To Equity Ratio': 0.5,
+    'git  To Equity Ratio': 1,
     'Annual Return': 0.0475,  # Annual return on decommissioning costs
     'NOAK Unit Number': 100
 })

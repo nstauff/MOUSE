@@ -140,10 +140,14 @@ def calculate_decommissioning_cost(df, params):
 def calculate_interest_cost(params, OCC):
     interest_rate = params['Interest Rate']
     construction_duration = params['Construction Duration']
-    debt_to_equity_ratio = params['Debt To Equity Ratio'] 
-    B =(1+ np.exp((np.log(1+ interest_rate)) * construction_duration/12))
-    C  =((np.log(1+ interest_rate)*(construction_duration/12)/3.14)**2+1)
-    Interest_expenses = debt_to_equity_ratio*OCC*((0.5*B/C)-1)
+    debt_to_equity_ratio = params['Debt To Equity Ratio']
+    # Convert D:E ratio to debt fraction for the calculation.
+    # e.g. D:E = 1.0 (1:1) → debt_fraction = 1/(1+1) = 0.5 (50% financed by debt)
+    # e.g. D:E = 2.33      → debt_fraction = 2.33/3.33 ≈ 0.7 (70% financed by debt)
+    debt_fraction = debt_to_equity_ratio / (1 + debt_to_equity_ratio)
+    B = (1 + np.exp((np.log(1 + interest_rate)) * construction_duration / 12))
+    C = ((np.log(1 + interest_rate) * (construction_duration / 12) / 3.14)**2 + 1)
+    Interest_expenses = debt_fraction * OCC * ((0.5 * B / C) - 1)
     return Interest_expenses
 
 
@@ -152,9 +156,11 @@ def calculate_interest_cost_central(params, OCC):
     interest_rate = params['Interest Rate']
     construction_duration = params['Central Facility Construction Duration']
     debt_to_equity_ratio = params['Debt To Equity Ratio']
+    # Convert D:E ratio to debt fraction for the calculation (same logic as above).
+    debt_fraction = debt_to_equity_ratio / (1 + debt_to_equity_ratio)
     B = (1 + np.exp((np.log(1 + interest_rate)) * construction_duration / 12))
     C = ((np.log(1 + interest_rate) * (construction_duration / 12) / 3.14)**2 + 1)
-    Interest_expenses = debt_to_equity_ratio * OCC * ((0.5 * B / C) - 1)
+    Interest_expenses = debt_fraction * OCC * ((0.5 * B / C) - 1)
     return Interest_expenses
 
 
