@@ -9,8 +9,6 @@ Run from the MOUSE repo root:
 
 # ---------------------------------------------------------------------------
 # Ensure the MOUSE repo root is in sys.path so all MOUSE modules resolve.
-# This is needed when Streamlit adds only the script directory (webapp/) to
-# sys.path but core_design/, cost/, etc., live one level up.
 # ---------------------------------------------------------------------------
 import sys
 import os
@@ -21,9 +19,6 @@ if _repo_root not in sys.path:
 
 # ---------------------------------------------------------------------------
 # IMPORTANT: Stub openmc and watts BEFORE any MOUSE import.
-# core_design/utils.py, drums.py, and openmc_materials_database.py all import
-# openmc at the top level. We replace them with lightweight stubs so the
-# pure-math functions work without an actual OpenMC installation.
 # ---------------------------------------------------------------------------
 from unittest.mock import MagicMock
 
@@ -34,12 +29,9 @@ class _MaterialStub:
     def __init__(self, name=None, temperature=None):
         self.name = name
         self.temperature = temperature
-        self.density = 0.0  # default; overwritten by set_density
+        self.density = 0.0
 
     def set_density(self, units, value):
-        # Store the raw value. For g/cm3 materials this is the true density.
-        # For atom/b-cm materials (homog_TRISO, heatpipe) the value is never
-        # used in mass calculations so correctness is not needed.
         self.density = value
 
     def add_nuclide(self, *args, **kwargs):
@@ -53,7 +45,6 @@ class _MaterialStub:
 
     @staticmethod
     def mix_materials(materials, fractions, method, name=None):
-        """Return a stub material with a weighted-average density."""
         result = _MaterialStub(name=name)
         try:
             result.density = sum(m.density * f for m, f in zip(materials, fractions))
@@ -63,8 +54,6 @@ class _MaterialStub:
 
 
 class _MaterialsStub:
-    """Minimal stub for openmc.Materials."""
-
     def append(self, mat):
         pass
 
@@ -73,8 +62,6 @@ class _MaterialsStub:
 
 
 class _OpenMCStub(MagicMock):
-    """openmc module stub — Material and Materials have real implementations."""
-
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.Material = _MaterialStub
@@ -97,11 +84,14 @@ import io
 import warnings
 warnings.filterwarnings('ignore')
 
+import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 import streamlit as st
 
 from reactor_config import build_params, SubcriticalError
 from cost.cost_estimation import bottom_up_cost_estimate, transform_dataframe
+from cost.cost_drivers import cost_drivers_estimate, is_double_digit_excluding_multiples_of_10
 
 # ---------------------------------------------------------------------------
 # Performance patch: cache the per-row Excel read inside calculate_inflation_multiplier.
@@ -118,11 +108,111 @@ def _cached_inflation_multiplier(file_path, base_dollar_year, cost_type, escalat
 
 _ce.calculate_inflation_multiplier = _cached_inflation_multiplier
 
+# ---------------------------------------------------------------------------
+# Reactor metadata: full names and design images
+# ---------------------------------------------------------------------------
+_REACTOR_LABELS = {
+    'LTMR': 'Liquid Metal Microreactor (LTMR)',
+    'GCMR': 'Gas Cooled Microreactor (GCMR)',
+    'HPMR': 'Heat Pipe Microreactor (HPMR)',
+}
+_LABEL_TO_KEY = {v: k for k, v in _REACTOR_LABELS.items()}
 
+_ASSETS = os.path.join(_repo_root, 'assets', 'Ref_openmc_2d_designs')
+
+_REACTOR_IMAGES = {
+    'LTMR': {
+        'main': (
+            os.path.join(_ASSETS, 'LTMR_core.png'),
+            'LTMR core cross-section — hexagonal arrangement of TRIGA-type U-ZrH fuel '
+            'pins and ZrH moderator pins cooled by NaK liquid metal, surrounded by a '
+            'graphite radial reflector with control drums.',
+        ),
+        'details': [
+            (
+                os.path.join(_ASSETS, 'LTMR_fuel_pin_universe.png'),
+                'LTMR fuel pin cross-section — from center outward: zirconium cladding, '
+                'gap, U-ZrH fuel meat, gap, and SS304 outer cladding.',
+            ),
+            (
+                os.path.join(_ASSETS, 'LTMR_moderator_pin_universe.png'),
+                'LTMR moderator pin cross-section — ZrH hydrogen moderator encased in '
+                'SS304 cladding, interspersed between fuel pins to thermalize neutrons.',
+            ),
+        ],
+    },
+    'GCMR': {
+        'main': (
+            os.path.join(_ASSETS, 'GCMR_Core.png'),
+            'GCMR core cross-section — hexagonal fuel assemblies containing TRISO fuel '
+            'compacts arranged in a honeycomb pattern, cooled by helium gas flowing '
+            'through dedicated coolant channels, with graphite reflector and control drums.',
+        ),
+        'details': [
+            (
+                os.path.join(_ASSETS, 'GCMR_Core (zoomed in).png'),
+                'GCMR core zoomed — detailed view of the hexagonal assembly arrangement '
+                'showing the compact-to-assembly packing and inter-assembly helium flow paths.',
+            ),
+            (
+                os.path.join(_ASSETS, 'GCMR_Fuel Assembly.png'),
+                'GCMR fuel assembly cross-section — TRISO fuel compacts, helium coolant '
+                'channels, and ZrH moderator booster pins embedded in a graphite matrix.',
+            ),
+            (
+                os.path.join(_ASSETS, 'GCMR_Fuel Assembly (zoomed in).png'),
+                'GCMR fuel assembly zoomed — individual TRISO particles visible within '
+                'the graphite fuel compact at the target packing fraction.',
+            ),
+            (
+                os.path.join(_ASSETS, 'GCMR_TRISO_Particle.png'),
+                'TRISO fuel particle — multi-layer design with UN fuel kernel, buffer '
+                'graphite, inner PyC, SiC pressure vessel, and outer PyC coating that '
+                'retains fission products up to ~1600 °C.',
+            ),
+        ],
+    },
+    'HPMR': {
+        'main': (
+            os.path.join(_ASSETS, 'HPMR_core.png'),
+            'HPMR core cross-section — monolithic graphite/metal core with hexagonal '
+            'fuel assemblies and embedded alkali-metal heat pipes that passively transfer '
+            'heat to the secondary side, with graphite reflector and control drums.',
+        ),
+        'details': [
+            (
+                os.path.join(_ASSETS, 'HPMR_fuel_assembly.png'),
+                'HPMR fuel assembly cross-section — TRISO fuel pins and heat pipes '
+                'arranged in a hexagonal pattern within the graphite monolith block.',
+            ),
+            (
+                os.path.join(_ASSETS, 'HPMR_fuel_pin_universe.png'),
+                'HPMR fuel pin cross-section — homogenized TRISO fuel region surrounded '
+                'by a thin helium gap within the monolith.',
+            ),
+            (
+                os.path.join(_ASSETS, 'HPMR_heatpipe_universe.png'),
+                'HPMR heat pipe cross-section — working fluid region and outer cladding '
+                'that passively carries heat from the core to the power conversion system '
+                'with no moving parts.',
+            ),
+        ],
+    },
+}
+
+# ---------------------------------------------------------------------------
+# Cached cost estimate (module-level so cache persists across reruns)
+# Returns: (display_df, enriched_df_raw, params)
+#   display_df     — transformed (integer costs) table for display and Excel export,
+#                    includes FOAK LCOE / NOAK LCOE columns from cost_drivers_estimate
+#   enriched_df_raw — raw float version of the enriched table, used for the plot
+#   params         — fully-populated params dict
+# ---------------------------------------------------------------------------
 @st.cache_data(show_spinner=False)
 def _run_estimate(reactor_type, power_mwt, enrichment, interest_rate,
                   construction_duration, debt_to_equity, operation_mode,
-                  emergency_shutdowns, startup_duration):
+                  emergency_shutdowns, startup_duration,
+                  tax_credit_type, tax_credit_value):
     overrides = {
         'Interest Rate': interest_rate,
         'Construction Duration': construction_duration,
@@ -132,9 +222,22 @@ def _run_estimate(reactor_type, power_mwt, enrichment, interest_rate,
         'Emergency Shutdowns Per Year': emergency_shutdowns,
         'Startup Duration after Emergency Shutdown': startup_duration,
     }
+    if tax_credit_type == 'PTC':
+        overrides['PTC credit value'] = tax_credit_value
+        overrides['PTC credit period'] = 10
+        overrides['Tax Rate'] = 0.21
+        # Bonus multipliers are already baked into the selected PTC credit value.
+    elif tax_credit_type == 'ITC':
+        overrides['ITC credit level'] = tax_credit_value
+
     p = build_params(reactor_type, power_mwt, enrichment, overrides)
-    df = bottom_up_cost_estimate('cost/Cost_Database.xlsx', p)
-    return transform_dataframe(df), p
+    raw_df = bottom_up_cost_estimate('cost/Cost_Database.xlsx', p)
+
+    # Enrich with per-account LCOE contributions (no PNG — plotting key not set).
+    enriched_df = cost_drivers_estimate(raw_df, p)
+
+    return transform_dataframe(enriched_df), enriched_df, p
+
 
 # ---------------------------------------------------------------------------
 # Page config
@@ -151,7 +254,8 @@ st.set_page_config(
 st.title('MOUSE — Microreactor Cost Estimator')
 st.caption(
     'Microreactor Online Unified Simulation Engine · '
-    'Bottom-up capital & levelized cost estimates for LTMR, GCMR, and HPMR designs.'
+    'Bottom-up capital & levelized cost estimates for microreactor designs · '
+    'All costs in **2024 USD**.'
 )
 
 # ---------------------------------------------------------------------------
@@ -160,11 +264,12 @@ st.caption(
 with st.sidebar:
     st.header('Inputs')
 
-    reactor_type = st.selectbox(
+    reactor_label = st.selectbox(
         'Reactor Type',
-        options=['LTMR', 'GCMR', 'HPMR'],
-        help='LTMR = Liquid Metal Thermal, GCMR = Gas Cooled (Design A), HPMR = Heat Pipe',
+        options=list(_REACTOR_LABELS.values()),
+        help='Select a microreactor design to estimate costs for.',
     )
+    reactor_type = _LABEL_TO_KEY[reactor_label]
 
     st.markdown('**Core Design Parameters**')
 
@@ -179,7 +284,6 @@ with st.sidebar:
     )
     st.caption(f'{enrichment * 100:.2f}% enriched')
 
-    # Default power per reactor type; unique key resets slider when reactor changes
     _power_defaults = {'LTMR': 20, 'GCMR': 15, 'HPMR': 7}
     power_mwt = st.slider(
         'Thermal Power (MWt)',
@@ -248,7 +352,57 @@ with st.sidebar:
         help='Days required to restart the reactor after an emergency shutdown.',
     )
 
+    st.divider()
+    st.markdown('**Government Subsidy (IRA Tax Credits)**')
+
+    tax_credit_type = st.selectbox(
+        'Tax Credit',
+        options=['None', 'PTC', 'ITC'],
+        index=0,
+        help=(
+            'None: no tax credit applied. '
+            'PTC: Production Tax Credit (reduces LCOE). '
+            'ITC: Investment Tax Credit (reduces capital cost).'
+        ),
+    )
+
+    tax_credit_value = None
+    if tax_credit_type == 'PTC':
+        tax_credit_value = st.selectbox(
+            'PTC Credit Value ($/MWh)',
+            options=[3.0, 3.3, 3.6, 15.0, 16.5, 18.0],
+            index=3,
+            format_func=lambda x: f'${x:.1f}/MWh',
+            help=(
+                'Total PTC value including any applicable IRA bonus multipliers '
+                '(domestic content, energy community). '
+                'Base rate: $3/MWh; full prevailing-wage rate: $15/MWh.'
+            ),
+        )
+    elif tax_credit_type == 'ITC':
+        tax_credit_value = st.selectbox(
+            'ITC Credit Level',
+            options=[0.06, 0.30, 0.40, 0.50],
+            index=1,
+            format_func=lambda x: f'{x*100:.0f}%',
+            help='ITC as a fraction of overnight capital cost (OCC).',
+        )
+
     run_button = st.button('Run Cost Estimate', type='primary', use_container_width=True)
+
+# ---------------------------------------------------------------------------
+# Reactor design section — always visible
+# ---------------------------------------------------------------------------
+main_img, main_caption = _REACTOR_IMAGES[reactor_type]['main']
+st.subheader(f'{reactor_label} — Core Design')
+st.image(main_img, use_container_width=True)
+st.caption(main_caption)
+
+with st.expander('View more design details'):
+    for img_path, img_caption in _REACTOR_IMAGES[reactor_type]['details']:
+        st.image(img_path, use_container_width=True)
+        st.caption(img_caption)
+        st.divider()
 
 # ---------------------------------------------------------------------------
 # Placeholder for results
@@ -262,10 +416,11 @@ if not run_button:
 # ---------------------------------------------------------------------------
 with st.spinner('Running cost estimate…'):
     try:
-        display_df, params = _run_estimate(
+        display_df, enriched_df, params = _run_estimate(
             reactor_type, power_mwt, enrichment,
             interest_rate / 100.0, construction_duration, debt_to_equity,
             operation_mode, emergency_shutdowns, startup_duration,
+            tax_credit_type, tax_credit_value,
         )
     except SubcriticalError as exc:
         st.warning('### Reactor is Subcritical')
@@ -286,44 +441,108 @@ with st.spinner('Running cost estimate…'):
         st.stop()
 
 # ---------------------------------------------------------------------------
-# Summary metrics
+# Helper: extract a single cost value from the display dataframe
 # ---------------------------------------------------------------------------
-st.subheader('Summary')
-
-# Find key summary rows in the result dataframe.
-# OCC, TCI, and LCOE are appended as string accounts by cost_estimation.py.
-def _get_value(df, account):
-    """Return the FOAK cost for a given account label, or NaN."""
+def _get_value(df, account, which='FOAK'):
+    """Return the cost for a given account label (FOAK or NOAK), or NaN."""
     row = df[df['Account'] == account]
     if row.empty:
         return float('nan')
-    foak_cols = [c for c in df.columns if 'FOAK' in c and 'std' not in c]
-    if not foak_cols:
+    prefix = 'FOAK Estimated Cost (' if which == 'FOAK' else 'NOAK Estimated Cost ('
+    cols = [c for c in df.columns if c.startswith(prefix)]
+    if not cols:
         return float('nan')
-    val = row[foak_cols[0]].iloc[0]
+    val = row[cols[0]].iloc[0]
     try:
         return float(val)
     except (TypeError, ValueError):
         return float('nan')
 
 
-occ_val = _get_value(display_df, 'OCC')
-tci_val = _get_value(display_df, 'TCI')
-lcoe_val = _get_value(display_df, 'LCOE')
-power_mwe = params.get('Power MWe', float('nan'))
+# ---------------------------------------------------------------------------
+# Summary metrics — FOAK and NOAK side by side
+# ---------------------------------------------------------------------------
+st.subheader('Summary')
 
-col1, col2, col3, col4 = st.columns(4)
-col1.metric('OCC (Overnight Capital Cost)', f'${occ_val:,.0f}' if not pd.isna(occ_val) else 'N/A')
-col2.metric('TCI (Total Capital Investment)', f'${tci_val:,.0f}' if not pd.isna(tci_val) else 'N/A')
-col3.metric('LCOE', f'${lcoe_val:,.1f} /MWh' if not pd.isna(lcoe_val) else 'N/A')
-col4.metric('Power Output', f'{power_mwe:.2f} MWe')
+fuel_lifetime = params.get('Fuel Lifetime', float('nan'))
+power_mwe     = params.get('Power MWe', float('nan'))
+
+occ_foak  = _get_value(display_df, 'OCC',  'FOAK')
+tci_foak  = _get_value(display_df, 'TCI',  'FOAK')
+lcoe_foak = _get_value(display_df, 'LCOE', 'FOAK')
+occ_noak  = _get_value(display_df, 'OCC',  'NOAK')
+tci_noak  = _get_value(display_df, 'TCI',  'NOAK')
+lcoe_noak = _get_value(display_df, 'LCOE', 'NOAK')
+
+# Row 1: FOAK values + reactor info
+c1, c2, c3, c4, c5 = st.columns(5)
+c1.metric('FOAK OCC',  f'${occ_foak:,.0f}'  if not pd.isna(occ_foak)  else 'N/A')
+c2.metric('FOAK TCI',  f'${tci_foak:,.0f}'  if not pd.isna(tci_foak)  else 'N/A')
+c3.metric('FOAK LCOE', f'${lcoe_foak:,.1f} /MWh' if not pd.isna(lcoe_foak) else 'N/A')
+c4.metric('Power Output', f'{power_mwe:.2f} MWe')
+c5.metric('Fuel Lifetime', f'{fuel_lifetime:,} days' if not pd.isna(float(fuel_lifetime)) else 'N/A')
+
+# Row 2: NOAK values
+n1, n2, n3 = st.columns(3)
+n1.metric('NOAK OCC',  f'${occ_noak:,.0f}'  if not pd.isna(occ_noak)  else 'N/A')
+n2.metric('NOAK TCI',  f'${tci_noak:,.0f}'  if not pd.isna(tci_noak)  else 'N/A')
+n3.metric('NOAK LCOE', f'${lcoe_noak:,.1f} /MWh' if not pd.isna(lcoe_noak) else 'N/A')
+
+# Tax-credit adjusted metrics (if applicable)
+if tax_credit_type == 'ITC':
+    occ_itc  = _get_value(display_df, 'OCC (ITC-adjusted)',  'FOAK')
+    tci_itc  = _get_value(display_df, 'TCI (ITC-adjusted)',  'FOAK')
+    lcoe_itc = _get_value(display_df, 'LCOE (ITC-adjusted)', 'FOAK')
+    st.caption('With ITC applied:')
+    ci1, ci2, ci3 = st.columns(3)
+    ci1.metric('OCC (ITC-adjusted)',  f'${occ_itc:,.0f}'       if not pd.isna(occ_itc)  else 'N/A')
+    ci2.metric('TCI (ITC-adjusted)',  f'${tci_itc:,.0f}'       if not pd.isna(tci_itc)  else 'N/A')
+    ci3.metric('LCOE (ITC-adjusted)', f'${lcoe_itc:,.1f} /MWh' if not pd.isna(lcoe_itc) else 'N/A')
+elif tax_credit_type == 'PTC':
+    lcoe_ptc = _get_value(display_df, 'LCOE with PTC', 'FOAK')
+    st.caption('With PTC applied:')
+    st.metric('LCOE with PTC', f'${lcoe_ptc:,.1f} /MWh' if not pd.isna(lcoe_ptc) else 'N/A')
+
+# ---------------------------------------------------------------------------
+# Cost drivers plot
+# ---------------------------------------------------------------------------
+st.subheader('Cost Drivers')
+
+_drv = enriched_df[enriched_df['Account'].apply(is_double_digit_excluding_multiples_of_10)].copy()
+_drv = _drv.sort_values('FOAK LCOE', ascending=False)
+_drv = _drv[_drv['FOAK LCOE'] >= 5]
+
+if _drv.empty:
+    st.info('No accounts with FOAK LCOE ≥ 5 $/MWh found.')
+else:
+    bar_width = 0.35
+    r1 = np.arange(len(_drv))
+    r2 = r1 + bar_width
+
+    fig, ax = plt.subplots(figsize=(max(10, len(_drv) * 1.4), 6))
+    ax.bar(r1, _drv['FOAK LCOE'], width=bar_width, color='orangered', edgecolor='black',
+           label=f'FOAK {reactor_type}',
+           yerr=_drv['FOAK LCOE_std'] if 'FOAK LCOE_std' in _drv.columns else None,
+           capsize=6, error_kw=dict(elinewidth=1.5))
+    ax.bar(r2, _drv['NOAK LCOE'], width=bar_width, color='royalblue', edgecolor='black',
+           label=f'NOAK {reactor_type}',
+           yerr=_drv['NOAK LCOE_std'] if 'NOAK LCOE_std' in _drv.columns else None,
+           capsize=6, error_kw=dict(elinewidth=1.5))
+    ax.set_xticks(r1 + bar_width / 2)
+    ax.set_xticklabels(_drv['Account Title'], rotation=45, ha='right', fontsize=10)
+    ax.set_ylabel('LCOE Contribution ($/MWh)', fontsize=12)
+    ax.legend(fontsize=11)
+    ax.grid(axis='y', linestyle='dashed', linewidth=0.5)
+    ax.minorticks_on()
+    plt.tight_layout()
+    st.pyplot(fig)
+    plt.close(fig)
 
 # ---------------------------------------------------------------------------
 # Full cost table
 # ---------------------------------------------------------------------------
 st.subheader('Detailed Cost Breakdown')
 
-# Highlight parent-level accounts (Level 0 accounts are integers like 10, 20, …)
 def _highlight_parents(row):
     acct = row.get('Account', None)
     try:

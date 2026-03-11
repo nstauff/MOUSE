@@ -300,7 +300,7 @@ def _build_ltmr(params):
         'Construction Duration': 12,
         'Debt To Equity Ratio': 0.5,
     })
-    params['ITC credit level'] = 0.30
+    # ITC/PTC credits are controlled by the user via the webapp — not hardcoded here.
 
 
 def _build_gcmr(params):
@@ -503,11 +503,7 @@ def _build_gcmr(params):
         'Construction Duration': 12,
         'Debt To Equity Ratio': 0.5,
     })
-    params['PTC credit value'] = 15.0
-    params['PTC credit period'] = 10
-    params['domestic_content_bonus'] = 0.10
-    params['energy_community_bonus'] = 0.10
-    params['Tax Rate'] = 0.21
+    # ITC/PTC credits are controlled by the user via the webapp — not hardcoded here.
 
 
 def _build_hpmr(params):
@@ -753,6 +749,6 @@ def build_params(reactor_type, power_mwt, enrichment, user_overrides):
     # many database rows (those lacking low/high-end estimates), which propagates NaN
     # through the entire cost calculation. Number of Samples = 1 uses unit_cost_0 /
     # fixed_cost_0 directly and avoids this issue entirely.
-    params['Number of Samples'] = 1
+    params['Number of Samples'] = 10
 
     return params
