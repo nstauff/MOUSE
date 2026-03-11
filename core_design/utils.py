@@ -293,7 +293,6 @@ def run_openmc(build_openmc_model, heat_flux_monitor, params):
 
     params.setdefault('SD Margin Calc', False)
     params.setdefault('Isothermal Temperature Coefficients', False)
-    watts.Database().clear()  # force fresh run, bypass caching
     original_sd_margin_calc = params['SD Margin Calc']
     original_itc = params['Isothermal Temperature Coefficients']
 
