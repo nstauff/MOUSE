@@ -263,7 +263,7 @@ def openmc_depletion(params, lattice_geometry, settings):
 
 
 def run_depletion_analysis(params):
-    openmc.run()
+    openmc.run(threads = 60) # TODO: NS changed - would need to parameterize it
     lattice_geometry = openmc.Geometry.from_xml()
     settings = openmc.Settings.from_xml()
     fuel_lifetime_days, mass_U235, mass_U238, pf_summary = \
