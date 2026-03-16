@@ -275,19 +275,14 @@ def collect_materials_data(params):
 
     SiC = openmc.Material(name='SiC')
     SiC.set_density('g/cm3', 3.18)
-<<<<<<< HEAD
-    SiC.add_element('Si', 0.5)
-    SiC.add_element('C', 0.5)
+    SiC.add_element('Si', 0.5) #  Adds silicon (Si) to the material with a fraction of 0.5.
+    SiC.add_nuclide('C12' , 0.5*0.9893, 'ao') # Adds carbon (C) to the material with a fraction of 0.5.
+    SiC.add_nuclide('C13' , 0.5*0.0107, 'ao') # Adds carbon (C) to the material with a fraction of 0.5.
 
     ZrC = openmc.Material(name='ZrC')
     ZrC.set_density('g/cm3', 6.73)
     ZrC.add_element('Zr', 1.0)
     ZrC.add_element('C', 1.0)
-=======
-    SiC.add_element('Si', 0.5) #  Adds silicon (Si) to the material with a fraction of 0.5.
-    SiC.add_nuclide('C12' , 0.5*0.9893, 'ao') # Adds carbon (C) to the material with a fraction of 0.5.
-    SiC.add_nuclide('C13' , 0.5*0.0107, 'ao') # Adds carbon (C) to the material with a fraction of 0.5.
->>>>>>> 2d618a6 (added material to the database)
 
     materials.extend([B4C_natural, B4C_enriched, SiC])
     materials_database.update({'B4C_natural':  B4C_natural, 
@@ -302,39 +297,26 @@ def collect_materials_data(params):
     # Graphite
     Graphite = openmc.Material(name='Graphite')
     Graphite.set_density('g/cm3', 1.7)
-<<<<<<< HEAD
-    Graphite.add_element('C', 1.0)
-    # This adds thermal scattering data for graphite.
-=======
     Graphite.add_nuclide('C12' , 0.9893, 'ao')
     Graphite.add_nuclide('C13' , 0.0107, 'ao')
     #This adds thermal scattering data for graphite. The add_S(α,β) thermal scattering treatment for carbon in graphite form.
->>>>>>> 2d618a6 (added material to the database)
     Graphite.add_s_alpha_beta('c_Graphite')
 
     # Graphite of lower density (buffer_graphite)
     buffer_graphite = openmc.Material(name='Buffer')
     buffer_graphite.set_density('g/cm3', 0.95)
-<<<<<<< HEAD
-    buffer_graphite.add_element('C', 1.0)
-=======
     buffer_graphite.add_nuclide('C12' , 0.9893, 'ao')
     buffer_graphite.add_nuclide('C13' , 0.0107, 'ao') #This adds carbon (C) 
     #This adds thermal scattering data for graphite. The add_S(α,β) thermal scattering treatment for carbon in graphite form.
->>>>>>> 2d618a6 (added material to the database)
     buffer_graphite.add_s_alpha_beta('c_Graphite') 
 
     # Pyrolytic carbon (PyC) 
     PyC = openmc.Material(name='PyC')
     PyC.set_density('g/cm3', 1.9)
-<<<<<<< HEAD
-    PyC.add_element('C', 1.0)
-=======
     PyC.add_nuclide('C12' , 0.9893, 'ao')
     PyC.add_nuclide('C13' , 0.0107, 'ao') #  Adds carbon (C) to the material with a fraction of 1.0
     
     #This adds thermal scattering data for graphite. The add_S(α,β) thermal scattering treatment for carbon in graphite form.
->>>>>>> 2d618a6 (added material to the database)
     PyC.add_s_alpha_beta('c_Graphite') 
 
     materials.extend([Graphite, buffer_graphite, PyC])

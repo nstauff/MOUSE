@@ -124,6 +124,8 @@ def create_universe_plot(materials_database, universe, plot_width, num_pixels, f
         'homog_TRISO':      'maroon',
         'heatpipe':         'seashell',
         'monolith_graphite':'navy',
+        'Nb':               'red',
+        'FeCrAl':           'grey',
         'UZr':              'darkred',
         'ZrC':              'slategray',
         'MgO':              'lightyellow',
