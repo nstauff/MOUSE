@@ -255,10 +255,6 @@ def openmc_depletion(params, lattice_geometry, settings):
     orig_material = depletion_2d_results_file.export_to_materials(0)
     mass_U235 = orig_material[0].get_mass('U235')
     mass_U238 = orig_material[0].get_mass('U238')
-    data_k = pandas.DataFrame()
-    data_k['keff 2D'] = keff_2d_values
-    data_k['keff 3D (2D corrected)'] = keff_2d_values_corrected
-    data_k.to_csv('./objectives_keff.csv',index_label='time')
 
     params['keff 2D'] = keff_2d_values
     params['keff 3D (2D corrected)'] = keff_2d_values_corrected
