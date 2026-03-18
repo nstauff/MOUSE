@@ -587,7 +587,7 @@ with st.sidebar:
         step=1,
         key=f'power_{reactor_type}',
         help='Thermal power output. Affects power-dependent params and fuel lifetime via interpolation.',
-    )   
+    )
 
     st.divider()
     st.markdown('**B — Operation Parameters**')
@@ -660,6 +660,14 @@ with st.sidebar:
     st.divider()
     run_button = st.button('⚡  Run Cost Estimate', type='primary', use_container_width=True)
 
+    st.divider()
+    st.markdown('**💬 Feedback**')
+    st.caption('Help us improve MOUSE by sharing your thoughts.')
+    st.link_button(
+        '📝  Give Feedback',
+        'https://qualtricsxm69xy9s7vm.qualtrics.com/jfe/form/SV_4Pb0vub9xCcsVV4',
+        use_container_width=True,
+    )
 # ---------------------------------------------------------------------------
 # Welcome banner (shown only before first run)
 # ---------------------------------------------------------------------------
