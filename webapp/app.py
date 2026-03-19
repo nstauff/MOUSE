@@ -815,6 +815,17 @@ with st.spinner('Running cost estimate…'):
         st.stop()
 
 # ---------------------------------------------------------------------------
+# Extract key params (capacity factor sourced from operation.py via params)
+# ---------------------------------------------------------------------------
+fuel_lifetime   = params.get('Fuel Lifetime', float('nan'))
+power_mwe       = params.get('Power MWe', float('nan'))
+capacity_factor = params.get('Capacity Factor', float('nan'))
+
+_fl_str  = f'{fuel_lifetime / 365:.1f} yrs' if not math.isnan(float(fuel_lifetime)) else 'N/A'
+_fl_days = f'{int(fuel_lifetime):,} days'    if not math.isnan(float(fuel_lifetime)) else ''
+_cf_str  = f'{capacity_factor * 100:.1f}%'  if not math.isnan(float(capacity_factor)) else 'N/A'
+
+# ---------------------------------------------------------------------------
 # Result hero banner
 # ---------------------------------------------------------------------------
 _credit_badge = ''
@@ -854,6 +865,10 @@ st.markdown(
              <div style="font-weight:700;font-size:0.95rem;">{operation_mode}</div>
            </div>
            <div>
+             <div style="font-size:0.6rem;text-transform:uppercase;letter-spacing:0.1em;opacity:0.55;">Capacity Factor</div>
+             <div style="font-weight:700;font-size:0.95rem;">{_cf_str}</div>
+           </div>
+           <div>
              <div style="font-size:0.6rem;text-transform:uppercase;letter-spacing:0.1em;opacity:0.55;">All costs in</div>
              <div style="font-weight:700;font-size:0.95rem;">2024 USD</div>
            </div>
@@ -865,9 +880,6 @@ st.markdown(
 # ---------------------------------------------------------------------------
 # Collect all summary values
 # ---------------------------------------------------------------------------
-fuel_lifetime = params.get('Fuel Lifetime', float('nan'))
-power_mwe     = params.get('Power MWe', float('nan'))
-
 if tax_credit_type == 'ITC':
     occ_account  = 'OCC (ITC-adjusted)'
     tci_account  = 'TCI (ITC-adjusted)'
@@ -892,9 +904,6 @@ tci_n,  tci_n_std  = _get_mean_std(display_df, tci_account,  'NOAK')
 lcoe_n, lcoe_n_std = _get_mean_std(display_df, lcoe_account, 'NOAK')
 lcoh_n, lcoh_n_std = _get_mean_std(display_df, 'LCOH',       'NOAK')
 lcof_n, lcof_n_std = _get_lcof(enriched_df, 'NOAK')
-
-_fl_str = f'{fuel_lifetime / 365:.1f} yrs' if not math.isnan(float(fuel_lifetime)) else 'N/A'
-_fl_days = f'{int(fuel_lifetime):,} days' if not math.isnan(float(fuel_lifetime)) else ''
 
 # ---------------------------------------------------------------------------
 # Tabs
@@ -939,11 +948,13 @@ with tab_summary:
                 st.caption(img_caption)
 
     with info_col:
-        # ── Info cards: Power & Fuel Lifetime ──────────────────
-        ic1, ic2 = st.columns(2)
+        # ── Info cards: Power, Fuel Lifetime & Capacity Factor ─
+        ic1, ic2, ic3 = st.columns(3)
         _info_card(ic1, 'Electric Power Output', f'{power_mwe:.1f} MWe',
                    subtitle=f'Thermal input: {power_mwt} MWt')
         _info_card(ic2, 'Fuel Lifetime', _fl_str, subtitle=_fl_days)
+        _info_card(ic3, 'Capacity Factor', _cf_str,
+                   subtitle='Accounts for refueling & shutdowns')
 
         st.markdown('<div style="height:1rem"></div>', unsafe_allow_html=True)
 
