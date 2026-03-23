@@ -448,6 +448,11 @@ section[data-testid="stSidebar"] hr {
     border-color: rgba(255,255,255,0.08) !important;
     margin: 0.6rem 0 !important;
 }
+section[data-testid="stSidebar"] .stTooltipHoverTarget svg.icon {
+    stroke: #93c5fd !important;
+    stroke-width: 2.25 !important;
+    opacity: 1 !important;
+}
 section[data-testid="stSidebar"] .stButton > button {
     background: linear-gradient(135deg, #e05c2b 0%, #b84520 100%) !important;
     color: white !important;
@@ -577,10 +582,12 @@ with st.sidebar:
     st.caption(f'{enrichment * 100:.2f}% enriched')
 
     _power_defaults = {'LTMR': 20, 'GCMR': 15, 'HPMR': 7}
+    _power_max = {'LTMR': 20, 'GCMR': 20, 'HPMR': 7}
+
     power_mwt = st.slider(
         'Thermal Power (MWt)',
         min_value=1,
-        max_value=20,
+        max_value=_power_max[reactor_type],
         value=_power_defaults[reactor_type],
         step=1,
         key=f'power_{reactor_type}',
@@ -590,11 +597,20 @@ with st.sidebar:
     st.divider()
     st.markdown('**B — Operation Parameters**')
 
-    operation_mode = st.selectbox(
+    _OPERATION_MODE_LABELS = {
+        'Remotely Monitored': 'Autonomous',
+        'On-Site Staffed':    'Non-Autonomous',
+    }
+    operation_mode_label = st.selectbox(
         'Operation Mode',
-        options=['Autonomous', 'Non-Autonomous'],
-        help='Autonomous = minimal on-site operators; Non-Autonomous = full staffing.',
+        options=list(_OPERATION_MODE_LABELS.keys()),
+        help=(
+            '**Remotely Monitored:** Operators monitor the reactor remotely and are '
+            'required on-site only for emergencies or shutdown.\n\n'
+            '**On-Site Staffed:** Operators must be physically present in the control room 24/7.'
+        ),
     )
+    operation_mode = _OPERATION_MODE_LABELS[operation_mode_label]
     emergency_shutdowns = st.number_input(
         'Emergency Shutdowns per Year',
         min_value=0.0, max_value=10.0, value=0.2, step=0.1, format='%.1f',
@@ -658,6 +674,14 @@ with st.sidebar:
     st.divider()
     run_button = st.button('⚡  Run Cost Estimate', type='primary', use_container_width=True)
 
+    st.divider()
+    st.markdown('**💬 Feedback**')
+    st.caption('Help us improve MOUSE by sharing your thoughts.')
+    st.link_button(
+        '📝  Give Feedback',
+        'https://qualtricsxm69xy9s7vm.qualtrics.com/jfe/form/SV_4Pb0vub9xCcsVV4',
+        use_container_width=True,
+    )
 # ---------------------------------------------------------------------------
 # Welcome banner (shown only before first run)
 # ---------------------------------------------------------------------------
@@ -700,6 +724,7 @@ if not run_button:
                  <div style="font-size:0.62rem;text-transform:uppercase;letter-spacing:0.1em;
                              opacity:0.6;margin-bottom:0.2rem;">Reactor Types</div>
                  <div style="font-weight:700;font-size:0.88rem;">LTMR · GCMR · HPMR</div>
+                 <div style="font-size:0.62rem;opacity:0.65;margin-top:0.2rem;">Liquid Metal · Gas Cooled · Heat Pipe</div>
                </div>
                <div style="background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.2);
                            border-radius:10px;padding:0.7rem 1.2rem;">
@@ -711,13 +736,14 @@ if not run_button:
                            border-radius:10px;padding:0.7rem 1.2rem;">
                  <div style="font-size:0.62rem;text-transform:uppercase;letter-spacing:0.1em;
                              opacity:0.6;margin-bottom:0.2rem;">Enrichment</div>
-                 <div style="font-weight:700;font-size:0.88rem;">5 – 19.75% LEU+</div>
+                 <div style="font-weight:700;font-size:0.88rem;">5 – 19.75%</div>
                </div>
                <div style="background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.2);
                            border-radius:10px;padding:0.7rem 1.2rem;">
                  <div style="font-size:0.62rem;text-transform:uppercase;letter-spacing:0.1em;
                              opacity:0.6;margin-bottom:0.2rem;">Outputs</div>
                  <div style="font-weight:700;font-size:0.88rem;">OCC · TCI · LCOE · LCOH · LCOF</div>
+                 <div style="font-size:0.62rem;opacity:0.65;margin-top:0.2rem;">Capital Cost · Capital Investment · Cost of Energy · Cost of Heat · Cost of Fuel</div>
                </div>
                <div style="background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.2);
                            border-radius:10px;padding:0.7rem 1.2rem;">
@@ -789,6 +815,17 @@ with st.spinner('Running cost estimate…'):
         st.stop()
 
 # ---------------------------------------------------------------------------
+# Extract key params (capacity factor sourced from operation.py via params)
+# ---------------------------------------------------------------------------
+fuel_lifetime   = params.get('Fuel Lifetime', float('nan'))
+power_mwe       = params.get('Power MWe', float('nan'))
+capacity_factor = params.get('Capacity Factor', float('nan'))
+
+_fl_str  = f'{fuel_lifetime / 365:.1f} yrs' if not math.isnan(float(fuel_lifetime)) else 'N/A'
+_fl_days = f'{int(fuel_lifetime):,} days'    if not math.isnan(float(fuel_lifetime)) else ''
+_cf_str  = f'{capacity_factor * 100:.1f}%'  if not math.isnan(float(capacity_factor)) else 'N/A'
+
+# ---------------------------------------------------------------------------
 # Result hero banner
 # ---------------------------------------------------------------------------
 _credit_badge = ''
@@ -828,6 +865,10 @@ st.markdown(
              <div style="font-weight:700;font-size:0.95rem;">{operation_mode}</div>
            </div>
            <div>
+             <div style="font-size:0.6rem;text-transform:uppercase;letter-spacing:0.1em;opacity:0.55;">Capacity Factor</div>
+             <div style="font-weight:700;font-size:0.95rem;">{_cf_str}</div>
+           </div>
+           <div>
              <div style="font-size:0.6rem;text-transform:uppercase;letter-spacing:0.1em;opacity:0.55;">All costs in</div>
              <div style="font-weight:700;font-size:0.95rem;">2024 USD</div>
            </div>
@@ -839,9 +880,6 @@ st.markdown(
 # ---------------------------------------------------------------------------
 # Collect all summary values
 # ---------------------------------------------------------------------------
-fuel_lifetime = params.get('Fuel Lifetime', float('nan'))
-power_mwe     = params.get('Power MWe', float('nan'))
-
 if tax_credit_type == 'ITC':
     occ_account  = 'OCC (ITC-adjusted)'
     tci_account  = 'TCI (ITC-adjusted)'
@@ -866,9 +904,6 @@ tci_n,  tci_n_std  = _get_mean_std(display_df, tci_account,  'NOAK')
 lcoe_n, lcoe_n_std = _get_mean_std(display_df, lcoe_account, 'NOAK')
 lcoh_n, lcoh_n_std = _get_mean_std(display_df, 'LCOH',       'NOAK')
 lcof_n, lcof_n_std = _get_lcof(enriched_df, 'NOAK')
-
-_fl_str = f'{fuel_lifetime / 365:.1f} yrs' if not math.isnan(float(fuel_lifetime)) else 'N/A'
-_fl_days = f'{int(fuel_lifetime):,} days' if not math.isnan(float(fuel_lifetime)) else ''
 
 # ---------------------------------------------------------------------------
 # Tabs
@@ -913,11 +948,13 @@ with tab_summary:
                 st.caption(img_caption)
 
     with info_col:
-        # ── Info cards: Power & Fuel Lifetime ──────────────────
-        ic1, ic2 = st.columns(2)
+        # ── Info cards: Power, Fuel Lifetime & Capacity Factor ─
+        ic1, ic2, ic3 = st.columns(3)
         _info_card(ic1, 'Electric Power Output', f'{power_mwe:.1f} MWe',
                    subtitle=f'Thermal input: {power_mwt} MWt')
         _info_card(ic2, 'Fuel Lifetime', _fl_str, subtitle=_fl_days)
+        _info_card(ic3, 'Capacity Factor', _cf_str,
+                   subtitle='Accounts for refueling & shutdowns')
 
         st.markdown('<div style="height:1rem"></div>', unsafe_allow_html=True)
 
