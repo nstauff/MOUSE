@@ -338,8 +338,8 @@ def run_openmc(build_openmc_model, heat_flux_monitor, params):
                 params['SD Margin Calc'] = False
                 openmc_plugin = watts.PluginOpenMC(build_openmc_model, show_stderr=True)  
                 openmc_plugin(params, function=lambda: run_depletion_analysis(params))
-                params['SDM 2D'] = np.max([(y - x)*1e5 for x,y in zip(params['keff 2D'],params['keff 2D ARI'])])
-                params['SDM 3D (2D corrected)'] = np.max([(y - x)*1e5 for x,y in zip(params['keff 3D (2D corrected)'],params['keff 3D (2D corrected) ARI'])])
+                params['SDM 2D'] = np.max([(y - 1)*1e5 for x,y in zip(params['keff 2D'],params['keff 2D ARI'])])
+                params['SDM 3D (2D corrected)'] = np.max([(y - 1)*1e5 for x,y in zip(params['keff 3D (2D corrected)'],params['keff 3D (2D corrected) ARI'])])
             else:
                 params['SDM 2D'] = np.nan
                 params['SDM 3D (2D corrected)'] = np.nan
