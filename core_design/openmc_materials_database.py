@@ -31,15 +31,18 @@ def collect_materials_data(params):
         ZrH_fuel = openmc.Material(name="ZrH_fuel")
         ZrH_fuel.set_density("g/cm3", 5.63)
         ZrH_fuel.add_element("zirconium", 1.0)
-        ZrH_fuel.add_nuclide("H1", params["H_Zr_ratio"]) # The proportion of hydrogen atoms relative to zirconium atoms
+        ZrH_fuel.add_nuclide("H1", params["H_Zr_ratio"])
 
-        # Now we mix the components in the right weight %
-        # The NRC seems to license up to TRIGA fuel with up to 45% weight Uranium
-        # Note: S(α,β) is added AFTER mixing — OpenMC cannot mix materials that
-        # already have S(α,β) tables attached
+        Er_bp = openmc.Material(name="Er_bp")
+        Er_bp.set_density("g/cm3", 9.07)
+        Er_bp.add_element("erbium", 1.0)
+
+        er_wo = params['er_wo'] # burnable poison
+
         TRIGA_fuel = openmc.Material.mix_materials(
-            [U_met, ZrH_fuel], [params['U_met_wo'], 1 - params['U_met_wo']], "wo", name="UZrH"
-        )
+            [U_met, ZrH_fuel, Er_bp],
+            [params['U_met_wo'], 1 - params['U_met_wo'] - er_wo, er_wo],
+            "wo", name="UZrH")
         TRIGA_fuel.temperature = params['Common Temperature']
         TRIGA_fuel.add_s_alpha_beta("c_H_in_ZrH")
         materials.append(TRIGA_fuel)
@@ -174,7 +177,7 @@ def collect_materials_data(params):
     # """""""""""""""""""""
     
     NaK = openmc.Material(name="NaK", temperature=params['Common Temperature'])
-    NaK.set_density("g/cm3", 0.75)
+    NaK.set_density("g/cm3", 0.85)
     NaK.add_nuclide("Na23", 2.20000e-01)
     NaK.add_nuclide("K39", 7.27413e-01)
     NaK.add_nuclide("K41", 5.24956e-02)
@@ -195,13 +198,14 @@ def collect_materials_data(params):
     Be.add_s_alpha_beta("c_Be")
     Be.set_density("g/cm3", 1.84)
     Be.temperature = params['Common Temperature']
-    Be.add_s_alpha_beta('c_Be')
 
     BeO = openmc.Material(name="BeO", temperature=params['Common Temperature'])
     BeO.set_density("g/cm3", 3.01)
     BeO.add_element("beryllium", 1.0)
     BeO.add_element("oxygen", 1.0)
     BeO.add_s_alpha_beta("c_Be_in_BeO")
+    BeO.add_s_alpha_beta("c_O_in_BeO")
+    
 
     materials.extend([Be, BeO])
     materials_database.update({'Be': Be, 'BeO': BeO})
@@ -223,14 +227,14 @@ def collect_materials_data(params):
     
     SS304 = openmc.Material(name="SS304", temperature=params['Common Temperature'])
     SS304.set_density("g/cm3", 7.98)
-    SS304.add_element("carbon", 0.04)
-    SS304.add_element("silicon", 0.50)
-    SS304.add_element("phosphorus", 0.023)
-    SS304.add_element("sulfur", 0.015)
-    SS304.add_element("chromium", 19.00)
-    SS304.add_element("manganese", 1.00)
-    SS304.add_element("iron", 70.173)
-    SS304.add_element("nickel", 9.25)
+    SS304.add_element("carbon", 0.04, "wo")
+    SS304.add_element("silicon", 0.50, "wo")
+    SS304.add_element("phosphorus", 0.023, "wo")
+    SS304.add_element("sulfur", 0.015, "wo")
+    SS304.add_element("chromium", 19.00, "wo")
+    SS304.add_element("manganese", 1.00, "wo")
+    SS304.add_element("iron", 70.173, "wo")
+    SS304.add_element("nickel", 9.25, "wo")
 
     materials.append(SS304)
     materials_database.update({'SS304': SS304})
@@ -247,7 +251,7 @@ def collect_materials_data(params):
 
     # Enriched B4C
     B4C_enriched = openmc.Material(name="B4C_enriched", temperature=params['Common Temperature'])
-    B4C_enriched.add_element("boron", 4, enrichment=90.0, enrichment_target='B10', enrichment_type='ao')
+    B4C_enriched.add_element("boron", 4, enrichment=95.0, enrichment_target='B10', enrichment_type='ao')
     B4C_enriched.add_element("carbon", 1)
     B4C_enriched.set_density("g/cm3", 2.52)
 
@@ -273,7 +277,7 @@ def collect_materials_data(params):
    
     # Graphite
     Graphite = openmc.Material(name='Graphite')
-    Graphite.set_density('g/cm3', 1.7)
+    Graphite.set_density('g/cm3', 1.60)
     Graphite.add_element('C', 1.0)
     # This adds thermal scattering data for graphite.
     Graphite.add_s_alpha_beta('c_Graphite')
