@@ -41,7 +41,6 @@ update_params({
 # **************************************************************************************************************************
 #                                                Sec. 1: Materials
 # **************************************************************************************************************************
-
 update_params({
     'reactor type': "LTMR", # LTMR or GCMR
     'TRISO Fueled': "No",
@@ -49,6 +48,7 @@ update_params({
     'Enrichment': 0.1975,  # Fraction between 0 and 1
     "H_Zr_ratio": 1.6,  # Proportion of hydrogen to zirconium atoms
     'U_met_wo': 0.3,  # Weight ratio of Uranium to total fuel weight (less than 1)
+    'er_wo':0,        # Erbium (burnabl poiston)
     'Coolant': 'NaK',
     'Radial Reflector': 'Graphite',
     'Axial Reflector': 'Graphite',
@@ -58,7 +58,6 @@ update_params({
     'Common Temperature': 600,  # Kelvins
     'HX Material': 'SS316'
 })
-
 # **************************************************************************************************************************
 #                                           Sec. 2: Geometry: Fuel Pins, Moderator Pins, Coolant, Hexagonal Lattice
 # **************************************************************************************************************************  
