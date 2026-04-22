@@ -114,32 +114,22 @@ def calculate_heat_flux_TRISO(params):
 def create_universe_plot(materials_database, universe, plot_width, num_pixels, font_size, title, fig_size, output_file_name):
     import matplotlib.colors as mcolors
 
-    # -----------------------------------------------------------------------------------------
-    # Known material colors — each material must have a UNIQUE color.
-    # If you add a new material to the materials database, add a corresponding
-    # unique color here. If you forget, the code will automatically assign one
-    # and warn you (see auto-assignment logic below).
-    #
-    # IMPORTANT: Do not use color aliases that resolve to the same hex value.
-    # For example, 'cyan' and 'aqua' are identical in matplotlib (#00FFFF).
-    # Always verify new colors are visually distinct from existing ones.
-    # -----------------------------------------------------------------------------------------
     potential_colors = {
         'TRIGA_fuel': 'red',
         'ZrH': 'yellow',
         'UO2': 'green',
         'UC': 'purple',
         'UCO': 'orange',
-        'UN': 'cyan',                  # #00FFFF
+        'UN': 'cyan',
         'YHx': 'magenta',
         'NaK': 'blue',
-        'Helium': 'grey',              # #808080
+        'Helium': 'grey',
         'Be': 'brown',
         'BeO': 'pink',
         'Zr': 'lime',
         'SS304': 'black',
         'B4C_natural': 'olive',
-        'B4C_enriched': 'deepskyblue', # was 'aqua' — FIXED: 'aqua'=='cyan', now unique
+        'B4C_enriched': 'deepskyblue',
         'SiC': 'teal',
         'Graphite': 'coral',
         'buffer_graphite': 'gold',
@@ -153,25 +143,15 @@ def create_universe_plot(materials_database, universe, plot_width, num_pixels, f
         'WB': 'darkgray',
         'W2B': 'dimgray',
         'WB4': 'lightgray',
-        'WC': 'silver',                # was 'gray' — FIXED: 'gray'=='grey', now unique
+        'WC': 'silver',
     }
 
-    # -----------------------------------------------------------------------------------------
-    # Auto-color assignment for materials not in potential_colors.
-    # If a material exists in the database but has no assigned color, the code
-    # automatically picks a unique color from a pool of distinct CSS4 colors,
-    # avoiding all colors already in use. A warning is printed so the developer
-    # knows to add a permanent color entry above.
-    # -----------------------------------------------------------------------------------------
-
-    # Build a pool of candidate colors — all CSS4 named colors not already used
     used_colors = set(mcolors.to_hex(c) for c in potential_colors.values())
     color_pool = [
         name for name, hex_val in mcolors.CSS4_COLORS.items()
         if mcolors.to_hex(hex_val) not in used_colors
     ]
 
-    # Check for any materials in the database that are missing from potential_colors
     for mat_name in materials_database:
         if mat_name not in potential_colors:
             if not color_pool:
@@ -180,10 +160,8 @@ def create_universe_plot(materials_database, universe, plot_width, num_pixels, f
                     f"no unique colors remaining in the CSS4 pool. "
                     f"Please manually add a color for this material in potential_colors."
                 )
-            # Assign the first available unique color from the pool
             auto_color = color_pool.pop(0)
             potential_colors[mat_name] = auto_color
-            # Update used_colors so the next auto-assignment is also unique
             used_colors.add(mcolors.to_hex(auto_color))
             print(
                 f"\033[93m--- WARNING: Material '{mat_name}' does not have a color specified "
@@ -192,14 +170,12 @@ def create_universe_plot(materials_database, universe, plot_width, num_pixels, f
                 f"dictionary in create_universe_plot (utils.py) to suppress this warning.\033[0m"
             )
 
-    # Create the plot_colors dictionary only with existing materials
     colors = {
         materials_database[mat_name]: color
         for mat_name, color in potential_colors.items()
         if mat_name in materials_database
     }
 
-    # Create the plot
     universe_plot = universe.plot(
         width=(plot_width, plot_width),
         pixels=(num_pixels, num_pixels),
@@ -213,28 +189,23 @@ def create_universe_plot(materials_database, universe, plot_width, num_pixels, f
     universe_plot.tick_params(axis='x', labelsize=font_size)
     universe_plot.tick_params(axis='y', labelsize=font_size)
 
-    # Retrieve the figure from the Axes object
     fig = universe_plot.figure
     fig.set_size_inches(fig_size, fig_size)
 
-    # Extract the materials present in the universe
     universe_materials = [cell.fill for cell in universe.get_all_cells().values()]
     used_materials = set(universe_materials)
 
-    # Create legend patches for only the used materials
     legend_patches = [
         mpatches.Patch(color=color, label=mat_name)
         for mat_name, color in potential_colors.items()
         if mat_name in materials_database and materials_database[mat_name] in used_materials
     ]
-    # Add the legend to the plot, positioning it outside the plot area
     universe_plot.legend(
         handles=legend_patches,
         fontsize=font_size,
         loc='center left',
         bbox_to_anchor=(1, 0.5)
     )
-    # Save the figure to a file
     fig.savefig(output_file_name, bbox_inches='tight')
 
 
@@ -242,7 +213,6 @@ def openmc_depletion(params, lattice_geometry, settings):
 
     openmc.config['cross_sections'] = params['cross_sections_xml_location']
 
-    # depletion operator, performing transport simulations, is created using the geometry and settings xml files
     operator = openmc.deplete.CoupledOperator(
         openmc.Model(geometry=lattice_geometry, settings=settings),
         chain_file=params['simplified_chain_thermal_xml']
@@ -250,12 +220,9 @@ def openmc_depletion(params, lattice_geometry, settings):
 
     if 'Burnup Steps' in params:
         burnup_steps_list_MWd_per_Kg = params['Burnup Steps']
-
-        # MWd/kg (MW-day of energy deposited per kilogram of initial heavy metal)
         burnup_step = np.array(burnup_steps_list_MWd_per_Kg)
         burnup = np.diff(burnup_step, prepend=0.0)
 
-        # Deplete using a first-order predictor algorithm.
         integrator = openmc.deplete.PredictorIntegrator(
             operator,
             burnup,
@@ -278,10 +245,8 @@ def openmc_depletion(params, lattice_geometry, settings):
         params['Active Height'] + 2 * params['Axial Reflector Thickness']
     )
 
-    # Compute pin peaking factors
     try:
         pf_summary, pf_per_step = compute_pin_peaking_factors(".")
-        # Store peaking factor results in params for Excel output
         idx_max = pf_summary['Max_PF'].idxmax()
         params['Max Peaking Factor'] = pf_summary.loc[idx_max, 'Max_PF']
         params['Step with Max Peaking Factor'] = pf_summary.loc[idx_max, 'Step']
@@ -311,10 +276,10 @@ def run_depletion_analysis(params):
     fuel_lifetime_days, mass_U235, mass_U238, pf_summary = \
         openmc_depletion(params, lattice_geometry, settings)
 
-    params['Fuel Lifetime'] = fuel_lifetime_days  # days
-    params['Mass U235'] = mass_U235  # grams
-    params['Mass U238'] = mass_U238  # grams
-    params['Uranium Mass'] = (mass_U235 + mass_U238) / 1000  # kg
+    params['Fuel Lifetime'] = fuel_lifetime_days
+    params['Mass U235'] = mass_U235
+    params['Mass U238'] = mass_U238
+    params['Uranium Mass'] = (mass_U235 + mass_U238) / 1000
 
 
 def monitor_heat_flux(params):
@@ -331,9 +296,11 @@ def run_openmc(build_openmc_model, heat_flux_monitor, params):
 
     params.setdefault('Shutdown Margin Calc', False)
     params.setdefault('Isothermal Temperature Coefficients', False)
+    params.setdefault('Cold Shutdown Temperature', 300)
 
     original_shutdown_margin_calc = params['Shutdown Margin Calc']
     original_isothermal_temperature_coefficients = params['Isothermal Temperature Coefficients']
+    original_common_temperature = params['Common Temperature']
 
     if params['Isothermal Temperature Coefficients']:
         if 'Temperature Perturbation' not in params.keys():
@@ -354,8 +321,8 @@ def run_openmc(build_openmc_model, heat_flux_monitor, params):
             if params['Shutdown Margin Calc']:
 
                 if params['Isothermal Temperature Coefficients']:
-                    # Temperature coefficient runs are performed in operating configuration.
                     params['Shutdown Margin Calc'] = False
+                    params['Common Temperature'] = original_common_temperature
 
                     temp_T = copy.deepcopy(params['Common Temperature'])
                     params['Common Temperature'] = params['Common Temperature'] + params['Temperature Perturbation']
@@ -389,25 +356,27 @@ def run_openmc(build_openmc_model, heat_flux_monitor, params):
                     params['Temp Coeff 2D'] = np.nan
                     params['Temp Coeff 3D (2D corrected)'] = np.nan
 
-                # First SDM run: shutdown configuration (ARI)
+                # First shutdown-margin run: shutdown configuration (ARI) at cold shutdown temperature
+                params['Common Temperature'] = params['Cold Shutdown Temperature']
                 openmc_plugin = watts.PluginOpenMC(build_openmc_model, show_stderr=True)
                 openmc_plugin(params, function=lambda: run_depletion_analysis(params))
                 params['keff 2D ARI'] = params['keff 2D']
                 params['keff 3D (2D corrected) ARI'] = params['keff 3D (2D corrected)']
 
-                # Second SDM run: operating configuration (ARO)
+                # Second shutdown-margin run: operating configuration (ARO) at operating temperature
                 params['Shutdown Margin Calc'] = False
+                params['Common Temperature'] = original_common_temperature
                 openmc_plugin = watts.PluginOpenMC(build_openmc_model, show_stderr=True)
                 openmc_plugin(params, function=lambda: run_depletion_analysis(params))
                 params['keff 2D ARO'] = params['keff 2D']
                 params['keff 3D (2D corrected) ARO'] = params['keff 3D (2D corrected)']
 
-                # Keep current SDM formulation for this commit; equation/sign will be fixed later.
-                params['SDM 2D'] = np.max([
+                # Keep current shutdown-margin formulation for this commit; equation/sign will be fixed later.
+                params['Shutdown Margin 2D'] = np.max([
                     (y - x) * 1e5
                     for x, y in zip(params['keff 2D ARO'], params['keff 2D ARI'])
                 ])
-                params['SDM 3D (2D corrected)'] = np.max([
+                params['Shutdown Margin 3D (2D corrected)'] = np.max([
                     (y - x) * 1e5
                     for x, y in zip(
                         params['keff 3D (2D corrected) ARO'],
@@ -416,8 +385,8 @@ def run_openmc(build_openmc_model, heat_flux_monitor, params):
                 ])
 
             else:
-                params['SDM 2D'] = np.nan
-                params['SDM 3D (2D corrected)'] = np.nan
+                params['Shutdown Margin 2D'] = np.nan
+                params['Shutdown Margin 3D (2D corrected)'] = np.nan
 
                 if params['Isothermal Temperature Coefficients']:
                     temp_T = copy.deepcopy(params['Common Temperature'])
@@ -463,6 +432,7 @@ def run_openmc(build_openmc_model, heat_flux_monitor, params):
         finally:
             params['Shutdown Margin Calc'] = original_shutdown_margin_calc
             params['Isothermal Temperature Coefficients'] = original_isothermal_temperature_coefficients
+            params['Common Temperature'] = original_common_temperature
 
 
 def cyclic_rotation(input_array, k):

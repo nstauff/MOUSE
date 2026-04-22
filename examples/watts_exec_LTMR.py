@@ -117,11 +117,14 @@ params['Heat Flux'] =  calculate_heat_flux(params)
 
 # --- Shutdown Margin  ---
 # When True, additional OpenMC simulations are run to evaluate shutdown margin.
-# The model is evaluated in both operating (ARO) and shutdown (ARI) drum configurations.
+# The operating configuration (ARO) is evaluated at the operating temperature
+# given by 'Common Temperature', and the shutdown configuration (ARI) is
+# evaluated at 'Cold Shutdown Temperature'.
 # Shutdown margin is then computed from the two configurations.
 # Recommended: True for final design verification; can be set to False to save
 # computation time during early design exploration.
 params['Shutdown Margin Calc'] = True  # True or False
+params['Cold Shutdown Temperature'] = 300
 
 # --- Isothermal Temperature Coefficient ---
 # When True, two additional OpenMC simulations are run: one at 'Common Temperature'

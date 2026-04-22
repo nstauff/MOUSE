@@ -337,7 +337,7 @@ PARAMS_REGISTRY = {
 
     'Drum Radius': {
         'group': 'Control Drums', 'units': 'cm',
-        'description': 'Outer radius of each control drum',
+        'description': 'Outer radius of each control drum. If not specified, it is automatically set to the largest allowable value that avoids drum overlap.',
         'source': 'User Input', 'hidden': False, 'array_mode': None},
 
     'Drum Absorber Thickness': {
@@ -480,9 +480,14 @@ PARAMS_REGISTRY = {
     # OpenMC Settings
     # =========================================================
     'Shutdown Margin Calc': {
-        'group': 'OpenMC Settings', 'units': '',
-        'description': 'Whether shutdown margin was calculated (True = ARI simulation was run)',
-        'source': 'User Input', 'hidden': False, 'array_mode': None},
+    'group': 'OpenMC Settings', 'units': '',
+    'description': 'Whether shutdown margin is calculated. When True, the operating configuration (ARO) is evaluated at Common Temperature and the shutdown configuration (ARI) is evaluated at Cold Shutdown Temperature.',
+    'source': 'User Input', 'hidden': False, 'array_mode': None},
+
+    'Cold Shutdown Temperature': {
+    'group': 'OpenMC Settings', 'units': 'K',
+    'description': 'Temperature used for the shutdown-configuration (ARI) keff calculation during shutdown margin evaluation.',
+    'source': 'User Input', 'hidden': False, 'array_mode': None},
 
     'Isothermal Temperature Coefficients': {
         'group': 'OpenMC Settings', 'units': '',
@@ -551,17 +556,14 @@ PARAMS_REGISTRY = {
                        'Use this value for safety analysis.',
         'source': 'Calculated', 'hidden': False, 'array_mode': None},
 
-    'SDM 2D': {
+    'Shutdown Margin 2D': {
         'group': 'Physics Results', 'units': 'pcm',
-        'description': 'Shutdown margin from the 2D simulation (ARO keff minus ARI keff). '
-                       'May be negative due to 2D overestimation of keff — use 3D corrected value for safety conclusions.',
+        'description': 'Shutdown margin from the 2D simulation using the operating configuration (ARO) at Common Temperature and the shutdown configuration (ARI) at Cold Shutdown Temperature.',
         'source': 'Calculated', 'hidden': False, 'array_mode': None},
 
-    'SDM 3D (2D corrected)': {
+    'Shutdown Margin 3D (2D corrected)': {
         'group': 'Physics Results', 'units': 'pcm',
-        'description': 'Shutdown margin corrected from 2D to 3D using axial neutron leakage correction. '
-                       'Positive values confirm the reactor can be shut down with all drums inserted. '
-                       'Use this value for safety analysis.',
+        'description': 'Shutdown margin corrected from 2D to 3D using axial neutron leakage correction, based on the operating configuration (ARO) at Common Temperature and the shutdown configuration (ARI) at Cold Shutdown Temperature.',
         'source': 'Calculated', 'hidden': False, 'array_mode': None},
 
     'Max Peaking Factor': {
@@ -594,13 +596,13 @@ PARAMS_REGISTRY = {
 
     'keff 2D': {
         'group': 'Physics Results', 'units': '',
-        'description': 'keff at each burnup step from 2D OpenMC simulation',
-        'source': 'Calculated', 'hidden': False, 'array_mode': 'as_is'},  # was 'summary'
+        'description': 'keff at each burnup step for the operating configuration (ARO) from the 2D OpenMC simulation, evaluated at Common Temperature.',
+        'source': 'Calculated', 'hidden': False, 'array_mode': 'as_is'},
 
     'keff 3D (2D corrected)': {
         'group': 'Physics Results', 'units': '',
-        'description': 'keff at each burnup step corrected from 2D to 3D using axial leakage correction',
-        'source': 'Calculated', 'hidden': False, 'array_mode': 'as_is'},  # was 'summary'
+        'description': 'keff at each burnup step for the operating configuration (ARO), corrected from 2D to 3D using axial leakage correction and evaluated at Common Temperature.',
+        'source': 'Calculated', 'hidden': False, 'array_mode': 'as_is'},
 
     # =========================================================
     # Primary Loop & Balance of Plant
@@ -1953,19 +1955,28 @@ PARAMS_REGISTRY = {
 
     'keff 2D ARI': {
         'group': 'Debug / Intermediate Values', 'units': '',
-        'description': 'keff at each burnup step with all control drums inserted (ARI) from 2D simulation — '
-                       'used to calculate shutdown margin',
+        'description': 'keff at each burnup step for the shutdown configuration with all control drums inserted (ARI) from the 2D simulation, evaluated at Cold Shutdown Temperature for shutdown margin calculation.',
         'source': 'Calculated', 'hidden': False, 'array_mode': 'summary'},
 
     'keff 3D (2D corrected) ARI': {
         'group': 'Debug / Intermediate Values', 'units': '',
-        'description': 'keff with all rods inserted corrected to 3D — used to calculate shutdown margin',
+        'description': 'keff at each burnup step for the shutdown configuration with all control drums inserted (ARI), corrected from 2D to 3D and evaluated at Cold Shutdown Temperature for shutdown margin calculation.',
         'source': 'Calculated', 'hidden': False, 'array_mode': 'summary'},
 
     'number of drums': {
         'group': 'Debug / Intermediate Values', 'units': '',
         'description': 'Total number of control drum positions in the core lattice (GCMR internal variable)',
         'source': 'Calculated', 'hidden': False, 'array_mode': None},
+
+    'keff 2D ARO': {
+        'group': 'Debug / Intermediate Values', 'units': '',
+        'description': 'keff at each burnup step for the operating configuration with all control drums withdrawn (ARO) from the 2D simulation, evaluated at Common Temperature for shutdown margin calculation.',
+        'source': 'Calculated', 'hidden': False, 'array_mode': 'summary'},
+
+    'keff 3D (2D corrected) ARO': {
+        'group': 'Debug / Intermediate Values', 'units': '',
+        'description': 'keff at each burnup step for the operating configuration with all control drums withdrawn (ARO), corrected from 2D to 3D and evaluated at Common Temperature for shutdown margin calculation.',
+        'source': 'Calculated', 'hidden': False, 'array_mode': 'summary'},    
 
     'Constant': {
         'group': 'Debug / Intermediate Values', 'units': '',
