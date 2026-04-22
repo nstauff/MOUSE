@@ -178,7 +178,7 @@ def corrected_keff_2d(depletion_2d_results_file, total_height, core_radius=None)
 
                 bol_metrics_set = True
 
-            time_steps.append(time_days[idx])
+            time_steps.append(round(float(time_days[idx]), 4))
             keff_2d_corrected_values.append(keff_2d_corrected)
             keff_2d_values.append(keff_2d)
 
