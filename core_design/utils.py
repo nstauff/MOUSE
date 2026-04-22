@@ -3,7 +3,7 @@ import numpy as np
 import openmc
 import openmc.deplete
 import watts
-import traceback  # tracing errors
+import traceback  # print full stack traces for OpenMC failures
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from core_design.correction_factor import corrected_keff_2d
@@ -38,6 +38,7 @@ def cylinder_radial_shell(r, h):
     # calculating the outer area of a cylinder
     return circle_perimeter(r) * h
 
+
 def calculate_lattice_radius(params):
     """
     Backward-compatible helper.
@@ -46,7 +47,7 @@ def calculate_lattice_radius(params):
     name 'Lattice Radius'. Prefer calculate_hex_apothem() in new code.
     """
     return calculate_hex_apothem(params)
-    
+
 
 def calculate_hex_edge_length(params):
     """
@@ -271,15 +272,15 @@ def openmc_depletion(params, lattice_geometry, settings):
 
     depletion_2d_results_file = openmc.deplete.Results("./depletion_results.h5")
 
-    # corrected_keff_2d now returns:
+    # corrected_keff_2d returns:
     # 1) fuel lifetime in days
     # 2) cumulative depletion time points in days
     # 3) raw 2D keff values
     # 4) 3D-corrected keff values
     # 5) beginning-of-life axial non-leakage probability
     # 6) beginning-of-life estimated axial leakage percent
-    # 7) beginning-of-life total non-leakage probability (NaN if core radius unavailable)
-    # 8) beginning-of-life estimated total leakage percent (NaN if core radius unavailable)
+    # 7) beginning-of-life total non-leakage probability (NaN if core radius is unavailable)
+    # 8) beginning-of-life estimated total leakage percent (NaN if core radius is unavailable)
     (
         fuel_lifetime_days,
         time_steps,
@@ -317,12 +318,12 @@ def openmc_depletion(params, lattice_geometry, settings):
     params['keff 3D (2D corrected)'] = keff_2d_values_corrected
     params['Depletion Time Steps'] = time_steps
 
-    # Beginning-of-life leakage metrics from the axial / buckling correction model
+    # Beginning-of-life axial leakage metrics from the buckling correction model
     params['BOL Axial Non-Leakage Probability'] = bol_axial_non_leakage_probability
     params['Estimated Axial Leakage (%)'] = bol_axial_leakage_percent
 
     # Total leakage uses both axial and radial buckling.
-    # If Core Radius is not available, these are returned as NaN.
+    # If Core Radius is unavailable, these values are returned as NaN.
     params['BOL Total Non-Leakage Probability'] = bol_total_non_leakage_probability
     params['Estimated Total Leakage (%)'] = bol_total_leakage_percent
 
@@ -352,6 +353,48 @@ def monitor_heat_flux(params):
         return "High Heat Flux"
 
 
+def _run_isothermal_temperature_coefficients(build_openmc_model, params):
+    """
+    Run the two OpenMC cases needed for the isothermal temperature coefficient:
+    1) ARO at Common Temperature + Temperature Perturbation
+    2) ARO at Common Temperature
+
+    Stores:
+      - keff 2D high temp
+      - keff 3D (2D corrected) high temp
+      - keff 2D ARO
+      - keff 3D (2D corrected) ARO
+      - Temp Coeff 2D
+      - Temp Coeff 3D (2D corrected)
+    """
+    temp_T = copy.deepcopy(params['Common Temperature'])
+    params['Common Temperature'] = temp_T + params['Temperature Perturbation']
+
+    openmc_plugin = watts.PluginOpenMC(build_openmc_model, show_stderr=True)
+    openmc_plugin(params, function=lambda: run_depletion_analysis(params))
+    params['keff 2D high temp'] = params['keff 2D']
+    params['keff 3D (2D corrected) high temp'] = params['keff 3D (2D corrected)']
+
+    params['Common Temperature'] = temp_T
+
+    openmc_plugin = watts.PluginOpenMC(build_openmc_model, show_stderr=True)
+    openmc_plugin(params, function=lambda: run_depletion_analysis(params))
+    params['keff 2D ARO'] = params['keff 2D']
+    params['keff 3D (2D corrected) ARO'] = params['keff 3D (2D corrected)']
+
+    params['Temp Coeff 2D'] = np.max([
+        (y - x) / (y * x) / params['Temperature Perturbation'] * 1e5
+        for x, y in zip(params['keff 2D ARO'], params['keff 2D high temp'])
+    ])
+    params['Temp Coeff 3D (2D corrected)'] = np.max([
+        (y - x) / (y * x) / params['Temperature Perturbation'] * 1e5
+        for x, y in zip(
+            params['keff 3D (2D corrected) ARO'],
+            params['keff 3D (2D corrected) high temp']
+        )
+    ])
+
+
 def run_openmc(build_openmc_model, heat_flux_monitor, params):
 
     params.setdefault('Shutdown Margin Calc', False)
@@ -363,7 +406,7 @@ def run_openmc(build_openmc_model, heat_flux_monitor, params):
     original_common_temperature = params['Common Temperature']
 
     if params['Isothermal Temperature Coefficients']:
-        if 'Temperature Perturbation' not in params.keys():
+        if 'Temperature Perturbation' not in params:
             raise ValueError(
                 "\n\n--- INPUT ERROR ---\n"
                 "'Temperature Perturbation' is not defined in params.\n"
@@ -383,34 +426,7 @@ def run_openmc(build_openmc_model, heat_flux_monitor, params):
                 if params['Isothermal Temperature Coefficients']:
                     params['Shutdown Margin Calc'] = False
                     params['Common Temperature'] = original_common_temperature
-
-                    temp_T = copy.deepcopy(params['Common Temperature'])
-                    params['Common Temperature'] = params['Common Temperature'] + params['Temperature Perturbation']
-
-                    openmc_plugin = watts.PluginOpenMC(build_openmc_model, show_stderr=True)
-                    openmc_plugin(params, function=lambda: run_depletion_analysis(params))
-                    params['keff 2D high temp'] = params['keff 2D']
-                    params['keff 3D (2D corrected) high temp'] = params['keff 3D (2D corrected)']
-
-                    params['Common Temperature'] = temp_T
-
-                    openmc_plugin = watts.PluginOpenMC(build_openmc_model, show_stderr=True)
-                    openmc_plugin(params, function=lambda: run_depletion_analysis(params))
-                    params['keff 2D ARO'] = params['keff 2D']
-                    params['keff 3D (2D corrected) ARO'] = params['keff 3D (2D corrected)']
-
-                    params['Temp Coeff 2D'] = np.max([
-                        (y - x) / (y * x) / params['Temperature Perturbation'] * 1e5
-                        for x, y in zip(params['keff 2D ARO'], params['keff 2D high temp'])
-                    ])
-                    params['Temp Coeff 3D (2D corrected)'] = np.max([
-                        (y - x) / (y * x) / params['Temperature Perturbation'] * 1e5
-                        for x, y in zip(
-                            params['keff 3D (2D corrected) ARO'],
-                            params['keff 3D (2D corrected) high temp']
-                        )
-                    ])
-
+                    _run_isothermal_temperature_coefficients(build_openmc_model, params)
                     params['Shutdown Margin Calc'] = True
                 else:
                     params['Temp Coeff 2D'] = np.nan
@@ -453,32 +469,7 @@ def run_openmc(build_openmc_model, heat_flux_monitor, params):
                 params['Maximum Shutdown Margin 3D (2D corrected)'] = np.nan
 
                 if params['Isothermal Temperature Coefficients']:
-                    temp_T = copy.deepcopy(params['Common Temperature'])
-                    params['Common Temperature'] = params['Common Temperature'] + params['Temperature Perturbation']
-
-                    openmc_plugin = watts.PluginOpenMC(build_openmc_model, show_stderr=True)
-                    openmc_plugin(params, function=lambda: run_depletion_analysis(params))
-                    params['keff 2D high temp'] = params['keff 2D']
-                    params['keff 3D (2D corrected) high temp'] = params['keff 3D (2D corrected)']
-
-                    params['Common Temperature'] = temp_T
-
-                    openmc_plugin = watts.PluginOpenMC(build_openmc_model, show_stderr=True)
-                    openmc_plugin(params, function=lambda: run_depletion_analysis(params))
-                    params['keff 2D ARO'] = params['keff 2D']
-                    params['keff 3D (2D corrected) ARO'] = params['keff 3D (2D corrected)']
-
-                    params['Temp Coeff 2D'] = np.max([
-                        (y - x) / (y * x) / params['Temperature Perturbation'] * 1e5
-                        for x, y in zip(params['keff 2D ARO'], params['keff 2D high temp'])
-                    ])
-                    params['Temp Coeff 3D (2D corrected)'] = np.max([
-                        (y - x) / (y * x) / params['Temperature Perturbation'] * 1e5
-                        for x, y in zip(
-                            params['keff 3D (2D corrected) ARO'],
-                            params['keff 3D (2D corrected) high temp']
-                        )
-                    ])
+                    _run_isothermal_temperature_coefficients(build_openmc_model, params)
                 else:
                     params['Temp Coeff 2D'] = np.nan
                     params['Temp Coeff 3D (2D corrected)'] = np.nan
