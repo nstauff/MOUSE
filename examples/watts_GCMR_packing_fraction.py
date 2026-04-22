@@ -233,7 +233,7 @@ for params['Packing Fraction'] in np.linspace(0.25, 0.35, 2):
     # **************************************************************************************************************************
     update_params({
         'Land Area': 18,  # acres
-        'Escalation Year': 2024,
+        'Escalation Year': 2025,
         'Excavation Volume': 412.605,  # m^3
         'Reactor Building Slab Roof Volume': (9750*6502.4*1500)/1e9,  # m^3
         'Reactor Building Basement Volume': (9750*6502.4*1500)/1e9,  # m^3

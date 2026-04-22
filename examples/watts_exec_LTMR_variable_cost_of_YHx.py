@@ -75,13 +75,14 @@ update_params({
     'Radial Reflector Thickness': 14,  # cm
 })
 
-params['Lattice Radius'] = calculate_lattice_radius(params)
+params['Lattice Apothem'] = calculate_hex_apothem(params)
+params['Assembly FTF'] = 2 * params['Lattice Radius']
 params['Active Height'] = 78.4
 params['Axial Reflector Thickness'] = params['Radial Reflector Thickness']
 params['Fuel Pin Count'] = calculate_pins_in_assembly(params, "FUEL")
 params['Moderator Pin Count'] = calculate_pins_in_assembly(params, "MODERATOR")
 params['Moderator Mass'] = calculate_moderator_mass(params)
-params['Core Radius'] = params['Lattice Radius'] + params['Radial Reflector Thickness']
+params['Core Radius'] = calculate_core_radius_from_hex(params)
 
 # **************************************************************************************************************************
 #                                           Sec. 3: Control Drums
@@ -89,7 +90,8 @@ params['Core Radius'] = params['Lattice Radius'] + params['Radial Reflector Thic
 
 update_params({
     'Number of Drums': 12,
-    'Drum Radius': 9.016,  # cm
+    # When the user does not specify the drum radius, the code automatically sets it to the largest allowable value that avoids drum overlap
+    #'Drum Radius': 9.016,  # cm
     'Drum Absorber Thickness': 1,  # cm
     'Drum Absorber Arc Degrees': 120,
     'Drum Height': params['Active Height'] + 2*params['Axial Reflector Thickness']
@@ -237,7 +239,7 @@ params['A78: CAPEX to Decommissioning Cost Ratio'] = 0.15
 
 update_params({
     'Land Area': 18,  # acres
-    'Escalation Year': 2024,
+    'Escalation Year': 2025,
     'Excavation Volume': 412.605,  # m^3
     'Reactor Building Slab Roof Volume': (9750*6502.4*1500)/1e9,  # m^3
     'Reactor Building Basement Volume': (9750*6502.4*1500)/1e9,  # m^3
