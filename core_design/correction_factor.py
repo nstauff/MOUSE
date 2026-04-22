@@ -4,7 +4,7 @@ import openmc
 import openmc.deplete
 import openmc.mgxs
 import matplotlib.pyplot as plt
-import numpy as np 
+import numpy as np
 import glob
 import csv
 import re
@@ -13,99 +13,222 @@ def natural_sort_key(s):
     """Sort keys in a natural order (e.g., n0, n1, ..., n11)."""
     return [int(text) if text.isdigit() else text for text in re.split(r'(\d+)', s)]
 
-def corrected_keff_2d(depletion_2d_results_file, total_height): 
+def corrected_keff_2d(depletion_2d_results_file, total_height, core_radius=None):
+    """
+    Apply a leakage correction to 2D depletion keff values using a simple
+    non-leakage probability approximation.
+
+    Parameters
+    ----------
+    depletion_2d_results_file : openmc.deplete.Results
+        OpenMC depletion results file object.
+    total_height : float
+        Total axial height used for the leakage correction [cm].
+        Typically: Active Height + 2 * Axial Reflector Thickness
+    core_radius : float or None
+        Effective radial core radius [cm] for total leakage estimation.
+        If None, only axial leakage is computed and total leakage is returned as np.nan.
+
+    Returns
+    -------
+    round_cycle_length : float
+        Estimated fuel cycle length [days], based on the corrected keff curve crossing 1.0
+    time_steps : list[float]
+        Cumulative depletion time points [days]
+    keff_2d_values : list[float]
+        Uncorrected 2D keff values
+    keff_2d_corrected_values : list[float]
+        Leakage-corrected keff values
+    estimated_axial_leakage_bol_pct : float
+        Estimated axial leakage at beginning of life [%]
+    estimated_total_leakage_bol_pct : float
+        Estimated total leakage at beginning of life [%]
+    """
 
     geometry = openmc.Geometry.from_xml()
     root_universe = geometry.root_universe
-    group_edges = np.array([1e-5, 6.7e-2, 3.2e-1, 1, 4, 9.88, 4.81e1, 4.54e2, 4.9e4, 1.83e5, 8.21e5, 4e7])   # Three energy groups
+
+    # Multigroup structure used to collapse the tallied XS to a coarse representation.
+    # This is the same approach you were already using.
+    group_edges = np.array([
+        1e-5, 6.7e-2, 3.2e-1, 1, 4, 9.88,
+        4.81e1, 4.54e2, 4.9e4, 1.83e5, 8.21e5, 4e7
+    ])
     groups = openmc.mgxs.EnergyGroups(group_edges)
 
     mgxs_lib = openmc.mgxs.Library(geometry)
     mgxs_lib.energy_groups = groups
-    mgxs_lib.mgxs_types = ['absorption', 'diffusion-coefficient', 'transport', 'scatter matrix', 'total', 'scatter']
+    mgxs_lib.mgxs_types = [
+        'absorption',
+        'diffusion-coefficient',
+        'transport',
+        'scatter matrix',
+        'total',
+        'scatter'
+    ]
     mgxs_lib.domain_type = 'universe'
     mgxs_lib.domains = [root_universe]
     mgxs_lib.build_library()
 
-    # Find all state point files generated during depletion
+    # Find all statepoint files produced during depletion
     statepoint_files = sorted(glob.glob('openmc_simulation_n*.h5'), key=natural_sort_key)
-    # Initialize lists to store time steps and keff_3D values
+
+    # Arrays storing the depletion history
     time_steps = []
     keff_2d_corrected_values = []
     keff_2d_values = []
 
-    # Read the depletion results file to extract time steps
+    # These BOL leakage metrics will be computed from the first successful statepoint only.
+    estimated_axial_leakage_bol_pct = np.nan
+    estimated_total_leakage_bol_pct = np.nan
+    bol_metrics_set = False
+
+    # Read depletion times directly from the passed depletion results object
     time, _ = depletion_2d_results_file.get_keff()
-    time_days = [t / 86400 for t in time]  # Convert time to days
+    time_days = [t / 86400 for t in time]  # seconds -> days
 
-    # Open CSV file for writing results
+    # CSV output
     with open('depletion_output3.csv', 'w', newline='') as csvfile:
-
         writer = csv.writer(csvfile)
-        writer.writerow(['keff_2D', 'P_NL', 'keff_3D', 'keff_3D_Uncertainty'])
-    
-        # Iterate over all state point files
+        writer.writerow([
+            'keff_2D',
+            'P_nl_axial',
+            'P_nl_total',
+            'keff_3D',
+            'keff_3D_Uncertainty',
+            'Estimated_Axial_Leakage_pct_BOL',
+            'Estimated_Total_Leakage_pct_BOL'
+        ])
+
         for idx, sp_file in enumerate(statepoint_files):
-            # Load the state point
             sp = openmc.StatePoint(sp_file)
+
             try:
                 mgxs_lib.load_from_statepoint(sp)
-            except LookupError as e: # If the tallies are not retreived from one of the statepoint files
+            except LookupError as e:
                 print(f"Error loading MGXS from statepoint: {e}")
                 continue
 
             keff_2d = sp.keff.nominal_value
             keff_2d_uncertainty = sp.keff.std_dev
+
             abs_xs_mg = mgxs_lib.get_mgxs(root_universe, 'absorption')
             trans_xs_mg = mgxs_lib.get_mgxs(root_universe, 'transport')
             total_xs_mg = mgxs_lib.get_mgxs(root_universe, 'total')
             scatter_xs_mg = mgxs_lib.get_mgxs(root_universe, 'scatter')
 
-            #diffcoeff_mg = mgxs_lib.get_mgxs(root_universe, 'diffusion-coefficient')
+            abs_xs_array = abs_xs_mg.get_xs(
+                nuclide='total',
+                mgxs_type='absorption',
+                collapse=True
+            )
+            trans_xs_array = trans_xs_mg.get_xs(
+                nuclide='total',
+                mgxs_type='transport',
+                collapse=True
+            )
+            total_xs_array = total_xs_mg.get_xs(
+                nuclide='total',
+                mgxs_type='total',
+                collapse=True
+            )
+            scatter_xs_array = scatter_xs_mg.get_xs(
+                nuclide='total',
+                mgxs_type='scatter',
+                collapse=True
+            )
 
-            abs_xs_array = abs_xs_mg.get_xs(nuclide='total', mgxs_type='absorption', collapse=True)
-            #diffcoeff_array = diffcoeff_mg.get_xs(nuclide='total', mgxs_type='diffusion-coefficient', collapse=True)
-            trans_xs_array = trans_xs_mg.get_xs(nuclide='total', mgxs_type='transport', collapse=True)
-            total_xs_array = total_xs_mg.get_xs(nuclide='total', mgxs_type='total', collapse=True)
-            scatter_xs_array = scatter_xs_mg.get_xs(nuclide='total', mgxs_type='scatter', collapse=True)
-
-
+            # 1-group collapsed quantities
             abs_xs_1g = float(np.mean(abs_xs_array))
-            #diffcoeff_1g = float(np.mean(diffcoeff_array))
             trans_xs_1g = float(np.mean(trans_xs_array))
             total_xs_1g = float(np.mean(total_xs_array))
             scatter_xs_1g = float(np.mean(scatter_xs_array))
 
-            diffcoeff_1g = 1/(3*trans_xs_1g)
-            L_sqrt = diffcoeff_1g / abs_xs_1g
-            
-            extrapolated_height = total_height + (2*diffcoeff_1g)
+            # 1-group diffusion coefficient
+            diffcoeff_1g = 1 / (3 * trans_xs_1g)
 
-            Bg_sqrt = (np.pi / extrapolated_height) ** 2 
-            P_nl = 1 / (1 + (L_sqrt * Bg_sqrt))
+            # NOTE:
+            # Your previous variable name "L_sqrt" was actually D / Sigma_a, which has units of cm^2.
+            # That quantity is closer to diffusion length squared (L^2), not sqrt(L).
+            diffusion_length_squared = diffcoeff_1g / abs_xs_1g
 
-            keff_2d_corrected = P_nl * keff_2d
-            keff_2d_corrected_uncertainty = P_nl * keff_2d_uncertainty
-        
-            # Store the time step and keff_3D value
-            time_steps.append(time_days[idx])  # Use the actual time in days
+            # Axial leakage model:
+            # Use the extrapolated height for an axial buckling approximation.
+            extrapolated_height = total_height + (2 * diffcoeff_1g)
+            buckling_axial = (np.pi / extrapolated_height) ** 2
+
+            # Axial non-leakage probability:
+            #   P_nl,axial = 1 / (1 + L^2 * Bz^2)
+            p_nl_axial = 1 / (1 + diffusion_length_squared * buckling_axial)
+
+            # Total leakage model:
+            # If core_radius is available, include radial buckling as well.
+            #
+            # For a bare cylinder:
+            #   B_total^2 = Bz^2 + Br^2
+            # with
+            #   Bz^2 = (pi / H_ex)^2
+            #   Br^2 = (2.405 / R_ex)^2
+            #
+            # 2.405 is the first zero of J0, commonly used for cylindrical radial buckling.
+            if core_radius is not None and core_radius > 0.0:
+                extrapolated_radius = core_radius + (2 * diffcoeff_1g)
+                buckling_radial = (2.405 / extrapolated_radius) ** 2
+                buckling_total = buckling_axial + buckling_radial
+                p_nl_total = 1 / (1 + diffusion_length_squared * buckling_total)
+            else:
+                extrapolated_radius = np.nan
+                buckling_radial = np.nan
+                buckling_total = np.nan
+                p_nl_total = np.nan
+
+            # For consistency with your current workflow:
+            # the corrected keff reported by this function will continue to use the axial correction,
+            # unless/until you explicitly decide to switch the whole MOUSE corrected keff logic to total leakage.
+            keff_2d_corrected = p_nl_axial * keff_2d
+            keff_2d_corrected_uncertainty = p_nl_axial * keff_2d_uncertainty
+
+            # Store BOL leakage metrics only once, from the first successful depletion statepoint
+            if not bol_metrics_set:
+                estimated_axial_leakage_bol_pct = (1.0 - p_nl_axial) * 100.0
+
+                if not np.isnan(p_nl_total):
+                    estimated_total_leakage_bol_pct = (1.0 - p_nl_total) * 100.0
+                else:
+                    estimated_total_leakage_bol_pct = np.nan
+
+                bol_metrics_set = True
+
+            # Store depletion history
+            time_steps.append(time_days[idx])
             keff_2d_corrected_values.append(keff_2d_corrected)
             keff_2d_values.append(keff_2d)
 
             print(f"Time Step: {idx + 1}")
             print(f"keff_2D: {keff_2d:.5f}+/-{keff_2d_uncertainty:.5f}")
-            #print(f"abs_xs:{abs_xs_1g:.5f}")
-            #print(f"diff_coeff:{diffcoeff_1g:.5f}")
-            print(f"P_NL:{P_nl:.5f}")
+            print(f"P_nl_axial: {p_nl_axial:.5f}")
+            if not np.isnan(p_nl_total):
+                print(f"P_nl_total: {p_nl_total:.5f}")
             print(f"keff_2D_corrected: {keff_2d_corrected:.5f}+/-{keff_2d_corrected_uncertainty:.5f}")
-            #print(f"trans_xs:{trans_xs_1g:.5f}")
-            #print(f"total_xs:{total_xs_1g:.5f}")
-            #print(f"scatter_xs:{scatter_xs_1g:.5f}")
-        
-            writer.writerow([f"{keff_2d:.5f}", f"{P_nl:.5f}", f"{keff_2d_corrected:.5f}", f"{keff_2d_corrected_uncertainty:.5f}"])
-    
 
-    # Plot keff_2D and keff_3D vs. Actual Time Steps
+            if idx == 0:
+                print(f"Estimated Axial Leakage (BOL): {estimated_axial_leakage_bol_pct:.3f} %")
+                if not np.isnan(estimated_total_leakage_bol_pct):
+                    print(f"Estimated Total Leakage (BOL): {estimated_total_leakage_bol_pct:.3f} %")
+                else:
+                    print("Estimated Total Leakage (BOL): not computed (core_radius not provided)")
+
+            writer.writerow([
+                f"{keff_2d:.5f}",
+                f"{p_nl_axial:.5f}",
+                f"{p_nl_total:.5f}" if not np.isnan(p_nl_total) else "",
+                f"{keff_2d_corrected:.5f}",
+                f"{keff_2d_corrected_uncertainty:.5f}",
+                f"{estimated_axial_leakage_bol_pct:.5f}" if idx == 0 else "",
+                f"{estimated_total_leakage_bol_pct:.5f}" if idx == 0 and not np.isnan(estimated_total_leakage_bol_pct) else ""
+            ])
+
+    # Plot the current corrected curve versus time
     plt.figure()
     plt.plot(time_steps, keff_2d_values, marker='o', linestyle='-', color='r', label='keff_2D')
     plt.plot(time_steps, keff_2d_corrected_values, marker='o', linestyle='-', color='g', label='corrected_keff_2D')
@@ -116,23 +239,20 @@ def corrected_keff_2d(depletion_2d_results_file, total_height):
     plt.legend()
     plt.savefig('keff_comparison_vs_Time.png')
     plt.show()
-    
-    # Initialize variables for cycle length calculation
+
+    # Find cycle length from corrected keff crossing k = 1.0
     cycle_length = None
 
-    # Iterate through the corrected keff values to find the cycle length
     for i in range(1, len(keff_2d_corrected_values)):
         k1 = keff_2d_corrected_values[i - 1]
         k2 = keff_2d_corrected_values[i]
         t1 = time_steps[i - 1]
         t2 = time_steps[i]
 
-        # Check if k1 and k2 bracket the value of 1.0
         if (k1 < 1.0 <= k2) or (k2 < 1.0 <= k1):
-            # Perform linear interpolation to find the time when k = 1.0
             slope = (k2 - k1) / (t2 - t1)
             cycle_length = t1 + (1.0 - k1) / slope
-            break  # Break once the cycle length is found
+            break
 
     if cycle_length is not None:
         round_cycle_length = round(cycle_length, 0)
@@ -141,5 +261,11 @@ def corrected_keff_2d(depletion_2d_results_file, total_height):
         print("k = 1.0 not reached within the given time steps.")
         raise ValueError("Cannot compute fuel cycle length: k=1.0 was never reached.")
 
-    return round_cycle_length, time_steps, keff_2d_values, keff_2d_corrected_values    
-
+    return (
+        round_cycle_length,
+        time_steps,
+        keff_2d_values,
+        keff_2d_corrected_values,
+        estimated_axial_leakage_bol_pct,
+        estimated_total_leakage_bol_pct
+    )

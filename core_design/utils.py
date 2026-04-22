@@ -240,9 +240,28 @@ def openmc_depletion(params, lattice_geometry, settings):
 
     depletion_2d_results_file = openmc.deplete.Results("./depletion_results.h5")
 
-    fuel_lifetime_days, time_steps, keff_2d_values, keff_2d_values_corrected = corrected_keff_2d(
-    depletion_2d_results_file,
-    params['Active Height'] + 2 * params['Axial Reflector Thickness']
+    # corrected_keff_2d now returns:
+    # 1) fuel lifetime in days
+    # 2) cumulative depletion time points in days
+    # 3) raw 2D keff values
+    # 4) 3D-corrected keff values
+    # 5) beginning-of-life axial non-leakage probability
+    # 6) beginning-of-life estimated axial leakage percent
+    # 7) beginning-of-life total non-leakage probability (NaN if core radius unavailable)
+    # 8) beginning-of-life estimated total leakage percent (NaN if core radius unavailable)
+    (
+        fuel_lifetime_days,
+        time_steps,
+        keff_2d_values,
+        keff_2d_values_corrected,
+        bol_axial_non_leakage_probability,
+        bol_axial_leakage_percent,
+        bol_total_non_leakage_probability,
+        bol_total_leakage_percent,
+    ) = corrected_keff_2d(
+        depletion_2d_results_file,
+        params['Active Height'] + 2 * params['Axial Reflector Thickness'],
+        core_radius=params.get('Core Radius', np.nan)
     )
 
     try:
@@ -266,6 +285,15 @@ def openmc_depletion(params, lattice_geometry, settings):
     params['keff 2D'] = keff_2d_values
     params['keff 3D (2D corrected)'] = keff_2d_values_corrected
     params['Depletion Time Steps'] = time_steps
+
+    # Beginning-of-life leakage metrics from the axial / buckling correction model
+    params['BOL Axial Non-Leakage Probability'] = bol_axial_non_leakage_probability
+    params['Estimated Axial Leakage (%)'] = bol_axial_leakage_percent
+
+    # Total leakage uses both axial and radial buckling.
+    # If Core Radius is not available, these are returned as NaN.
+    params['BOL Total Non-Leakage Probability'] = bol_total_non_leakage_probability
+    params['Estimated Total Leakage (%)'] = bol_total_leakage_percent
 
     return fuel_lifetime_days, mass_U235, mass_U238, pf_summary
 

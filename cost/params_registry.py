@@ -520,6 +520,38 @@ PARAMS_REGISTRY = {
         'hidden': False,
         'array_mode': 'as_is'},
 
+    'BOL Axial Non-Leakage Probability': {
+        'group': 'Physics Results',
+        'units': 'fraction',
+        'description': 'Beginning-of-life axial non-leakage probability from the 2D-to-3D buckling correction model.',
+        'source': 'Calculated',
+        'hidden': False,
+        'array_mode': None},
+
+    'Estimated Axial Leakage (%)': {
+        'group': 'Physics Results',
+        'units': '%',
+        'description': 'Estimated beginning-of-life axial neutron leakage percentage from the axial buckling correction model, computed as 100 × (1 - axial non-leakage probability).',
+        'source': 'Calculated',
+        'hidden': False,
+        'array_mode': None},
+
+    'BOL Total Non-Leakage Probability': {
+        'group': 'Physics Results',
+        'units': 'fraction',
+        'description': 'Beginning-of-life total non-leakage probability from the axial-plus-radial buckling model. Returns NaN when Core Radius is not available.',
+        'source': 'Calculated',
+        'hidden': False,
+        'array_mode': None},
+
+    'Estimated Total Leakage (%)': {
+        'group': 'Physics Results',
+        'units': '%',
+        'description': 'Estimated beginning-of-life total neutron leakage percentage from the axial-plus-radial buckling model, computed as 100 × (1 - total non-leakage probability). Returns NaN when Core Radius is not available.',
+        'source': 'Calculated',
+        'hidden': False,
+        'array_mode': None},
+
     'Mass U235': {
         'group': 'Physics Results', 'units': 'g',
         'description': 'Initial mass of U-235 in the fresh fuel load',
