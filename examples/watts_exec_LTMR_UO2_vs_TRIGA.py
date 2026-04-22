@@ -112,10 +112,12 @@ for params['Fuel'] in ['TRIGA_fuel', 'UO2']:
     #                                           Sec. 5: Running OpenMC
     # **************************************************************************************************************************
 
-    # --- Shutdown Margin (SDM) ---
-    # Set to True to run an additional ARI simulation and calculate the shutdown margin (pcm).
-    # Currently disabled to save computation time. Enable for final design verification.
-    # See watts_exec_LTMR.py for an example with Shutdown Margin Calc = True.
+    # --- Shutdown Margin  ---
+    # When True, additional OpenMC simulations are run to evaluate shutdown margin.
+    # The model is evaluated in both operating (ARO) and shutdown (ARI) drum configurations.
+    # Shutdown margin is then computed from the two configurations.
+    # Recommended: True for final design verification; can be set to False to save
+    # computation time during early design exploration.
     params['Shutdown Margin Calc'] = False  # True or False
 
     # --- Isothermal Temperature Coefficient ---
