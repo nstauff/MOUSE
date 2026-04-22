@@ -143,6 +143,7 @@ def _build_ltmr(params):
         'Fuel': 'TRIGA_fuel',
         'H_Zr_ratio': 1.6,
         'U_met_wo': 0.3,
+        'er_wo': 0,
         'Coolant': 'NaK',
         'Radial Reflector': 'Graphite',
         'Axial Reflector': 'Graphite',
@@ -175,8 +176,10 @@ def _build_ltmr(params):
 
     # Sec 3: Control drums
     params.update({
+        'Number of Drums': 12,
         'Drum Radius': 9.016,
         'Drum Absorber Thickness': 1,
+        'Drum Absorber Arc Degrees': 120,
         'Drum Height': params['Active Height'] + 2 * params['Axial Reflector Thickness'],
     })
     calculate_drums_volumes_and_masses(params)

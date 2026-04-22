@@ -15,7 +15,7 @@ def calculate_drums_volumes_and_masses(params):
         drum_absorp_vol = (3.14*( DRUM_RADIUS * DRUM_RADIUS - (DRUM_RADIUS-absorber_thickness)*(DRUM_RADIUS-absorber_thickness) )*drum_height)/3    
     drum_refl_vol = drum_volume - drum_absorp_vol 
     if params['reactor type'] == "LTMR":
-        number_of_drums = 12 
+        number_of_drums = params['Number of Drums']
         params['Drum Count'] = number_of_drums
     elif params['reactor type'] == "GCMR":
         if 'Drum Count' in params.keys():
@@ -172,7 +172,7 @@ def calculate_reflector_and_moderator_mass_HPMR_vtb(params):
     # Remove drum area from the last ring
     DRUM_RADIUS = params['Drum Radius']
     drum_area = 3.14*DRUM_RADIUS * DRUM_RADIUS
-    number_of_drums = 12 
+    number_of_drums = 12
     params['Moderator Total Area'] = big_hex_area - fuel_area - heatpipe_area - moderator_booster_area - drum_area*number_of_drums
     params['Moderator Mass'] = params['Moderator Total Area'] * params['Active Height'] * materials_database[params['Moderator']].density / 1000 #Kg
 

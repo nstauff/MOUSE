@@ -48,7 +48,7 @@ update_params({
     'Enrichment': 0.1975,  # Fraction between 0 and 1
     "H_Zr_ratio": 1.6,  # Proportion of hydrogen to zirconium atoms
     'U_met_wo': 0.3,  # Weight ratio of Uranium to total fuel weight (less than 1)
-    'er_wo':0,        # Erbium (burnabl poiston)
+    'er_wo': 0,       # Erbium (burnable poison)
     'Coolant': 'NaK',
     'Radial Reflector': 'Graphite',
     'Axial Reflector': 'Graphite',

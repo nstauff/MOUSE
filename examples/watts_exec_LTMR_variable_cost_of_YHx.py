@@ -48,6 +48,7 @@ update_params({
     'Enrichment': 0.1975,  # Fraction between 0 and 1
     "H_Zr_ratio": 1.6,
     'U_met_wo': 0.3,
+    'er_wo': 0,         # Erbium (burnable poison)
     'Coolant': 'NaK',
     'Radial Reflector': 'Graphite',
     'Axial Reflector': 'Graphite',
@@ -87,8 +88,10 @@ params['Core Radius'] = params['Lattice Radius'] + params['Radial Reflector Thic
 # ************************************************************************************************************************** 
 
 update_params({
+    'Number of Drums': 12,
     'Drum Radius': 9.016,  # cm
     'Drum Absorber Thickness': 1,  # cm
+    'Drum Absorber Arc Degrees': 120,
     'Drum Height': params['Active Height'] + 2*params['Axial Reflector Thickness']
 })
 

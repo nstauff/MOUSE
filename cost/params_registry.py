@@ -94,6 +94,11 @@ PARAMS_REGISTRY = {
         'description': 'Weight fraction of uranium metal in TRIGA fuel (remainder is ZrH matrix)',
         'source': 'User Input', 'hidden': False, 'array_mode': None},
 
+    'er_wo': {
+        'group': 'Materials', 'units': 'weight fraction',
+        'description': 'Weight fraction of erbium burnable poison in TRIGA fuel (0 means no erbium)',
+        'source': 'User Input', 'hidden': False, 'array_mode': None},
+
     'UO2 atom fraction': {
         'group': 'Materials', 'units': 'fraction',
         'description': 'Atom fraction of UO2 in the UCO mixed fuel (remainder is UC)',
@@ -320,6 +325,16 @@ PARAMS_REGISTRY = {
     # =========================================================
     # Control Drums
     # =========================================================
+    'Number of Drums': {
+        'group': 'Control Drums', 'units': '',
+        'description': 'Number of control drums in the core (e.g. 6, 12)',
+        'source': 'User Input', 'hidden': False, 'array_mode': None},
+
+    'Drum Absorber Arc Degrees': {
+        'group': 'Control Drums', 'units': 'degrees',
+        'description': 'Angular span of the absorber arc on each control drum',
+        'source': 'User Input', 'hidden': False, 'array_mode': None},
+
     'Drum Radius': {
         'group': 'Control Drums', 'units': 'cm',
         'description': 'Outer radius of each control drum',
