@@ -327,7 +327,7 @@ def _build_ltmr(params):
         'Interest Rate': 0.07,
         'Discount Rate': 0.07,
         'Construction Duration': 12,
-        'Debt To Equity Ratio': 0.5,
+        'Debt To Equity Ratio': 1,
     })
     # ITC/PTC credits are controlled by the user via the webapp — not hardcoded here.
 
@@ -531,7 +531,7 @@ def _build_gcmr(params):
         'Interest Rate': 0.07,
         'Discount Rate': 0.07,
         'Construction Duration': 12,
-        'Debt To Equity Ratio': 0.5,
+        'Debt To Equity Ratio': 1,
     })
     # ITC/PTC credits are controlled by the user via the webapp — not hardcoded here.
 
@@ -728,7 +728,7 @@ def _build_hpmr(params):
         'Interest Rate': 0.07,
         'Discount Rate': 0.07,
         'Construction Duration': 12,
-        'Debt To Equity Ratio': 0.5,
+        'Debt To Equity Ratio': 1,
     })
     # No ITC/PTC credits for HPMR by default
 
