@@ -177,7 +177,6 @@ def _build_ltmr(params):
     # Sec 3: Control drums
     params.update({
         'Number of Drums': 12,
-        'Drum Radius': 9.016,
         'Drum Absorber Thickness': 1,
         'Drum Absorber Arc Degrees': 120,
         'Drum Height': params['Active Height'] + 2 * params['Axial Reflector Thickness'],

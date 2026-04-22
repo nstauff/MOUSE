@@ -88,7 +88,8 @@ params['Core Radius'] = params['Lattice Radius'] + params['Radial Reflector Thic
 
 update_params({
     'Number of Drums': 12,
-    'Drum Radius': 9.016, #,  # cm
+    # When the user does not specify the drum radius, the code automatically sets it to the largest allowable value that avoids drum overlap
+    #'Drum Radius': 9.016, #,  # cm
     'Drum Absorber Thickness': 1,  # cm
     'Drum Absorber Arc Degrees': 120,
     'Drum Height': params['Active Height'] + 2*params['Axial Reflector Thickness']

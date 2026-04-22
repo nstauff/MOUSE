@@ -60,14 +60,132 @@ def create_pin_regions(params, pin_type):
     return regions
 
 
+def _get_valid_drum_counts():
+    return [6, 12, 18, 24, 30, 36]
+
+
+def _get_drum_layout_quantities(params, drum_radius):
+    number_of_drums = params['Number of Drums']
+    valid_drum_counts = _get_valid_drum_counts()
+    if number_of_drums not in valid_drum_counts:
+        raise ValueError(f"Number of Drums must be one of {valid_drum_counts}, got {number_of_drums}")
+
+    drums_per_side = number_of_drums // 6
+
+    pin_pitch = 2 * params['Fuel Pin Radii'][-1] + params['Pin Gap Distance']
+    hex_edge_length = pin_pitch * (params['Number of Rings per Assembly'] - 1) + pin_pitch * 0.6
+    apothem = np.sin(np.pi / 3) * hex_edge_length
+
+    drum_tube_radius = drum_radius + drum_radius / 90.0
+    side_length = hex_edge_length
+
+    return drums_per_side, hex_edge_length, apothem, drum_tube_radius, side_length
+
+
+def _drum_positions_for_radius(params, drum_radius):
+    drums_per_side, _, apothem, drum_tube_radius, side_length = _get_drum_layout_quantities(params, drum_radius)
+
+    face_angles = [k * np.pi / 3 for k in range(6)]
+    positions = []
+
+    for face_angle in face_angles:
+        along_x = -np.sin(face_angle)
+        along_y = np.cos(face_angle)
+
+        radial_distance = apothem + drum_tube_radius
+        face_center_x = radial_distance * np.cos(face_angle)
+        face_center_y = radial_distance * np.sin(face_angle)
+
+        for i in range(drums_per_side):
+            offset = side_length * (i - (drums_per_side - 1) / 2.0) / drums_per_side
+            x = face_center_x + offset * along_x
+            y = face_center_y + offset * along_y
+            positions.append((x, y, np.degrees(face_angle)))
+
+    return positions, drum_tube_radius, side_length
+
+
+def _drum_radius_is_feasible(params, drum_radius):
+    positions, drum_tube_radius, side_length = _drum_positions_for_radius(params, drum_radius)
+    drums_per_side = params['Number of Drums'] // 6
+
+    # Same-face spacing check
+    same_face_spacing = side_length / drums_per_side
+    if 2.0 * drum_tube_radius > same_face_spacing:
+        return False
+
+    # Full pairwise overlap check
+    min_center_dist = 2.0 * drum_tube_radius
+    for i in range(len(positions)):
+        x1, y1, _ = positions[i]
+        for j in range(i + 1, len(positions)):
+            x2, y2, _ = positions[j]
+            dist = np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+            if dist < min_center_dist:
+                return False
+
+    return True
+
+
+def calculate_max_drum_radius(params, tol=1e-6, max_iter=100):
+    """
+    Compute the maximum feasible drum radius (cm) that avoids overlap for the
+    current lattice/drum configuration.
+    """
+    number_of_drums = params['Number of Drums']
+    valid_drum_counts = _get_valid_drum_counts()
+    if number_of_drums not in valid_drum_counts:
+        raise ValueError(f"Number of Drums must be one of {valid_drum_counts}, got {number_of_drums}")
+
+    drums_per_side = number_of_drums // 6
+    pin_pitch = 2 * params['Fuel Pin Radii'][-1] + params['Pin Gap Distance']
+    hex_edge_length = pin_pitch * (params['Number of Rings per Assembly'] - 1) + pin_pitch * 0.6
+    side_length = hex_edge_length
+
+    # Same-face spacing gives a safe upper bound for the physical drum radius
+    upper_bound = (side_length / (2.0 * drums_per_side)) * 90.0 / 91.0
+    lower_bound = 0.0
+
+    for _ in range(max_iter):
+        mid = 0.5 * (lower_bound + upper_bound)
+        if _drum_radius_is_feasible(params, mid):
+            lower_bound = mid
+        else:
+            upper_bound = mid
+
+        if upper_bound - lower_bound < tol:
+            break
+
+    return lower_bound
+
+
+def resolve_drum_radius(params):
+    """
+    If Drum Radius is not provided, set it to the maximum feasible value (cm).
+    The resolved numeric value overwrites params['Drum Radius'] so all
+    downstream calculations use a number.
+    """
+    if 'Drum Radius' not in params:
+        params['Drum Radius'] = calculate_max_drum_radius(params)
+
+    drum_radius = params['Drum Radius']
+    if not isinstance(drum_radius, (int, float, np.floating)):
+        raise ValueError(
+            f"Drum Radius must be numeric if provided, got {drum_radius!r}"
+        )
+
+    params['Drum Radius'] = float(drum_radius)
+    return params['Drum Radius']
+
+
 def create_drums_universe(params, control_drum_absorber_material, control_drum_reflector_material, drum_positions):
     number_of_drums = params['Number of Drums']
-    valid_drum_counts = [6, 12, 18, 24, 30, 36]
+    valid_drum_counts = _get_valid_drum_counts()
     if number_of_drums not in valid_drum_counts:
         raise ValueError(f"Number of Drums must be one of {valid_drum_counts}, got {number_of_drums}")
 
     absorber_thickness = params['Drum Absorber Thickness']
-    drum_radius = params['Drum Radius']
+    drum_radius = resolve_drum_radius(params)
     absorber_arc = np.deg2rad(params['Drum Absorber Arc Degrees'])
 
     # Shutdown Margin Calc = True means build drums in shutdown (ARI) orientation.
@@ -155,7 +273,7 @@ def create_control_drums_positions(params):
     touching each face from outside, evenly spaced along the face length.
     """
     number_of_drums = params['Number of Drums']
-    valid_drum_counts = [6, 12, 18, 24, 30, 36]
+    valid_drum_counts = _get_valid_drum_counts()
     if number_of_drums not in valid_drum_counts:
         raise ValueError(
             f"Number of Drums must be one of {valid_drum_counts}, got {number_of_drums}"
@@ -167,7 +285,7 @@ def create_control_drums_positions(params):
     hex_edge_length = pin_pitch * (params['Number of Rings per Assembly'] - 1) + pin_pitch * 0.6
     apothem = np.sin(np.pi / 3) * hex_edge_length
 
-    drum_radius = params['Drum Radius']
+    drum_radius = resolve_drum_radius(params)
     drum_tube_radius = drum_radius + drum_radius / 90.0
     side_length = hex_edge_length
 
@@ -186,7 +304,7 @@ def create_control_drums_positions(params):
     positions = []
     for face_angle in face_angles:
         along_x = -np.sin(face_angle)
-        along_y =  np.cos(face_angle)
+        along_y = np.cos(face_angle)
 
         # Drum centers are placed just outside each hex face
         radial_distance = apothem + drum_tube_radius
@@ -217,13 +335,13 @@ def create_control_drums_positions(params):
     return positions
 
 
-
 def create_core_geometry(params, drums, drums_positions, assembly_universe):
     """
     Build the full 2D radial core geometry with reflector-embedded control drums.
     Includes overlap checks and places each drum at its prescribed position.
     """
-    params['Drum Tube Radius'] = params['Drum Radius'] + params['Drum Radius'] / 90.0
+    drum_radius = resolve_drum_radius(params)
+    params['Drum Tube Radius'] = drum_radius + drum_radius / 90.0
     drum_tube_radius = params['Drum Tube Radius']
 
     # Outer vacuum boundary
@@ -283,6 +401,10 @@ def build_openmc_model_LTMR(params):
 
     params.setdefault('Shutdown Margin Calc', False)
     params.setdefault('Isothermal Temperature Coefficients', False)
+
+    # Ensure Drum Radius always becomes numeric before any downstream drum geometry use
+    resolve_drum_radius(params)
+
     # **************************************************************************************************************************
     #                                                Sec. 1.1 : MATERIALS
     # **************************************************************************************************************************
@@ -419,7 +541,7 @@ def build_openmc_model_LTMR(params):
     core_geometry, core = create_core_geometry(params,
                                          drums,
                                          drums_positions = control_drum_positions,
-                                         assembly_universe  = assembly_universe )
+                                         assembly_universe  = assembly_universe)
 
 
     core_geometry.export_to_xml()
