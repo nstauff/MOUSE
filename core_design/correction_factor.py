@@ -9,9 +9,11 @@ import glob
 import csv
 import re
 
+
 def natural_sort_key(s):
     """Sort keys in a natural order (e.g., n0, n1, ..., n11)."""
     return [int(text) if text.isdigit() else text for text in re.split(r'(\d+)', s)]
+
 
 def corrected_keff_2d(depletion_2d_results_file, total_height, core_radius=None):
     """
@@ -27,29 +29,34 @@ def corrected_keff_2d(depletion_2d_results_file, total_height, core_radius=None)
         Typically: Active Height + 2 * Axial Reflector Thickness
     core_radius : float or None
         Effective radial core radius [cm] for total leakage estimation.
-        If None, only axial leakage is computed and total leakage is returned as np.nan.
+        If None, only axial leakage is computed and total leakage metrics are
+        returned as np.nan.
 
     Returns
     -------
     round_cycle_length : float
-        Estimated fuel cycle length [days], based on the corrected keff curve crossing 1.0
+        Estimated fuel cycle length [days], based on the corrected keff curve crossing 1.0.
     time_steps : list[float]
-        Cumulative depletion time points [days]
+        Cumulative depletion time points [days].
     keff_2d_values : list[float]
-        Uncorrected 2D keff values
+        Uncorrected 2D keff values.
     keff_2d_corrected_values : list[float]
-        Leakage-corrected keff values
+        Axial-leakage-corrected keff values.
+    bol_axial_non_leakage_probability : float
+        Beginning-of-life axial non-leakage probability.
     estimated_axial_leakage_bol_pct : float
-        Estimated axial leakage at beginning of life [%]
+        Estimated beginning-of-life axial leakage [%].
+    bol_total_non_leakage_probability : float
+        Beginning-of-life total non-leakage probability including axial and radial
+        buckling. Returned as np.nan when core_radius is not provided.
     estimated_total_leakage_bol_pct : float
-        Estimated total leakage at beginning of life [%]
+        Estimated beginning-of-life total leakage [%]. Returned as np.nan when
+        core_radius is not provided.
     """
 
     geometry = openmc.Geometry.from_xml()
     root_universe = geometry.root_universe
 
-    # Multigroup structure used to collapse the tallied XS to a coarse representation.
-    # This is the same approach you were already using.
     group_edges = np.array([
         1e-5, 6.7e-2, 3.2e-1, 1, 4, 9.88,
         4.81e1, 4.54e2, 4.9e4, 1.83e5, 8.21e5, 4e7
@@ -70,24 +77,21 @@ def corrected_keff_2d(depletion_2d_results_file, total_height, core_radius=None)
     mgxs_lib.domains = [root_universe]
     mgxs_lib.build_library()
 
-    # Find all statepoint files produced during depletion
     statepoint_files = sorted(glob.glob('openmc_simulation_n*.h5'), key=natural_sort_key)
 
-    # Arrays storing the depletion history
     time_steps = []
     keff_2d_corrected_values = []
     keff_2d_values = []
 
-    # These BOL leakage metrics will be computed from the first successful statepoint only.
+    bol_axial_non_leakage_probability = np.nan
+    bol_total_non_leakage_probability = np.nan
     estimated_axial_leakage_bol_pct = np.nan
     estimated_total_leakage_bol_pct = np.nan
     bol_metrics_set = False
 
-    # Read depletion times directly from the passed depletion results object
     time, _ = depletion_2d_results_file.get_keff()
-    time_days = [t / 86400 for t in time]  # seconds -> days
+    time_days = [t / 86400 for t in time]
 
-    # CSV output
     with open('depletion_output3.csv', 'w', newline='') as csvfile:
         writer = csv.writer(csvfile)
         writer.writerow([
@@ -138,68 +142,42 @@ def corrected_keff_2d(depletion_2d_results_file, total_height, core_radius=None)
                 collapse=True
             )
 
-            # 1-group collapsed quantities
             abs_xs_1g = float(np.mean(abs_xs_array))
             trans_xs_1g = float(np.mean(trans_xs_array))
             total_xs_1g = float(np.mean(total_xs_array))
             scatter_xs_1g = float(np.mean(scatter_xs_array))
 
-            # 1-group diffusion coefficient
             diffcoeff_1g = 1 / (3 * trans_xs_1g)
-
-            # NOTE:
-            # Your previous variable name "L_sqrt" was actually D / Sigma_a, which has units of cm^2.
-            # That quantity is closer to diffusion length squared (L^2), not sqrt(L).
             diffusion_length_squared = diffcoeff_1g / abs_xs_1g
 
-            # Axial leakage model:
-            # Use the extrapolated height for an axial buckling approximation.
             extrapolated_height = total_height + (2 * diffcoeff_1g)
             buckling_axial = (np.pi / extrapolated_height) ** 2
-
-            # Axial non-leakage probability:
-            #   P_nl,axial = 1 / (1 + L^2 * Bz^2)
             p_nl_axial = 1 / (1 + diffusion_length_squared * buckling_axial)
 
-            # Total leakage model:
-            # If core_radius is available, include radial buckling as well.
-            #
-            # For a bare cylinder:
-            #   B_total^2 = Bz^2 + Br^2
-            # with
-            #   Bz^2 = (pi / H_ex)^2
-            #   Br^2 = (2.405 / R_ex)^2
-            #
-            # 2.405 is the first zero of J0, commonly used for cylindrical radial buckling.
             if core_radius is not None and core_radius > 0.0:
                 extrapolated_radius = core_radius + (2 * diffcoeff_1g)
                 buckling_radial = (2.405 / extrapolated_radius) ** 2
                 buckling_total = buckling_axial + buckling_radial
                 p_nl_total = 1 / (1 + diffusion_length_squared * buckling_total)
             else:
-                extrapolated_radius = np.nan
-                buckling_radial = np.nan
-                buckling_total = np.nan
                 p_nl_total = np.nan
 
-            # For consistency with your current workflow:
-            # the corrected keff reported by this function will continue to use the axial correction,
-            # unless/until you explicitly decide to switch the whole MOUSE corrected keff logic to total leakage.
             keff_2d_corrected = p_nl_axial * keff_2d
             keff_2d_corrected_uncertainty = p_nl_axial * keff_2d_uncertainty
 
-            # Store BOL leakage metrics only once, from the first successful depletion statepoint
             if not bol_metrics_set:
+                bol_axial_non_leakage_probability = p_nl_axial
                 estimated_axial_leakage_bol_pct = (1.0 - p_nl_axial) * 100.0
 
                 if not np.isnan(p_nl_total):
+                    bol_total_non_leakage_probability = p_nl_total
                     estimated_total_leakage_bol_pct = (1.0 - p_nl_total) * 100.0
                 else:
+                    bol_total_non_leakage_probability = np.nan
                     estimated_total_leakage_bol_pct = np.nan
 
                 bol_metrics_set = True
 
-            # Store depletion history
             time_steps.append(time_days[idx])
             keff_2d_corrected_values.append(keff_2d_corrected)
             keff_2d_values.append(keff_2d)
@@ -228,7 +206,6 @@ def corrected_keff_2d(depletion_2d_results_file, total_height, core_radius=None)
                 f"{estimated_total_leakage_bol_pct:.5f}" if idx == 0 and not np.isnan(estimated_total_leakage_bol_pct) else ""
             ])
 
-    # Plot the current corrected curve versus time
     plt.figure()
     plt.plot(time_steps, keff_2d_values, marker='o', linestyle='-', color='r', label='keff_2D')
     plt.plot(time_steps, keff_2d_corrected_values, marker='o', linestyle='-', color='g', label='corrected_keff_2D')
@@ -240,7 +217,6 @@ def corrected_keff_2d(depletion_2d_results_file, total_height, core_radius=None)
     plt.savefig('keff_comparison_vs_Time.png')
     plt.show()
 
-    # Find cycle length from corrected keff crossing k = 1.0
     cycle_length = None
 
     for i in range(1, len(keff_2d_corrected_values)):
@@ -266,6 +242,8 @@ def corrected_keff_2d(depletion_2d_results_file, total_height, core_radius=None)
         time_steps,
         keff_2d_values,
         keff_2d_corrected_values,
+        bol_axial_non_leakage_probability,
         estimated_axial_leakage_bol_pct,
+        bol_total_non_leakage_probability,
         estimated_total_leakage_bol_pct
     )
