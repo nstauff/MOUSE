@@ -67,33 +67,38 @@ def create_drums_universe(params, control_drum_absorber_material, control_drum_r
         raise ValueError(f"Number of Drums must be one of {valid_drum_counts}, got {number_of_drums}")
 
     absorber_thickness = params['Drum Absorber Thickness']
-
-=======
     drum_radius = params['Drum Radius']
     absorber_arc = np.deg2rad(params['Drum Absorber Arc Degrees'])
-    rotation_angle = 180
-    if params['Shutdown Margin Calc']:
->>>>>>> Stashed changes
-        rotation_angle = 0
-    else:
-        rotation_angle = 180
+
+    # Shutdown Margin Calc = True means build drums in shutdown (ARI) orientation.
+    # Shutdown Margin Calc = False means build drums in operating (ARO) orientation.
+    drum_state = 'shutdown' if params['Shutdown Margin Calc'] else 'operation'
+    rotation_angle = 0 if drum_state == 'shutdown' else 180
 
     cd_inner_shell = openmc.ZCylinder(r=drum_radius - absorber_thickness)
     cd_outer_shell = openmc.ZCylinder(r=drum_radius)
-    cutting_plane_1 = openmc.Plane(a=np.sin(absorber_arc/2), b= np.cos(absorber_arc/2))
-    cutting_plane_2 = openmc.Plane(a=np.sin(absorber_arc/2), b=-np.cos(absorber_arc/2))
+    cutting_plane_1 = openmc.Plane(a=np.sin(absorber_arc / 2), b=np.cos(absorber_arc / 2))
+    cutting_plane_2 = openmc.Plane(a=np.sin(absorber_arc / 2), b=-np.cos(absorber_arc / 2))
 
     drum_absorber_region = +cd_inner_shell & -cd_outer_shell & -cutting_plane_1 & -cutting_plane_2
     drum_reflector_region = -cd_outer_shell & ~drum_absorber_region
-    drum_outside_region   = +cd_outer_shell
+    drum_outside_region = +cd_outer_shell
 
-    drum_absorber = openmc.Cell(name='drum_absorber', fill=control_drum_absorber_material, region=drum_absorber_region)
-    drum_reflector = openmc.Cell(name='drum_reflector', fill=control_drum_reflector_material, region=drum_reflector_region)
-    drum_exterior  = openmc.Cell(name='drum_outside', region=drum_outside_region)
+    drum_absorber = openmc.Cell(
+        name='drum_absorber',
+        fill=control_drum_absorber_material,
+        region=drum_absorber_region
+    )
+    drum_reflector = openmc.Cell(
+        name='drum_reflector',
+        fill=control_drum_reflector_material,
+        region=drum_reflector_region
+    )
+    drum_exterior = openmc.Cell(name='drum_outside', region=drum_outside_region)
     drum_reference = openmc.Universe(cells=(drum_reflector, drum_absorber, drum_exterior))
 
     drum_cells = []
-    for i, (x, y, face_angle_deg) in enumerate(drum_positions):
+    for i, (_, _, face_angle_deg) in enumerate(drum_positions):
         dc = openmc.Cell(name=f'drum_{i}', fill=drum_reference)
         dc.rotation = [0, 0, face_angle_deg + rotation_angle]
         drum_cells.append(dc)
@@ -294,7 +299,7 @@ def build_openmc_model_LTMR(params):
     
 
     # **************************************************************************************************************************
-    #                                                Sec. 1.2 : GEOMETRY: Fuel Pins, Moderator Pins, Coolant
+    #                                                Sec. 1.2 : Pin Cell Universes and Coolant
     # **************************************************************************************************************************
     
     # Creating Fuel Pins regions
@@ -367,13 +372,9 @@ def build_openmc_model_LTMR(params):
     coolant_cell = openmc.Cell(fill=coolant)
     coolant_universe = openmc.Universe(cells=(coolant_cell,))
    
+
     # **************************************************************************************************************************
-    #                                                Sec. 1.3 : CONTROL DRUMS
-    # **************************************************************************************************************************
-    
-    
-    # **************************************************************************************************************************
-    #                                                Sec. 1.4 : Fuel Assembly
+    #                                                Sec. 1.3 : Fuel Assembly Universe
     # **************************************************************************************************************************
     
     # The center-to-center distance between adjacent fuel/moderator pins
@@ -388,7 +389,7 @@ def build_openmc_model_LTMR(params):
 
 
     # # **************************************************************************************************************************
-    # #                                                Sec. 1.5 : VOLUME INFO for Depletion
+    # #                                                Sec. 1.4 : Material Volumes and Materials XML
     # # **************************************************************************************************************************
     #find where the fuel is in the fuel pin
     fuel_index = params['Fuel Pin Materials'].index(params['Fuel'])
@@ -409,7 +410,7 @@ def build_openmc_model_LTMR(params):
     
 
     # # **************************************************************************************************************************
-    # #                                                Sec. 1.6 : CORE DRUM REPLACEMENT
+    # #                                                Sec. 1.5 : Control Drum Placement and Core Geometry
     # # **************************************************************************************************************************
 
     control_drum_positions = create_control_drums_positions(params)
@@ -424,16 +425,17 @@ def build_openmc_model_LTMR(params):
     core_geometry.export_to_xml()
     
     if params['plotting'] == "Y":
-        create_universe_plot(materials_database, core_geometry, 
-                        plot_width = 2.01 * params['Core Radius'],
-                        num_pixels = 2000, 
-                        font_size = 32,
-                        title = "Reactor Core", 
-                        fig_size = 8, 
-                        output_file_name = "core.png")
+        drum_state_label = "shutdown" if params['Shutdown Margin Calc'] else "operation"
+        create_universe_plot(materials_database, core_geometry,
+                plot_width = 2.01 * params['Core Radius'],
+                num_pixels = 2000,
+                font_size = 32,
+                title = f"Reactor Core - {drum_state_label.capitalize()}",
+                fig_size = 8,
+                output_file_name = f"core_{drum_state_label}.png")
     
     # # **************************************************************************************************************************
-    # #                                                Sec. 1.7 : TALLIES
+    # #                                                Sec. 1.6 : TALLIES
     # # **************************************************************************************************************************
 
     tallies_file = openmc.Tallies()
@@ -459,7 +461,7 @@ def build_openmc_model_LTMR(params):
     tallies_file.export_to_xml()
 
     # # **************************************************************************************************************************
-    # #                                                Sec. 1.8 : SIMULATION
+    # #                                                Sec. 1.7 : OpenMC Settings
     # # **************************************************************************************************************************
  
     point = openmc.stats.Point((0, 0, 0))
@@ -471,7 +473,7 @@ def build_openmc_model_LTMR(params):
     if 'Particles' in params.keys():
         settings.particles = int(params['Particles'])#1000
     else:
-        settings.particles = 2000 
+        settings.particles = 1000 
     if params['Isothermal Temperature Coefficients']:
         settings.temperature = {'default': params['Common Temperature'],
                                  'method': 'interpolation',
