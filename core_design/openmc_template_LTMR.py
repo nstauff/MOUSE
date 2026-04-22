@@ -3,7 +3,13 @@
 import openmc
 import numpy as np
 from core_design.openmc_materials_database import collect_materials_data
-from core_design.utils import create_universe_plot, circle_area, create_cells
+from core_design.utils import (
+    create_universe_plot,
+    circle_area,
+    create_cells,
+    calculate_hex_edge_length,
+    calculate_hex_apothem,
+)
 import copy
 
 
@@ -71,10 +77,8 @@ def _get_drum_layout_quantities(params, drum_radius):
         raise ValueError(f"Number of Drums must be one of {valid_drum_counts}, got {number_of_drums}")
 
     drums_per_side = number_of_drums // 6
-
-    pin_pitch = 2 * params['Fuel Pin Radii'][-1] + params['Pin Gap Distance']
-    hex_edge_length = pin_pitch * (params['Number of Rings per Assembly'] - 1) + pin_pitch * 0.6
-    apothem = np.sin(np.pi / 3) * hex_edge_length
+    hex_edge_length = calculate_hex_edge_length(params)
+    apothem = calculate_hex_apothem(params)
 
     drum_tube_radius = drum_radius + drum_radius / 90.0
     side_length = hex_edge_length
@@ -138,8 +142,7 @@ def calculate_max_drum_radius(params, tol=1e-6, max_iter=100):
         raise ValueError(f"Number of Drums must be one of {valid_drum_counts}, got {number_of_drums}")
 
     drums_per_side = number_of_drums // 6
-    pin_pitch = 2 * params['Fuel Pin Radii'][-1] + params['Pin Gap Distance']
-    hex_edge_length = pin_pitch * (params['Number of Rings per Assembly'] - 1) + pin_pitch * 0.6
+    hex_edge_length = calculate_hex_edge_length(params)
     side_length = hex_edge_length
 
     # Same-face spacing gives a safe upper bound for the physical drum radius
@@ -254,8 +257,9 @@ def create_assembly_universe(params, fuel_pin_universe, moderator_pin_universe, 
 
     assembly.universes = rings
 
+    hex_edge_length = calculate_hex_edge_length(params)
     assembly_boundary = openmc.model.hexagonal_prism(
-        edge_length=pin_pitch * (params['Number of Rings per Assembly'] - 1) + pin_pitch * 0.6,
+        edge_length=hex_edge_length,
         corner_radius=(params['Fuel Pin Radii'])[-1] + params["Pin Gap Distance"]
     )
 
@@ -281,9 +285,8 @@ def create_control_drums_positions(params):
 
     drums_per_side = number_of_drums // 6
 
-    pin_pitch = 2 * params['Fuel Pin Radii'][-1] + params['Pin Gap Distance']
-    hex_edge_length = pin_pitch * (params['Number of Rings per Assembly'] - 1) + pin_pitch * 0.6
-    apothem = np.sin(np.pi / 3) * hex_edge_length
+    hex_edge_length = calculate_hex_edge_length(params)
+    apothem = calculate_hex_apothem(params)
 
     drum_radius = resolve_drum_radius(params)
     drum_tube_radius = drum_radius + drum_radius / 90.0

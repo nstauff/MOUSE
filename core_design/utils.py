@@ -38,12 +38,43 @@ def cylinder_radial_shell(r, h):
     # calculating the outer area of a cylinder
     return circle_perimeter(r) * h
 
-
 def calculate_lattice_radius(params):
-    pin_diameter = 2 * params['Fuel Pin Radii'][-1]
-    lattice_radius = pin_diameter * params['Number of Rings per Assembly'] + \
-        params["Pin Gap Distance"] * (params['Number of Rings per Assembly'] - 1)
-    return lattice_radius
+    """
+    Backward-compatible helper.
+
+    For LTMR, this returns the hex apothem used historically under the
+    name 'Lattice Radius'. Prefer calculate_hex_apothem() in new code.
+    """
+    return calculate_hex_apothem(params)
+    
+
+def calculate_hex_edge_length(params):
+    """
+    Hex edge length used for the LTMR assembly boundary and drum layout.
+    This matches the geometry logic used in the OpenMC LTMR template.
+    """
+    pin_pitch = 2 * params['Fuel Pin Radii'][-1] + params['Pin Gap Distance']
+    return pin_pitch * (params['Number of Rings per Assembly'] - 1) + pin_pitch * 0.6
+
+
+def calculate_hex_apothem(params):
+    """
+    Distance from the hex center to the middle of a flat face.
+    This is the most useful single size measure for the LTMR hex lattice.
+    """
+    hex_edge_length = calculate_hex_edge_length(params)
+    return np.sin(np.pi / 3) * hex_edge_length
+
+
+def calculate_core_radius_from_hex(params):
+    """
+    Circular outer radius used by the 2D OpenMC radial model and by the
+    leakage approximation.
+
+    It is defined from the fuel-lattice hex apothem plus the radial reflector
+    thickness.
+    """
+    return calculate_hex_apothem(params) + params['Radial Reflector Thickness']
 
 
 def calculate_heat_flux(params):

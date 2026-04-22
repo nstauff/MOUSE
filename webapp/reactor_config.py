@@ -19,6 +19,8 @@ ESCALATION_YEAR = 2025
 # openmc and watts must already be stubbed in sys.modules before this module is imported.
 from core_design.utils import (
     calculate_lattice_radius,
+    calculate_hex_apothem,
+    calculate_core_radius_from_hex,
     calculate_pins_in_assembly,
     calculate_heat_flux,
     calculate_heat_flux_TRISO,
@@ -166,13 +168,15 @@ def _build_ltmr(params):
         'Number of Rings per Assembly': 12,
         'Radial Reflector Thickness': 14,
     })
-    params['Lattice Radius'] = calculate_lattice_radius(params)
+    params['Lattice Radius'] = calculate_hex_apothem(params)   # keep old key for now
+    params['Assembly FTF'] = 2 * params['Lattice Radius']
+    params['Assembly FTF'] = 2 * params['Lattice Radius']
     params['Active Height'] = 78.4
     params['Axial Reflector Thickness'] = params['Radial Reflector Thickness']
     params['Fuel Pin Count'] = calculate_pins_in_assembly(params, 'FUEL')
     params['Moderator Pin Count'] = calculate_pins_in_assembly(params, 'MODERATOR')
     params['Moderator Mass'] = calculate_moderator_mass(params)
-    params['Core Radius'] = params['Lattice Radius'] + params['Radial Reflector Thickness']
+    params['Core Radius'] = calculate_core_radius_from_hex(params)
 
     # Sec 3: Control drums
     params.update({
@@ -278,7 +282,7 @@ def _build_ltmr(params):
     params['A75: Core Barrel Replacement Period (cycles)'] = np.floor(10 / total_refueling_period_yr)
     params['A75: Reflector Replacement Period (cycles)'] = np.floor(10 / total_refueling_period_yr)
     params['A75: Drum Replacement Period (cycles)'] = np.floor(10 / total_refueling_period_yr)
-    params['Mainenance to Direct Cost Ratio'] = 0.015
+    params['Maintenance to Direct Cost Ratio'] = 0.015
     params['A78: CAPEX to Decommissioning Cost Ratio'] = 0.15
 
     # Sec 10: Buildings & Economic params
@@ -482,7 +486,7 @@ def _build_gcmr(params):
     params['A75: Core Barrel Replacement Period (cycles)'] = np.floor(10 / total_refueling_period_yr)
     params['A75: Reflector Replacement Period (cycles)'] = np.floor(10 / total_refueling_period_yr)
     params['A75: Drum Replacement Period (cycles)'] = np.floor(10 / total_refueling_period_yr)
-    params['Mainenance to Direct Cost Ratio'] = 0.015
+    params['Maintenance to Direct Cost Ratio'] = 0.015
     params['A78: CAPEX to Decommissioning Cost Ratio'] = 0.15
 
     # Sec 10: Buildings & Economic params
@@ -679,7 +683,7 @@ def _build_hpmr(params):
     params['A75: Core Barrel Replacement Period (cycles)'] = np.floor(10 / total_refueling_period_yr)
     params['A75: Reflector Replacement Period (cycles)'] = np.floor(10 / total_refueling_period_yr)
     params['A75: Drum Replacement Period (cycles)'] = np.floor(10 / total_refueling_period_yr)
-    params['Mainenance to Direct Cost Ratio'] = 0.015
+    params['Maintenance to Direct Cost Ratio'] = 0.015
     params['A78: CAPEX to Decommissioning Cost Ratio'] = 0.15
 
     # Sec 10: Buildings & Economic params

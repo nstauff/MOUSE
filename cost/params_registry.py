@@ -272,14 +272,13 @@ PARAMS_REGISTRY = {
         'description': 'Number of assembly rings along the side of the hexagonal core (GCMR)',
         'source': 'User Input', 'hidden': False, 'array_mode': None},
 
-    'Lattice Radius': {
+    'Lattice Apothem': {
         'group': 'Geometry', 'units': 'cm',
-        'description': 'Radius of the hexagonal pin lattice (outer edge of outermost pin ring)',
+        'description': 'Distance from the hex lattice center to the midpoint of a flat face of the outermost pin lattice.',
         'source': 'Calculated', 'hidden': False, 'array_mode': None},
-
     'Assembly FTF': {
         'group': 'Geometry', 'units': 'cm',
-        'description': 'Assembly flat-to-flat distance (distance between parallel faces of the hexagonal assembly)',
+        'description': 'Assembly flat-to-flat distance (distance between opposite parallel faces of the hexagonal assembly).',
         'source': 'Calculated', 'hidden': False, 'array_mode': None},
 
     'Core Radius': {

@@ -74,13 +74,14 @@ update_params({
     'Radial Reflector Thickness': 14,  # cm
 })
 
-params['Lattice Radius'] = calculate_lattice_radius(params)
-params['Active Height']  =   78.4  # Or it is 2 * params['Lattice Radius']
-params['Axial Reflector Thickness'] = params['Radial Reflector Thickness'] # cm
+params['Lattice Apothem'] = calculate_hex_apothem(params)
+params['Assembly FTF'] = 2 * params['Lattice Radius']
+params['Active Height']  = 78.4
+params['Axial Reflector Thickness'] = params['Radial Reflector Thickness']  # cm
 params['Fuel Pin Count'] = calculate_pins_in_assembly(params, "FUEL")
-params['Moderator Pin Count'] =  calculate_pins_in_assembly(params, "MODERATOR")
+params['Moderator Pin Count'] = calculate_pins_in_assembly(params, "MODERATOR")
 params['Moderator Mass'] = calculate_moderator_mass(params)
-params['Core Radius'] = params['Lattice Radius'] + params['Radial Reflector Thickness']
+params['Core Radius'] = calculate_core_radius_from_hex(params)
 
 # **************************************************************************************************************************
 #                                           Sec. 3: Control Drums
@@ -238,7 +239,7 @@ params['A75: Vessel Replacement Period (cycles)']        = np.floor(10/total_ref
 params['A75: Core Barrel Replacement Period (cycles)']   = np.floor(10/total_refueling_period_yr)
 params['A75: Reflector Replacement Period (cycles)']     = np.floor(10/total_refueling_period_yr)
 params['A75: Drum Replacement Period (cycles)']          = np.floor(10/total_refueling_period_yr)
-params['Mainenance to Direct Cost Ratio']                = 0.015
+params['Maintenance to Direct Cost Ratio']                = 0.015
 # A78: Annualized Decommisioning Cost
 params['A78: CAPEX to Decommissioning Cost Ratio'] = 0.15
 
