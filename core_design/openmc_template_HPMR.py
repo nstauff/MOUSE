@@ -343,7 +343,7 @@ def create_control_drums(params, materials_database):
 
     # Adjust the control drums rotation
     rotation_angle          = 0
-    if params['SD Margin Calc']:
+    if params['Shutdown Margin Calc']:
         rotation_angle = 180
     else:
         rotation_angle = 0
@@ -443,7 +443,7 @@ and generates the necessary XMl files
 """
 def build_openmc_model_HPMR(params):
 
-    params.setdefault('SD Margin Calc', False)
+    params.setdefault('Shutdown Margin Calc', False)
     params.setdefault('Isothermal Temperature Coefficients', False)
     
     # **************************************************************************************************************************

@@ -111,8 +111,8 @@ for params['Packing Fraction'] in np.linspace(0.25, 0.35, 2):
     # --- Shutdown Margin (SDM) ---
     # Set to True to run an additional ARI simulation and calculate the shutdown margin (pcm).
     # Currently disabled to save computation time. Enable for final design verification.
-    # See watts_exec_LTMR.py for an example with SD Margin Calc = True.
-    params['SD Margin Calc'] = False  # True or False
+    # See watts_exec_LTMR.py for an example with Shutdown Margin Calc = True.
+    params['Shutdown Margin Calc'] = False  # True or False
 
     # --- Isothermal Temperature Coefficient ---
     # Set to True to calculate the temperature reactivity coefficient (pcm/K).

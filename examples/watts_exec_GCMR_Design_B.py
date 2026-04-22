@@ -116,8 +116,8 @@ params['Heat Flux'] = calculate_heat_flux_TRISO(params) # MW/m^2
 # Set to True to run an additional ARI simulation and calculate the shutdown margin (pcm).
 # A positive SDM confirms the reactor can be safely shut down with all drums inserted.
 # Currently disabled to save computation time. Enable for final design verification.
-# See watts_exec_LTMR.py for an example with SD Margin Calc = True.
-params['SD Margin Calc'] = False  # True or False
+# See watts_exec_LTMR.py for an example with Shutdown Margin Calc = True.
+params['Shutdown Margin Calc'] = False  # True or False
 
 # --- Isothermal Temperature Coefficient ---
 # Set to True to calculate the temperature reactivity coefficient (pcm/K).

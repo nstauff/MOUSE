@@ -133,7 +133,7 @@ params['Particles'] = 2000
 # A positive SDM means the reactor can be safely shut down with all drums inserted.
 # Recommended: True for final design verification; can be set to False to save
 # computation time during early design exploration.
-params['SD Margin Calc'] = False  # True or False
+params['Shutdown Margin Calc'] = False  # True or False
 
 # --- Isothermal Temperature Coefficient ---
 # When True, two additional OpenMC simulations are run: one at 'Common Temperature'

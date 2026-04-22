@@ -287,9 +287,9 @@ def monitor_heat_flux(params):
 
 def run_openmc(build_openmc_model, heat_flux_monitor, params):
 
-    params.setdefault('SD Margin Calc', False)
+    params.setdefault('Shutdown Margin Calc', False)
     params.setdefault('Isothermal Temperature Coefficients', False)
-    original_sd_margin_calc = params['SD Margin Calc']
+    original_sd_margin_calc = params['Shutdown Margin Calc']
     original_itc = params['Isothermal Temperature Coefficients']
 
     if params['Isothermal Temperature Coefficients']:
@@ -307,9 +307,9 @@ def run_openmc(build_openmc_model, heat_flux_monitor, params):
     else:
         try:
             print(f"\n\nThe results/plots are saved at: {watts.Database().path}\n\n")
-            if params['SD Margin Calc']:
+            if params['Shutdown Margin Calc']:
                 if params['Isothermal Temperature Coefficients']:
-                    params['SD Margin Calc'] = False
+                    params['Shutdown Margin Calc'] = False
                     temp_T = copy.deepcopy(params['Common Temperature'])
                     params['Common Temperature'] = params['Common Temperature'] + params['Temperature Perturbation']
                     openmc_plugin = watts.PluginOpenMC(build_openmc_model, show_stderr=True)  
@@ -324,7 +324,7 @@ def run_openmc(build_openmc_model, heat_flux_monitor, params):
                     openmc_plugin(params, function=lambda: run_depletion_analysis(params))
                     params['Temp Coeff 2D'] = np.max([(y - x) / (y*x) / (params['Temperature Perturbation'])*1e5 for x,y in zip(params['keff 2D'],params['keff 2D high temp'])])
                     params['Temp Coeff 3D (2D corrected)'] = np.max([(y - x) / (y*x) / (params['Temperature Perturbation'])*1e5 for x,y in zip(params['keff 3D (2D corrected)'],params['keff 3D (2D corrected) high temp'])])
-                    params['SD Margin Calc'] = True
+                    params['Shutdown Margin Calc'] = True
                 else:
                     params['Temp Coeff 2D'] = np.nan
                     params['Temp Coeff 3D (2D corrected)'] = np.nan
@@ -333,7 +333,7 @@ def run_openmc(build_openmc_model, heat_flux_monitor, params):
                 openmc_plugin(params, function=lambda: run_depletion_analysis(params))
                 params['keff 2D ARI'] = params['keff 2D']
                 params['keff 3D (2D corrected) ARI'] = params['keff 3D (2D corrected)']
-                params['SD Margin Calc'] = False
+                params['Shutdown Margin Calc'] = False
                 openmc_plugin = watts.PluginOpenMC(build_openmc_model, show_stderr=True)  
                 openmc_plugin(params, function=lambda: run_depletion_analysis(params))
                 params['SDM 2D'] = np.max([(y - x)*1e5 for x,y in zip(params['keff 2D'],params['keff 2D ARI'])])
@@ -368,7 +368,7 @@ def run_openmc(build_openmc_model, heat_flux_monitor, params):
             raise  # fix: re-raise so the outer try/except in the main script can catch it
 
         finally:
-            params['SD Margin Calc'] = original_sd_margin_calc
+            params['Shutdown Margin Calc'] = original_sd_margin_calc
             params['Isothermal Temperature Coefficients'] = original_itc
 
 def cyclic_rotation(input_array, k):

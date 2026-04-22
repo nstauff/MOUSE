@@ -78,7 +78,7 @@ def create_drums_universe(params, control_drum_absorber_material, control_drum_r
     absorber_arc = np.pi/3
     REFERENCE_ANGLE = 0
     rotation_angle = 180 
-    if params['SD Margin Calc']:
+    if params['Shutdown Margin Calc']:
         rotation_angle = 0
     else:
         rotation_angle = 180
@@ -264,7 +264,7 @@ def build_openmc_model_LTMR(params):
     input files with placeholders. params mostly behaves like a Python dictionary with a few extra capabilities
     """
 
-    params.setdefault('SD Margin Calc', False)
+    params.setdefault('Shutdown Margin Calc', False)
     params.setdefault('Isothermal Temperature Coefficients', False)
     # **************************************************************************************************************************
     #                                                Sec. 1.1 : MATERIALS

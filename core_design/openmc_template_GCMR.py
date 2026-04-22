@@ -12,7 +12,7 @@ and generates the necessary XMl files
 
 def build_openmc_model_GCMR(params):
     
-    params.setdefault('SD Margin Calc', False)
+    params.setdefault('Shutdown Margin Calc', False)
     params.setdefault('Isothermal Temperature Coefficients', False)
 
     # **************************************************************************************************************************
@@ -151,7 +151,7 @@ def build_openmc_model_GCMR(params):
         absorber_arc = np.pi/3
         REFERENCE_ANGLE = 240 # This angle is a constant that puts the drum in the correct orientation in reference to the lattice geometry
         rotation_angle = 0
-        if params['SD Margin Calc']:
+        if params['Shutdown Margin Calc']:
             rotation_angle = 180
         else:
             rotation_angle = 0

@@ -138,7 +138,7 @@ params['Heat Flux'] = calculate_heat_flux_TRISO(params) # MW/m^2
 #                                           Sec. 5: Running OpenMC
 # **************************************************************************************************************************
 
-params['SD Margin Calc'] = False  # True or False
+params['Shutdown Margin Calc'] = False  # True or False
 params['Isothermal Temperature Coefficients'] = True  # True or False
 params['Temperature Perturbation'] = 100  # K
 

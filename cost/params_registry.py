@@ -464,7 +464,7 @@ PARAMS_REGISTRY = {
     # =========================================================
     # OpenMC Settings
     # =========================================================
-    'SD Margin Calc': {
+    'Shutdown Margin Calc': {
         'group': 'OpenMC Settings', 'units': '',
         'description': 'Whether shutdown margin was calculated (True = ARI simulation was run)',
         'source': 'User Input', 'hidden': False, 'array_mode': None},
