@@ -75,7 +75,8 @@ update_params({
 })
 
 params['Lattice Apothem'] = calculate_hex_apothem(params)
-params['Assembly FTF'] = 2 * params['Lattice Radius']
+params['Lattice Radius'] = params['Lattice Apothem']
+params['Assembly FTF'] = 2 * params['Lattice Apothem']
 params['Active Height']  = 78.4
 params['Axial Reflector Thickness'] = params['Radial Reflector Thickness']  # cm
 params['Fuel Pin Count'] = calculate_pins_in_assembly(params, "FUEL")
