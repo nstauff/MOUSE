@@ -18,35 +18,38 @@ import copy
 # **************************************************************************************************************************
 
 """
-Helper functions are smaller, reusable functions ar defined to perform specific tasks,
-and then used later to simplify and organize the code
+Helper functions are smaller, reusable functions that are defined to perform specific tasks,
+and then used later to simplify and organize the code.
 """
+
 
 def create_pin_regions(params, pin_type):
     """
     Creating the pin regions
     @ In, params, dict, The parameters that are used to "fill in" input files with placeholders.
     @ In, pin_type, str, The type of pin ('moderator' or 'fuel').
-    @ out, regions, dict, regions of the specified pin
+    @ out, regions, dict, Regions of the specified pin.
     """
 
     if pin_type == 'moderator':
         # Extract the radii values for different regions of the moderator pin from the input parameters
-        pin_radii = {'moderator': params['Moderator Pin Radii'][0],
-                     'cladding': params['Moderator Pin Radii'][1]
+        pin_radii = {
+            'moderator': params['Moderator Pin Radii'][0],
+            'cladding': params['Moderator Pin Radii'][1]
         }
         region_keys = ['moderator', 'cladding', 'coolant']
 
     elif pin_type == 'fuel':
         # Extract the radii values for different regions of the fuel pin from the input parameters
-        pin_radii = {'insert': params['Fuel Pin Radii'][0],
-                     'gap1': params['Fuel Pin Radii'][1],
-                     'fuel_meat': params['Fuel Pin Radii'][2],
-                     'gap2': params['Fuel Pin Radii'][3],
-                     'cladding': params['Fuel Pin Radii'][4]
+        pin_radii = {
+            'insert': params['Fuel Pin Radii'][0],
+            'gap1': params['Fuel Pin Radii'][1],
+            'fuel_meat': params['Fuel Pin Radii'][2],
+            'gap2': params['Fuel Pin Radii'][3],
+            'cladding': params['Fuel Pin Radii'][4]
         }
         region_keys = ['insert', 'gap1', 'fuel_meat', 'gap2', 'cladding', 'coolant']
-    
+
     else:
         raise ValueError("Invalid pin type. Must be 'moderator' or 'fuel'.")
 
@@ -60,7 +63,7 @@ def create_pin_regions(params, pin_type):
         if i == 0:
             regions[key] = -shells[i]
         else:
-            regions[key] = +shells[i-1] & -shells[i]
+            regions[key] = +shells[i - 1] & -shells[i]
     regions[region_keys[-1]] = +shells[-1]
 
     return regions
@@ -232,11 +235,11 @@ def create_assembly_universe(params, fuel_pin_universe, moderator_pin_universe, 
     """
     Creating the universe of the fuel assembly
     @ In, params, dict, The parameters that are used to "fill in" input files with placeholders.
-    @ In, fuel_pin_universe, openmc.universe.Universe,
-    @ In, moderator_pin_universe, openmc.universe.Universe,
+    @ In, fuel_pin_universe, openmc.universe.Universe
+    @ In, moderator_pin_universe, openmc.universe.Universe
     @ In, pin_pitch, float, the center-to-center distance between adjacent fuel/moderator pins
     @ In, reflector_material, openmc.material.Material, the material of the outer radial reflector
-    @ In, outer_coolant_universe, openmc.universe.Universe, the openmc universe of the coolant in the assembly
+    @ In, outer_coolant_universe, openmc.universe.Universe, the OpenMC universe of the coolant in the assembly
     @ out, assembly_universe, openmc.universe.Universe, the fuel assembly universe
     """
 
@@ -260,7 +263,7 @@ def create_assembly_universe(params, fuel_pin_universe, moderator_pin_universe, 
     hex_edge_length = calculate_hex_edge_length(params)
     assembly_boundary = openmc.model.hexagonal_prism(
         edge_length=hex_edge_length,
-        corner_radius=(params['Fuel Pin Radii'])[-1] + params["Pin Gap Distance"]
+        corner_radius=params['Fuel Pin Radii'][-1] + params["Pin Gap Distance"]
     )
 
     fuel_assembly_cell = openmc.Cell(fill=assembly, region=assembly_boundary)
@@ -386,20 +389,22 @@ def create_core_geometry(params, drums, drums_positions, assembly_universe):
 
     return core_geometry, core
 
+
 # **************************************************************************************************************************
 #                                                Sec. 1 : OpenMC Model
 # **************************************************************************************************************************
 
 """
-An OpenMC function that accepts an instance of "parameters" 
-and generates the necessary XMl files
+An OpenMC function that accepts an instance of "parameters"
+and generates the necessary XML files.
 """
+
 
 def build_openmc_model_LTMR(params):
     """
     OpenMC Model
-    @ In, params, watts.parameters.Parameters, The parameters that are used to "fill in" 
-    input files with placeholders. params mostly behaves like a Python dictionary with a few extra capabilities
+    @ In, params, watts.parameters.Parameters, The parameters that are used to "fill in"
+    input files with placeholders. params mostly behaves like a Python dictionary with a few extra capabilities.
     """
 
     params.setdefault('Shutdown Margin Calc', False)
@@ -411,166 +416,189 @@ def build_openmc_model_LTMR(params):
     # **************************************************************************************************************************
     #                                                Sec. 1.1 : MATERIALS
     # **************************************************************************************************************************
-   
-    # reading all the materials properties
+
+    # Reading all the materials properties
     materials_database = collect_materials_data(params)
 
-    # reading the materials properties for the fuel, coolant, refelctor, control drum (the drum includes two materials: absoerber and reflector)   
+    # Reading the materials properties for the fuel, coolant, reflector, and control drum
+    # (the drum includes two materials: absorber and reflector)
     fuel = materials_database[params['Fuel']]
     coolant = materials_database[params['Coolant']]
     reflector = materials_database[params['Radial Reflector']]
     control_drum_absorber = materials_database[params['Control Drum Absorber']]
     control_drum_reflector = materials_database[params['Control Drum Reflector']]
-    
 
     # **************************************************************************************************************************
     #                                                Sec. 1.2 : Pin Cell Universes and Coolant
     # **************************************************************************************************************************
-    
-    # Creating Fuel Pins regions
+
+    # Creating fuel pin regions
     fuel_pin_regions = create_pin_regions(params, 'fuel')
-    
+
     # Creating fuel pin materials
     fuel_materials = []
     for mat in params['Fuel Pin Materials']:
-        if mat == None:
+        if mat is None:
             fuel_materials.append(None)
-        else: 
+        else:
             material_1 = materials_database[mat]
             fuel_materials.append(material_1)
     fuel_materials.append(coolant)
 
-     # Giving the user error message if the number of materials is not the same as the number of regions
-    assert len(fuel_pin_regions) == len(fuel_materials), "The number of regions, {len(fuel_pin_regions)} should be\
-        the same as the number of introduced materials, {len(fuel_materials)}"
-    
-    # creating the fuel pin universe
+    # Give the user an error message if the number of materials is not the same as the number of regions
+    if len(fuel_pin_regions) != len(fuel_materials):
+        raise ValueError(
+            f"The number of fuel pin regions ({len(fuel_pin_regions)}) must match "
+            f"the number of introduced materials ({len(fuel_materials)})."
+        )
+
+    # Creating the fuel pin universe
     fuel_cells = create_cells(fuel_pin_regions, fuel_materials)
+
     # The fuel region cell (to be used in distribcell tally)
     fuel_cell = fuel_cells['fuel_meat']
     fuel_pin_universe = openmc.Universe(cells=fuel_cells.values())
 
     if params['plotting'] == "Y":
-        # plotting
-        create_universe_plot(materials_database, fuel_pin_universe, 
-                        plot_width = 2.2 * params['Fuel Pin Radii'][-1],
-                        num_pixels = 500, 
-                        font_size = 32,
-                        title = "Fuel Pin Universe", 
-                        fig_size = 8, 
-                        output_file_name = "fuel_pin_universe.png")
+        create_universe_plot(
+            materials_database,
+            fuel_pin_universe,
+            plot_width=2.2 * params['Fuel Pin Radii'][-1],
+            num_pixels=500,
+            font_size=32,
+            title="Fuel Pin Universe",
+            fig_size=8,
+            output_file_name="fuel_pin_universe.png"
+        )
 
-    
-    # Creating Moderator Pin regions
+    # Creating moderator pin regions
     moderator_pin_regions = create_pin_regions(params, 'moderator')
-    
+
     # Creating moderator pin materials
     moderator_materials = []
     for mat in params['Moderator Pin Materials']:
-        if mat == None:
+        if mat is None:
             moderator_materials.append(None)
-        else: 
+        else:
             material_1 = materials_database[mat]
             moderator_materials.append(material_1)
     moderator_materials.append(coolant)
-    
-    # Giving the user error message if the number of materials is not the same as the number of regions
-    assert len(moderator_pin_regions) == len(moderator_materials), "The number of regions, {len(moderator_pin_regions)} should be\
-        the same as the number of introduced materials, {len(moderator_materials)}"
 
-    # creating them moerator pin universe
+    # Give the user an error message if the number of materials is not the same as the number of regions
+    if len(moderator_pin_regions) != len(moderator_materials):
+        raise ValueError(
+            f"The number of moderator pin regions ({len(moderator_pin_regions)}) must match "
+            f"the number of introduced materials ({len(moderator_materials)})."
+        )
+
+    # Creating the moderator pin universe
     moderator_cells = create_cells(moderator_pin_regions, moderator_materials)
     moderator_pin_universe = openmc.Universe(cells=moderator_cells.values())
 
     if params['plotting'] == "Y":
-        # plotting
-        create_universe_plot(materials_database, moderator_pin_universe, 
-                        plot_width = 2.2 * params['Moderator Pin Radii'][-1],
-                        num_pixels = 500, 
-                        font_size = 32,
-                        title = "Moderator Pin Universe", 
-                        fig_size = 8, 
-                        output_file_name = "moderator_pin_universe.png")
-    
-    
-    # Coolant Universe
+        create_universe_plot(
+            materials_database,
+            moderator_pin_universe,
+            plot_width=2.2 * params['Moderator Pin Radii'][-1],
+            num_pixels=500,
+            font_size=32,
+            title="Moderator Pin Universe",
+            fig_size=8,
+            output_file_name="moderator_pin_universe.png"
+        )
+
+    # Coolant universe
     coolant_cell = openmc.Cell(fill=coolant)
     coolant_universe = openmc.Universe(cells=(coolant_cell,))
-   
 
     # **************************************************************************************************************************
     #                                                Sec. 1.3 : Fuel Assembly Universe
     # **************************************************************************************************************************
-    
+
     # The center-to-center distance between adjacent fuel/moderator pins
-    pin_pitch = 2 * (params['Fuel Pin Radii'][-1] ) + params["Pin Gap Distance"]
+    pin_pitch = 2 * params['Fuel Pin Radii'][-1] + params["Pin Gap Distance"]
 
-    assembly_universe = create_assembly_universe(params,
-                                                 fuel_pin_universe,
-                                                 moderator_pin_universe,
-                                                 pin_pitch,
-                                                 reflector,
-                                                 coolant_universe)
+    assembly_universe = create_assembly_universe(
+        params,
+        fuel_pin_universe,
+        moderator_pin_universe,
+        pin_pitch,
+        reflector,
+        coolant_universe
+    )
 
-
-    # # **************************************************************************************************************************
-    # #                                                Sec. 1.4 : Material Volumes and Materials XML
-    # # **************************************************************************************************************************
-    #find where the fuel is in the fuel pin
+    # **************************************************************************************************************************
+    #                                                Sec. 1.4 : Material Volumes and Materials XML
+    # **************************************************************************************************************************
+    # Find where the fuel is in the fuel pin
     fuel_index = params['Fuel Pin Materials'].index(params['Fuel'])
 
-    fissile_area = circle_area(params['Fuel Pin Radii'][fuel_index] )\
+    fissile_area = (
+        circle_area(params['Fuel Pin Radii'][fuel_index])
         - circle_area(params['Fuel Pin Radii'][fuel_index - 1])
-    fuel.volume = fissile_area *params['Active Height'] * params['Fuel Pin Count']
-   
-    all_materials = fuel_materials +\
-        moderator_materials + [coolant, reflector, control_drum_absorber, control_drum_reflector]
-    
-    # removing "None" materials
+    )
+    fuel.volume = fissile_area * params['Active Height'] * params['Fuel Pin Count']
+
+    all_materials = (
+        fuel_materials
+        + moderator_materials
+        + [coolant, reflector, control_drum_absorber, control_drum_reflector]
+    )
+
+    # Remove None materials while preserving deterministic order
     all_materials_cleaned_list = [item for item in all_materials if item is not None]
-    materials = openmc.Materials(list(set(all_materials_cleaned_list)))
-   
+    materials = openmc.Materials(list(dict.fromkeys(all_materials_cleaned_list)))
+
     openmc.Materials.cross_sections = params['cross_sections_xml_location']
     materials.export_to_xml()
-    
 
-    # # **************************************************************************************************************************
-    # #                                                Sec. 1.5 : Control Drum Placement and Core Geometry
-    # # **************************************************************************************************************************
+    # **************************************************************************************************************************
+    #                                                Sec. 1.5 : Control Drum Placement and Core Geometry
+    # **************************************************************************************************************************
 
     control_drum_positions = create_control_drums_positions(params)
-    drums = create_drums_universe(params, control_drum_absorber, control_drum_reflector, control_drum_positions)
+    drums = create_drums_universe(
+        params,
+        control_drum_absorber,
+        control_drum_reflector,
+        control_drum_positions
+    )
 
-    core_geometry, core = create_core_geometry(params,
-                                         drums,
-                                         drums_positions = control_drum_positions,
-                                         assembly_universe  = assembly_universe)
-
+    core_geometry, core = create_core_geometry(
+        params,
+        drums,
+        drums_positions=control_drum_positions,
+        assembly_universe=assembly_universe
+    )
 
     core_geometry.export_to_xml()
-    
+
     if params['plotting'] == "Y":
         drum_state_label = "shutdown" if params['Shutdown Margin Calc'] else "operation"
-        create_universe_plot(materials_database, core_geometry,
-                plot_width = 2.01 * params['Core Radius'],
-                num_pixels = 2000,
-                font_size = 32,
-                title = f"Reactor Core - {drum_state_label.capitalize()}",
-                fig_size = 8,
-                output_file_name = f"core_{drum_state_label}.png")
-    
-    # # **************************************************************************************************************************
-    # #                                                Sec. 1.6 : TALLIES
-    # # **************************************************************************************************************************
+        create_universe_plot(
+            materials_database,
+            core_geometry,
+            plot_width=2.01 * params['Core Radius'],
+            num_pixels=2000,
+            font_size=32,
+            title=f"Reactor Core - {drum_state_label.capitalize()}",
+            fig_size=8,
+            output_file_name=f"core_{drum_state_label}.png"
+        )
+
+    # **************************************************************************************************************************
+    #                                                Sec. 1.6 : TALLIES
+    # **************************************************************************************************************************
 
     tallies_file = openmc.Tallies()
 
-    group_edges = np.array([1e-5, 6.7e-2, 3.2e-1, 1, 4, 9.88, 4.81e1, 4.54e2, 4.9e4, 1.83e5, 8.21e5, 4e7])# 11 energy groups from HPMR report table no.5 in ev
+    # 11 energy groups from HPMR report table no. 5 in EV
+    group_edges = np.array([1e-5, 6.7e-2, 3.2e-1, 1, 4, 9.88, 4.81e1, 4.54e2, 4.9e4, 1.83e5, 8.21e5, 4e7])
     groups = openmc.mgxs.EnergyGroups(group_edges)
 
     mgxs_lib = openmc.mgxs.Library(core_geometry)
     mgxs_lib.energy_groups = groups
-    mgxs_lib.legendre_order     = 1
+    mgxs_lib.legendre_order = 1
     mgxs_lib.mgxs_types = ['absorption', 'diffusion-coefficient', 'transport', 'scatter matrix', 'total', 'scatter']
     mgxs_lib.domain_type = 'universe'
     mgxs_lib.domains = [core]
@@ -585,25 +613,29 @@ def build_openmc_model_LTMR(params):
     tallies_file.append(pin_power)
     tallies_file.export_to_xml()
 
-    # # **************************************************************************************************************************
-    # #                                                Sec. 1.7 : OpenMC Settings
-    # # **************************************************************************************************************************
- 
+    # **************************************************************************************************************************
+    #                                                Sec. 1.7 : OpenMC Settings
+    # **************************************************************************************************************************
+
     point = openmc.stats.Point((0, 0, 0))
     source = openmc.Source(space=point)
     settings = openmc.Settings()
     settings.source = source
     settings.batches = 100
     settings.inactive = 50
+
     if 'Particles' in params.keys():
-        settings.particles = int(params['Particles'])#1000
+        settings.particles = int(params['Particles'])
     else:
-        settings.particles = 1000 
+        settings.particles = 1000
+
     if params['Isothermal Temperature Coefficients']:
-        settings.temperature = {'default': params['Common Temperature'],
-                                 'method': 'interpolation',
-                                 'tolerance': 50.0}
+        settings.temperature = {
+            'default': params['Common Temperature'],
+            'method': 'interpolation',
+            'tolerance': 50.0
+        }
     else:
-        settings.temperature = {'method': 'interpolation'}  # added missing else branch
-    
+        settings.temperature = {'method': 'interpolation'}
+
     settings.export_to_xml()
