@@ -371,22 +371,26 @@ def run_openmc(build_openmc_model, heat_flux_monitor, params):
                 params['keff 2D ARO'] = params['keff 2D']
                 params['keff 3D (2D corrected) ARO'] = params['keff 3D (2D corrected)']
 
-                # Keep current shutdown-margin formulation for this commit; equation/sign will be fixed later.
-                params['Shutdown Margin 2D'] = np.max([
-                    (y - x) * 1e5
-                    for x, y in zip(params['keff 2D ARO'], params['keff 2D ARI'])
-                ])
-                params['Shutdown Margin 3D (2D corrected)'] = np.max([
-                    (y - x) * 1e5
-                    for x, y in zip(
-                        params['keff 3D (2D corrected) ARO'],
-                        params['keff 3D (2D corrected) ARI']
-                    )
-                ])
+                sdm_2d_per_step = [
+                        ((1.0 - k_s) / k_s) * 1e5
+                        for k_s in params['keff 2D ARI']
+                ]
+
+                sdm_3d_per_step = [
+                        ((1.0 - k_s) / k_s) * 1e5
+                        for k_s in params['keff 3D (2D corrected) ARI']
+                ]
+                params['Most Limiting Shutdown Margin 2D'] = np.min(sdm_2d_per_step)
+                params['Maximum Shutdown Margin 2D'] = np.max(sdm_2d_per_step)
+
+                params['Most Limiting Shutdown Margin 3D (2D corrected)'] = np.min(sdm_3d_per_step)
+                params['Maximum Shutdown Margin 3D (2D corrected)'] = np.max(sdm_3d_per_step)
 
             else:
-                params['Shutdown Margin 2D'] = np.nan
-                params['Shutdown Margin 3D (2D corrected)'] = np.nan
+                params['Most Limiting Shutdown Margin 2D'] = np.nan
+                params['Maximum Shutdown Margin 2D'] = np.nan
+                params['Most Limiting Shutdown Margin 3D (2D corrected)'] = np.nan
+                params['Maximum Shutdown Margin 3D (2D corrected)'] = np.nan
 
                 if params['Isothermal Temperature Coefficients']:
                     temp_T = copy.deepcopy(params['Common Temperature'])

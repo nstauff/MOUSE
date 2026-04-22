@@ -479,14 +479,14 @@ PARAMS_REGISTRY = {
     # =========================================================
     # OpenMC Settings
     # =========================================================
-    'Shutdown Margin Calc': {
-    'group': 'OpenMC Settings', 'units': '',
-    'description': 'Whether shutdown margin is calculated. When True, the operating configuration (ARO) is evaluated at Common Temperature and the shutdown configuration (ARI) is evaluated at Cold Shutdown Temperature.',
-    'source': 'User Input', 'hidden': False, 'array_mode': None},
+   'Shutdown Margin Calc': {
+        'group': 'OpenMC Settings', 'units': '',
+        'description': 'Whether shutdown margin is calculated. When True, the shutdown-state keff is evaluated with the absorber facing the core (ARI) at Cold Shutdown Temperature, and shutdown margin metrics are reported from ((1 - k_s) / k_s).',
+        'source': 'User Input', 'hidden': False, 'array_mode': None},
 
     'Cold Shutdown Temperature': {
     'group': 'OpenMC Settings', 'units': 'K',
-    'description': 'Temperature used for the shutdown-configuration (ARI) keff calculation during shutdown margin evaluation.',
+    'description': 'Temperature used for the shutdown-state (ARI) keff calculation during shutdown margin evaluation.',
     'source': 'User Input', 'hidden': False, 'array_mode': None},
 
     'Isothermal Temperature Coefficients': {
@@ -556,15 +556,25 @@ PARAMS_REGISTRY = {
                        'Use this value for safety analysis.',
         'source': 'Calculated', 'hidden': False, 'array_mode': None},
 
-    'Shutdown Margin 2D': {
+    'Most Limiting Shutdown Margin 2D': {
+    'group': 'Physics Results', 'units': 'pcm',
+    'description': 'Most limiting shutdown margin from the 2D simulation, computed as min((1 - k_s) / k_s) over depletion steps, where k_s is the shutdown-state keff with the absorber facing the core (ARI) at Cold Shutdown Temperature.',
+    'source': 'Calculated', 'hidden': False, 'array_mode': None},
+
+    'Maximum Shutdown Margin 2D': {
         'group': 'Physics Results', 'units': 'pcm',
-        'description': 'Shutdown margin from the 2D simulation using the operating configuration (ARO) at Common Temperature and the shutdown configuration (ARI) at Cold Shutdown Temperature.',
+        'description': 'Maximum shutdown margin from the 2D simulation, computed as max((1 - k_s) / k_s) over depletion steps, where k_s is the shutdown-state keff with the absorber facing the core (ARI) at Cold Shutdown Temperature.',
         'source': 'Calculated', 'hidden': False, 'array_mode': None},
 
-    'Shutdown Margin 3D (2D corrected)': {
+    'Most Limiting Shutdown Margin 3D (2D corrected)': {
         'group': 'Physics Results', 'units': 'pcm',
-        'description': 'Shutdown margin corrected from 2D to 3D using axial neutron leakage correction, based on the operating configuration (ARO) at Common Temperature and the shutdown configuration (ARI) at Cold Shutdown Temperature.',
+        'description': 'Most limiting shutdown margin corrected from 2D to 3D using axial neutron leakage correction, computed as min((1 - k_s) / k_s) over depletion steps, where k_s is the shutdown-state corrected keff with the absorber facing the core (ARI) at Cold Shutdown Temperature.',
         'source': 'Calculated', 'hidden': False, 'array_mode': None},
+
+    'Maximum Shutdown Margin 3D (2D corrected)': {
+        'group': 'Physics Results', 'units': 'pcm',
+        'description': 'Maximum shutdown margin corrected from 2D to 3D using axial neutron leakage correction, computed as max((1 - k_s) / k_s) over depletion steps, where k_s is the shutdown-state corrected keff with the absorber facing the core (ARI) at Cold Shutdown Temperature.',
+        'source': 'Calculated', 'hidden': False, 'array_mode': None},    
 
     'Max Peaking Factor': {
         'group': 'Physics Results', 'units': 'unitless',
@@ -1034,11 +1044,6 @@ PARAMS_REGISTRY = {
     'A75: Integrated HX Replacement Period (cycles)': {
         'group': 'Operation', 'units': 'cycles',
         'description': 'Number of fuel cycles between scheduled integrated heat exchanger replacements',
-        'source': 'User Input', 'hidden': False, 'array_mode': None},
-
-    'Mainenance to Direct Cost Ratio': {
-        'group': 'Operation', 'units': 'fraction',
-        'description': 'Ratio of annual non-replacement maintenance cost to total direct capital cost',
         'source': 'User Input', 'hidden': False, 'array_mode': None},
 
     'Maintenance to Direct Cost Ratio': {
@@ -1970,13 +1975,13 @@ PARAMS_REGISTRY = {
 
     'keff 2D ARO': {
         'group': 'Debug / Intermediate Values', 'units': '',
-        'description': 'keff at each burnup step for the operating configuration with all control drums withdrawn (ARO) from the 2D simulation, evaluated at Common Temperature for shutdown margin calculation.',
+        'description': 'keff at each burnup step for the operating configuration with all control drums withdrawn (ARO) from the 2D simulation, evaluated at Common Temperature.',
         'source': 'Calculated', 'hidden': False, 'array_mode': 'summary'},
 
     'keff 3D (2D corrected) ARO': {
         'group': 'Debug / Intermediate Values', 'units': '',
-        'description': 'keff at each burnup step for the operating configuration with all control drums withdrawn (ARO), corrected from 2D to 3D and evaluated at Common Temperature for shutdown margin calculation.',
-        'source': 'Calculated', 'hidden': False, 'array_mode': 'summary'},    
+        'description': 'keff at each burnup step for the operating configuration with all control drums withdrawn (ARO), corrected from 2D to 3D and evaluated at Common Temperature.',
+        'source': 'Calculated', 'hidden': False, 'array_mode': 'summary'},
 
     'Constant': {
         'group': 'Debug / Intermediate Values', 'units': '',
