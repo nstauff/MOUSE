@@ -14,6 +14,7 @@ def build_openmc_model_GCMR(params):
     
     params.setdefault('Shutdown Margin Calc', False)
     params.setdefault('Isothermal Temperature Coefficients', False)
+    params.setdefault('Cold Shutdown Temperature', 300)
 
     # **************************************************************************************************************************
     #                                                Sec. 0 : Helper Functions
@@ -150,11 +151,7 @@ def build_openmc_model_GCMR(params):
 
         absorber_arc = np.pi/3
         REFERENCE_ANGLE = 240 # This angle is a constant that puts the drum in the correct orientation in reference to the lattice geometry
-        rotation_angle = 0
-        if params['Shutdown Margin Calc']:
-            rotation_angle = 180
-        else:
-            rotation_angle = 0
+        rotation_angle = 180 if params['Shutdown Margin Calc'] else 0
 
         cd_inner_shell = openmc.ZCylinder(r= drum_radius - absorber_thickness)
         cd_outer_shell = openmc.ZCylinder(r= drum_radius)
@@ -485,12 +482,12 @@ def build_openmc_model_GCMR(params):
     settings_file.inactive = inactive
     settings_file.particles = particles
     settings_file.output = {'tallies': True}
-    if params['Isothermal Temperature Coefficients']:
-        settings_file.temperature = {'default': params['Common Temperature'],
-                                     'method': 'interpolation',
-                                     'tolerance': 50.0}
-    else:
-        settings_file.temperature = {'method': 'interpolation'}
+
+    settings_file.temperature = {
+        'default': params['Common Temperature'],
+        'method': 'interpolation',
+        'tolerance': 50.0
+}
 
     # Define a cylindrical source distribution
     r = openmc.stats.Uniform(0, params['Core Radius'])
