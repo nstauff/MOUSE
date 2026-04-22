@@ -225,7 +225,7 @@ for params['Packing Fraction'] in np.linspace(0.25, 0.35, 2):
     params['A75: Core Barrel Replacement Period (cycles)'] = np.floor(10/total_refueling_period_yr)
     params['A75: Reflector Replacement Period (cycles)']   = np.floor(10/total_refueling_period_yr)
     params['A75: Drum Replacement Period (cycles)']        = np.floor(10/total_refueling_period_yr)
-    params['Mainenance to Direct Cost Ratio']              = 0.015
+    params['Maintenance to Direct Cost Ratio']              = 0.015
     params['A78: CAPEX to Decommissioning Cost Ratio'] = 0.15
 
     # **************************************************************************************************************************
