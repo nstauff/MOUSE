@@ -473,8 +473,8 @@ PARAMS_REGISTRY = {
 
     'Time Steps': {
         'group': 'Overall System', 'units': 's',
-        'description': 'Duration of each depletion time step',
-        'source': 'User Input', 'hidden': False, 'array_mode': 'as_is'},  # was 'steps'
+        'description': 'User-specified depletion step durations used by the integrator',
+        'source': 'User Input', 'hidden': False, 'array_mode': 'as_is'},
 
     # =========================================================
     # OpenMC Settings
@@ -511,6 +511,14 @@ PARAMS_REGISTRY = {
         'group': 'Physics Results', 'units': 'days',
         'description': 'Estimated fuel cycle length — time for the 3D-corrected keff to fall to 1.0',
         'source': 'Calculated', 'hidden': False, 'array_mode': None},
+
+    'Depletion Time Steps': {
+        'group': 'Physics Results',
+        'units': 'days',
+        'description': 'Calculated cumulative depletion times corresponding to the reported keff values and used as the x-axis in keff_comparison_vs_Time.png.',
+        'source': 'Calculated',
+        'hidden': False,
+        'array_mode': 'as_is'},
 
     'Mass U235': {
         'group': 'Physics Results', 'units': 'g',

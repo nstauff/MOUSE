@@ -240,9 +240,9 @@ def openmc_depletion(params, lattice_geometry, settings):
 
     depletion_2d_results_file = openmc.deplete.Results("./depletion_results.h5")
 
-    fuel_lifetime_days, keff_2d_values, keff_2d_values_corrected = corrected_keff_2d(
-        depletion_2d_results_file,
-        params['Active Height'] + 2 * params['Axial Reflector Thickness']
+    fuel_lifetime_days, time_steps, keff_2d_values, keff_2d_values_corrected = corrected_keff_2d(
+    depletion_2d_results_file,
+    params['Active Height'] + 2 * params['Axial Reflector Thickness']
     )
 
     try:
@@ -265,6 +265,7 @@ def openmc_depletion(params, lattice_geometry, settings):
 
     params['keff 2D'] = keff_2d_values
     params['keff 3D (2D corrected)'] = keff_2d_values_corrected
+    params['Depletion Time Steps'] = time_steps
 
     return fuel_lifetime_days, mass_U235, mass_U238, pf_summary
 

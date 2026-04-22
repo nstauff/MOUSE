@@ -17,7 +17,6 @@ def corrected_keff_2d(depletion_2d_results_file, total_height):
 
     geometry = openmc.Geometry.from_xml()
     root_universe = geometry.root_universe
-    root = root_universe
     group_edges = np.array([1e-5, 6.7e-2, 3.2e-1, 1, 4, 9.88, 4.81e1, 4.54e2, 4.9e4, 1.83e5, 8.21e5, 4e7])   # Three energy groups
     groups = openmc.mgxs.EnergyGroups(group_edges)
 
@@ -36,8 +35,7 @@ def corrected_keff_2d(depletion_2d_results_file, total_height):
     keff_2d_values = []
 
     # Read the depletion results file to extract time steps
-    depletion_results = openmc.deplete.Results("depletion_results.h5")
-    time, _ = depletion_results.get_keff()
+    time, _ = depletion_2d_results_file.get_keff()
     time_days = [t / 86400 for t in time]  # Convert time to days
 
     # Open CSV file for writing results
@@ -143,5 +141,5 @@ def corrected_keff_2d(depletion_2d_results_file, total_height):
         print("k = 1.0 not reached within the given time steps.")
         raise ValueError("Cannot compute fuel cycle length: k=1.0 was never reached.")
 
-    return round_cycle_length,keff_2d_values,keff_2d_corrected_values      
+    return round_cycle_length, time_steps, keff_2d_values, keff_2d_corrected_values    
 
