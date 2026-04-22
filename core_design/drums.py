@@ -1,7 +1,14 @@
 # Copyright 2025, Battelle Energy Alliance, LLC, ALL RIGHTS RESERVED
-import math
-from core_design.openmc_materials_database import *
-from core_design.utils import *
+import numpy as np
+
+from core_design.openmc_materials_database import collect_materials_data
+from core_design.utils import (
+    circle_area,
+    cylinder_volume,
+    calculate_number_of_rings,
+    calculate_hex_edge_length,
+    calculate_hex_apothem,
+)
 
 
 def _get_valid_ltmr_drum_counts():
@@ -15,10 +22,8 @@ def _get_ltmr_drum_layout_quantities(params, drum_radius):
         raise ValueError(f"Number of Drums must be one of {valid_drum_counts}, got {number_of_drums}")
 
     drums_per_side = number_of_drums // 6
-
-    pin_pitch = 2 * params['Fuel Pin Radii'][-1] + params['Pin Gap Distance']
-    hex_edge_length = pin_pitch * (params['Number of Rings per Assembly'] - 1) + pin_pitch * 0.6
-    apothem = np.sin(np.pi / 3) * hex_edge_length
+    hex_edge_length = calculate_hex_edge_length(params)
+    apothem = calculate_hex_apothem(params)
 
     drum_tube_radius = drum_radius + drum_radius / 90.0
     side_length = hex_edge_length
@@ -76,9 +81,7 @@ def _calculate_max_ltmr_drum_radius(params, tol=1e-6, max_iter=100):
         raise ValueError(f"Number of Drums must be one of {valid_drum_counts}, got {number_of_drums}")
 
     drums_per_side = number_of_drums // 6
-    pin_pitch = 2 * params['Fuel Pin Radii'][-1] + params['Pin Gap Distance']
-    hex_edge_length = pin_pitch * (params['Number of Rings per Assembly'] - 1) + pin_pitch * 0.6
-    side_length = hex_edge_length
+    side_length = calculate_hex_edge_length(params)
 
     upper_bound = (side_length / (2.0 * drums_per_side)) * 90.0 / 91.0
     lower_bound = 0.0
@@ -118,21 +121,21 @@ def _resolve_drum_radius(params):
 
 
 def calculate_drums_volumes_and_masses(params):
-    DRUM_RADIUS = _resolve_drum_radius(params)
+    drum_radius = _resolve_drum_radius(params)
     drum_height = params['Drum Height']
     absorber_thickness = params['Drum Absorber Thickness']
 
-    drum_volume = 3.14 * DRUM_RADIUS * DRUM_RADIUS * drum_height
-    if 'coating_angle' in params.keys():
+    drum_volume = np.pi * drum_radius * drum_radius * drum_height
+    if 'coating_angle' in params:
         drum_absorp_vol = (
-            3.14 * (DRUM_RADIUS * DRUM_RADIUS)
-            - 3.14 / 180 * params['coating_angle'] * (DRUM_RADIUS - absorber_thickness) * (DRUM_RADIUS - absorber_thickness)
+            np.pi * (drum_radius * drum_radius)
+            - np.pi / 180 * params['coating_angle'] * (drum_radius - absorber_thickness) * (drum_radius - absorber_thickness)
         ) * drum_height / 3
     else:
         drum_absorp_vol = (
-            3.14 * (
-                DRUM_RADIUS * DRUM_RADIUS
-                - (DRUM_RADIUS - absorber_thickness) * (DRUM_RADIUS - absorber_thickness)
+            np.pi * (
+                drum_radius * drum_radius
+                - (drum_radius - absorber_thickness) * (drum_radius - absorber_thickness)
             ) * drum_height
         ) / 3
 
@@ -142,7 +145,7 @@ def calculate_drums_volumes_and_masses(params):
         number_of_drums = params['Number of Drums']
         params['Drum Count'] = number_of_drums
     elif params['reactor type'] == "GCMR":
-        if 'Drum Count' in params.keys():
+        if 'Drum Count' in params:
             number_of_drums = params['Drum Count']
         else:
             number_of_drums = 6 * (params['Core Rings'] - 1)
@@ -150,6 +153,8 @@ def calculate_drums_volumes_and_masses(params):
     elif params['reactor type'] == "HPMR":
         number_of_drums = 12
         params['Drum Count'] = number_of_drums
+    else:
+        raise ValueError(f"Unsupported reactor type: {params['reactor type']}")
 
     all_drums_volume = drum_volume * number_of_drums
     drum_absorp_vol_all = drum_absorp_vol * number_of_drums
@@ -159,40 +164,39 @@ def calculate_drums_volumes_and_masses(params):
     drums_absorber_density = materials_database[params['Control Drum Absorber']].density
     drums_reflector_density = materials_database[params['Control Drum Reflector']].density
 
-    drum_absorp_all_mass = drum_absorp_vol_all * drums_absorber_density / 1000  # Kg
-    drum_refl_all_mass = drum_refl_vol_all * drums_reflector_density / 1000  # Kg
+    drum_absorp_all_mass = drum_absorp_vol_all * drums_absorber_density / 1000  # kg
+    drum_refl_all_mass = drum_refl_vol_all * drums_reflector_density / 1000  # kg
 
-    Control_Drums_Mass = drum_absorp_all_mass + drum_refl_all_mass
+    control_drums_mass = drum_absorp_all_mass + drum_refl_all_mass
     params['All Drums Volume'] = all_drums_volume
     params['Control Drum Absorber Mass'] = drum_absorp_all_mass
     params['Control Drum Reflector Mass'] = drum_refl_all_mass
-    params['Control Drums Mass'] = Control_Drums_Mass
+    params['Control Drums Mass'] = control_drums_mass
     params['All Drums Area'] = params['All Drums Volume'] / params['Drum Height']
 
 
 def hexagonal_area_from_ftf(ftf_distance):
-    # Calculate the area directly from the flat-to-flat distance
-    area = (np.sqrt(3) / 2) * ftf_distance ** 2
-    return area
+    """Calculate hexagonal area directly from flat-to-flat distance."""
+    return (np.sqrt(3) / 2) * ftf_distance ** 2
 
 
 def calculate_reflector_mass_LTMR(params):
     _resolve_drum_radius(params)
 
-    hex_area = 2.598 * params['Lattice Radius'] * params['Lattice Radius']
+    hex_area = hexagonal_area_from_ftf(params['Assembly FTF'])
     core_radius = params['Core Radius']
     area_of_all_drums = params['All Drums Area']
     drum_height = params['Drum Height']
 
-    # I assume for now that the drums are always fully inside the reflector
-    area_reflector = 3.14 * core_radius * core_radius - hex_area - area_of_all_drums  # cm2
+    # Assume all drums are fully inside the reflector region.
+    area_reflector = np.pi * core_radius * core_radius - hex_area - area_of_all_drums  # cm^2
     vol_reflector = area_reflector * drum_height  # cm^3
 
     materials_database = collect_materials_data(params)
     rad_reflector_density = materials_database[params['Radial Reflector']].density
     ax_reflector_density = materials_database[params['Axial Reflector']].density
 
-    mass_reflector_rad = vol_reflector * rad_reflector_density / 1000  # Kg
+    mass_reflector_rad = vol_reflector * rad_reflector_density / 1000  # kg
     params['Radial Reflector Mass'] = mass_reflector_rad
     params['Axial Reflector Mass'] = (1 / 1000) * ax_reflector_density * cylinder_volume(
         core_radius,
@@ -211,7 +215,7 @@ def calculate_reflector_mass_GCMR(params):
     )
 
     rad_reflector_density = materials_database[params['Radial Reflector']].density
-    rad_reflector_mass = rad_reflector_density * reflector_volume / 1000  # Kg
+    rad_reflector_mass = rad_reflector_density * reflector_volume / 1000  # kg
     params['Radial Reflector Mass'] = rad_reflector_mass
     params['Axial Reflector Mass'] = 2 * (1 / 1000) * materials_database[params['Axial Reflector']].density * cylinder_volume(
         params['Core Radius'],
@@ -224,38 +228,52 @@ def calculate_moderator_mass_GCMR(params):
     tot_number_assemblies = calculate_number_of_rings(params['Core Rings'])
 
     # The area of one hexagonal lattice in the core
-    A_hex = hexagonal_area_from_ftf(params['Assembly FTF'])
+    hex_area = hexagonal_area_from_ftf(params['Assembly FTF'])
 
-    # area occuplied by the fuel in one hexagonal lattice (assembly)
+    # Area occupied by the fuel in one hexagonal lattice (assembly)
     num_fuel_regions_per_hex = calculate_number_of_rings(params['Assembly Rings'] - 1)
 
     area_fuel_per_hex = params['Packing Fraction'] * circle_area(params['Compact Fuel Radius']) * num_fuel_regions_per_hex
     area_coolant_per_hex = 2 * num_fuel_regions_per_hex * circle_area(params['Coolant Channel Radius'])
 
     # Moderator booster: one or more concentric regions per pin.
-    # The outermost radius defines the total pin footprint (used for moderator displacement).
+    # The outermost radius defines the total pin footprint used for moderator displacement.
     booster_materials = params['Moderator Booster Materials']
     booster_radii = params['Moderator Booster Radii']
-    assert len(booster_materials) == len(booster_radii), \
-        f"'Moderator Booster Materials' (len={len(booster_materials)}) and " \
-        f"'Moderator Booster Radii' (len={len(booster_radii)}) must have the same length."
+    if len(booster_materials) != len(booster_radii):
+        raise ValueError(
+            f"'Moderator Booster Materials' (len={len(booster_materials)}) and "
+            f"'Moderator Booster Radii' (len={len(booster_radii)}) must have the same length."
+        )
 
-    area_moderator_booster_per_hex = 0.5 * 6 * (params['Assembly Rings'] - 1) * circle_area(booster_radii[-1])
+    num_booster_pins_per_hex = 0.5 * 6 * (params['Assembly Rings'] - 1)
+    area_moderator_booster_per_hex = num_booster_pins_per_hex * circle_area(booster_radii[-1])
 
     # Per-region annular areas and masses
     tot_booster_mass = 0.0
-    num_booster_pins_per_hex = 0.5 * 6 * (params['Assembly Rings'] - 1)
     for i, (mat_name, r_outer) in enumerate(zip(booster_materials, booster_radii)):
         r_inner = booster_radii[i - 1] if i > 0 else 0.0
         annular_area = circle_area(r_outer) - circle_area(r_inner)
         density = materials_database[mat_name].density
-        region_mass = tot_number_assemblies * num_booster_pins_per_hex * annular_area \
-                      * params['Active Height'] * density / 1000
+        region_mass = (
+            tot_number_assemblies
+            * num_booster_pins_per_hex
+            * annular_area
+            * params['Active Height']
+            * density
+            / 1000
+        )
         params[f'Moderator Booster Mass {mat_name}'] = region_mass
         tot_booster_mass += region_mass
 
-    moderator_area = A_hex - area_fuel_per_hex - area_coolant_per_hex - area_moderator_booster_per_hex
-    tot_moderator_mass = tot_number_assemblies * moderator_area * params['Active Height'] * materials_database[params['Moderator']].density / 1000
+    moderator_area = hex_area - area_fuel_per_hex - area_coolant_per_hex - area_moderator_booster_per_hex
+    tot_moderator_mass = (
+        tot_number_assemblies
+        * moderator_area
+        * params['Active Height']
+        * materials_database[params['Moderator']].density
+        / 1000
+    )
     params['Moderator Mass'] = tot_moderator_mass
     params['Moderator Booster Mass'] = tot_booster_mass
 
@@ -263,32 +281,43 @@ def calculate_moderator_mass_GCMR(params):
 def calculate_reflector_and_moderator_mass_HPMR(params):
     materials_database = collect_materials_data(params)
     assembly_long_diag = 1.1547 * params['Assembly FTF']
-    assembly_side_length = params['Assembly FTF'] / (np.sqrt(3))
-    big_hex_FTF = params['Number of Rings per Core'] * assembly_long_diag + (params['Number of Rings per Core'] - 1) * assembly_side_length
-    big_hex_area = hexagonal_area_from_ftf(big_hex_FTF)
+    assembly_side_length = params['Assembly FTF'] / np.sqrt(3)
+    big_hex_ftf = (
+        params['Number of Rings per Core'] * assembly_long_diag
+        + (params['Number of Rings per Core'] - 1) * assembly_side_length
+    )
+    big_hex_area = hexagonal_area_from_ftf(big_hex_ftf)
     reflector_volume = (circle_area(params['Core Radius']) - big_hex_area) * params['Active Height']
 
     rad_reflector_density = materials_database[params['Radial Reflector']].density
-    rad_reflector_mass = rad_reflector_density * reflector_volume / 1000  # Kg
+    rad_reflector_mass = rad_reflector_density * reflector_volume / 1000  # kg
     params['Radial Reflector Mass'] = rad_reflector_mass
     params['Axial Reflector Mass'] = 2 * (1 / 1000) * materials_database[params['Axial Reflector']].density * cylinder_volume(
         params['Core Radius'],
         params['Axial Reflector Thickness']
     )
 
-    # moderator = big hex minus the fuel and heatpipes
+    # Moderator = big hex minus the fuel and heatpipes
     fuel_area = params['Fuel Pin Count'] * circle_area(params['Fuel Pin Radii'][-1])
     heatpipe_area = params['Number of Heatpipes'] * circle_area(params['Heat Pipe Radii'][-1])
     params['Moderator Total Area'] = big_hex_area - fuel_area - heatpipe_area
-    params['Moderator Mass'] = params['Moderator Total Area'] * params['Active Height'] * materials_database[params['Moderator']].density / 1000
+    params['Moderator Mass'] = (
+        params['Moderator Total Area']
+        * params['Active Height']
+        * materials_database[params['Moderator']].density
+        / 1000
+    )
 
 
 def calculate_reflector_and_moderator_mass_HPMR_vtb(params):
     materials_database = collect_materials_data(params)
     assembly_long_diag = 1.1547 * params['Assembly FTF']
-    assembly_side_length = params['Assembly FTF'] / (np.sqrt(3))
-    big_hex_FTF = params['Number of Rings per Core'] * assembly_long_diag + (params['Number of Rings per Core'] - 1) * assembly_side_length
-    big_hex_area = hexagonal_area_from_ftf(big_hex_FTF)
+    assembly_side_length = params['Assembly FTF'] / np.sqrt(3)
+    big_hex_ftf = (
+        params['Number of Rings per Core'] * assembly_long_diag
+        + (params['Number of Rings per Core'] - 1) * assembly_side_length
+    )
+    big_hex_area = hexagonal_area_from_ftf(big_hex_ftf)
     rad_reflector_volume = (circle_area(params['Core Radius']) - big_hex_area) * params['Active Height']
     rad_reflector_density = materials_database[params['Radial Reflector']].density
     rad_reflector_mass = rad_reflector_density * rad_reflector_volume / 1000
@@ -301,18 +330,28 @@ def calculate_reflector_and_moderator_mass_HPMR_vtb(params):
     fuel_area = params['Fuel Pin Count'] * circle_area(params['Fuel Pin Radii'][-1])
     heatpipe_area = params['Number of Heatpipes'] * circle_area(params['Heat Pipe Radii'][-1])
     moderator_booster_area = params['Number of Moderator Booster'] * circle_area(params['Moderator Booster Raddi'])
-    params['Moderator Booster Mass'] = moderator_booster_area * params['Active Height'] * materials_database[params['Moderator Booster']].density / 1000
+    params['Moderator Booster Mass'] = (
+        moderator_booster_area
+        * params['Active Height']
+        * materials_database[params['Moderator Booster']].density
+        / 1000
+    )
 
-    DRUM_RADIUS = params['Drum Radius']
-    drum_area = 3.14 * DRUM_RADIUS * DRUM_RADIUS
+    drum_radius = params['Drum Radius']
+    drum_area = np.pi * drum_radius * drum_radius
     number_of_drums = 12
     params['Moderator Total Area'] = big_hex_area - fuel_area - heatpipe_area - moderator_booster_area - drum_area * number_of_drums
-    params['Moderator Mass'] = params['Moderator Total Area'] * params['Active Height'] * materials_database[params['Moderator']].density / 1000
+    params['Moderator Mass'] = (
+        params['Moderator Total Area']
+        * params['Active Height']
+        * materials_database[params['Moderator']].density
+        / 1000
+    )
 
 
 def calculate_moderator_mass(params):
-    # for the moderator pins
+    # For the moderator pins
     materials_database = collect_materials_data(params)
-    moderator_volume = params['Moderator Pin Count'] * circle_area((params['Moderator Pin Radii'])[0]) * params['Active Height']
-    moderator_mass = (1 / 1000) * moderator_volume * materials_database[(params['Moderator Pin Materials'])[0]].density
+    moderator_volume = params['Moderator Pin Count'] * circle_area(params['Moderator Pin Radii'][0]) * params['Active Height']
+    moderator_mass = (1 / 1000) * moderator_volume * materials_database[params['Moderator Pin Materials'][0]].density
     return moderator_mass
