@@ -114,11 +114,10 @@ params['Heat Flux'] =  calculate_heat_flux(params)
 #                                           Sec. 5: Running OpenMC
 # **************************************************************************************************************************
 
-# --- Shutdown Margin (SDM) ---
-# When True, an additional OpenMC simulation is run with all control drums rotated
-# to the fully inserted (ARI - All Rods In) position. The SDM is then calculated
-# as the difference in reactivity (in pcm) between the ARO and ARI configurations.
-# A positive SDM means the reactor can be safely shut down with all drums inserted.
+# --- Shutdown Margin  ---
+# When True, additional OpenMC simulations are run to evaluate shutdown margin.
+# The model is evaluated in both operating (ARO) and shutdown (ARI) drum configurations.
+# Shutdown margin is then computed from the two configurations.
 # Recommended: True for final design verification; can be set to False to save
 # computation time during early design exploration.
 params['Shutdown Margin Calc'] = True  # True or False
