@@ -87,8 +87,10 @@ params['Core Radius'] = params['Lattice Radius'] + params['Radial Reflector Thic
 # ************************************************************************************************************************** 
 
 update_params({
-    'Drum Radius': 9.016, # or it is 0.23 * params['Lattice Radius'],  # cm
+    'Number of Drums': 12,
+    'Drum Radius': 9.016, #,  # cm
     'Drum Absorber Thickness': 1,  # cm
+    'Drum Absorber Arc Degrees': 120,
     'Drum Height': params['Active Height'] + 2*params['Axial Reflector Thickness']
 })
 
