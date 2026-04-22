@@ -342,11 +342,7 @@ def create_control_drums(params, materials_database):
     cr_330.fill             = control_drum_uni
 
     # Adjust the control drums rotation
-    rotation_angle          = 0
-    if params['Shutdown Margin Calc']:
-        rotation_angle = 180
-    else:
-        rotation_angle = 0
+    rotation_angle = 180 if params['Shutdown Margin Calc'] else 0
     cr_000.rotation         = [0,  0,    0 + rotation_angle]
     cr_330.rotation         = [0,  0,    0 + rotation_angle]
     cr_030.rotation         = [0,  0,   60 + rotation_angle]
@@ -442,7 +438,7 @@ An OpenMC function that accepts an instance of "parameters"
 and generates the necessary XMl files
 """
 def build_openmc_model_HPMR(params):
-
+    params.setdefault('Cold Shutdown Temperature', 300)
     params.setdefault('Shutdown Margin Calc', False)
     params.setdefault('Isothermal Temperature Coefficients', False)
     
@@ -525,9 +521,6 @@ def build_openmc_model_HPMR(params):
    # # **************************************************************************************************************************
    # #                                                Sec. 1.4 : VOLUME INFO for Depletion
    # # **************************************************************************************************************************
-    #find where the fuel is in the fuel pin
-    fuel_index = params['Fuel Pin Materials'].index(params['Fuel'])
-
     fissile_area = np.pi * 1 **2
     fuel.volume = fissile_area * round(params['Active Height'],0) * params['Fuel Pin Count']
 
@@ -574,15 +567,16 @@ def build_openmc_model_HPMR(params):
     settings = openmc.Settings()
     settings.batches = 100
     settings.inactive = 20
-    #settings.particles = 1000
+
     if 'Particles' in params.keys():
-        settings.particles = int(params['Particles'])#1000
+        settings.particles = int(params['Particles'])
     else:
-        settings.particles = 1000 
-    if params['Isothermal Temperature Coefficients']:
-        settings.temperature = {'default': params['Common Temperature'],
-                                 'method': 'interpolation',
-                                 'tolerance': 50.0}
-    else:
-        settings.temperature   = {'method': 'interpolation'}
+        settings.particles = 1000
+
+    settings.temperature = {
+        'default': params['Common Temperature'],
+        'method': 'interpolation',
+        'tolerance': 50.0
+    }
+
     settings.export_to_xml()
