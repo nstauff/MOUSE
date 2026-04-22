@@ -168,8 +168,7 @@ def _build_ltmr(params):
         'Number of Rings per Assembly': 12,
         'Radial Reflector Thickness': 14,
     })
-    params['Lattice Radius'] = calculate_hex_apothem(params)   # keep old key for now
-    params['Assembly FTF'] = 2 * params['Lattice Radius']
+    params['Lattice Radius'] = calculate_hex_apothem(params)  
     params['Assembly FTF'] = 2 * params['Lattice Radius']
     params['Active Height'] = 78.4
     params['Axial Reflector Thickness'] = params['Radial Reflector Thickness']
