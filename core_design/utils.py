@@ -314,9 +314,9 @@ def openmc_depletion(params, lattice_geometry, settings):
     mass_U235 = orig_material[0].get_mass('U235')
     mass_U238 = orig_material[0].get_mass('U238')
 
-    params['keff 2D'] = keff_2d_values
-    params['keff 3D (2D corrected)'] = keff_2d_values_corrected
-    params['Depletion Time Steps'] = time_steps
+    params['keff 2D'] = [float(k) for k in keff_2d_values]
+    params['keff 3D (2D corrected)'] = [float(k) for k in keff_2d_values_corrected]
+    params['Depletion Time Steps'] = [float(t) for t in time_steps]
 
     # Beginning-of-life axial leakage metrics from the buckling correction model
     params['BOL Axial Non-Leakage Probability'] = bol_axial_non_leakage_probability
@@ -350,7 +350,6 @@ def monitor_heat_flux(params):
         print("\n")
     else:
         print(f"\033[91mERROR: HIGH HEAT FLUX IS TOO HIGH: {np.round(params['Heat Flux'], 2)} MW/m^2.\033[0m")
-        return "High Heat Flux"
 
 
 def _run_isothermal_temperature_coefficients(build_openmc_model, params):
@@ -415,79 +414,74 @@ def run_openmc(build_openmc_model, heat_flux_monitor, params):
                 "Typical range: 50-300K depending on your Monte Carlo statistical noise level.\n"
             )
 
-    if heat_flux_monitor == "High Heat Flux":
-        print("ERROR: HIGH HEAT FLUX")
-    else:
-        try:
-            print(f"\n\nThe results/plots are saved at: {watts.Database().path}\n\n")
+    try:
+        print(f"\n\nThe results/plots are saved at: {watts.Database().path}\n\n")
 
-            if params['Shutdown Margin Calc']:
+        if params['Shutdown Margin Calc']:
 
-                if params['Isothermal Temperature Coefficients']:
-                    params['Shutdown Margin Calc'] = False
-                    params['Common Temperature'] = original_common_temperature
-                    _run_isothermal_temperature_coefficients(build_openmc_model, params)
-                    params['Shutdown Margin Calc'] = True
-                else:
-                    params['Temp Coeff 2D'] = np.nan
-                    params['Temp Coeff 3D (2D corrected)'] = np.nan
-
-                # First shutdown-margin run: shutdown configuration (ARI) at cold shutdown temperature
-                params['Common Temperature'] = params['Cold Shutdown Temperature']
-                openmc_plugin = watts.PluginOpenMC(build_openmc_model, show_stderr=True)
-                openmc_plugin(params, function=lambda: run_depletion_analysis(params))
-                params['keff 2D ARI'] = params['keff 2D']
-                params['keff 3D (2D corrected) ARI'] = params['keff 3D (2D corrected)']
-
-                # Second shutdown-margin run: operating configuration (ARO) at operating temperature
+            if params['Isothermal Temperature Coefficients']:
                 params['Shutdown Margin Calc'] = False
                 params['Common Temperature'] = original_common_temperature
+                _run_isothermal_temperature_coefficients(build_openmc_model, params)
+                params['Shutdown Margin Calc'] = True
+            else:
+                params['Temp Coeff 2D'] = np.nan
+                params['Temp Coeff 3D (2D corrected)'] = np.nan
+
+            params['Common Temperature'] = params['Cold Shutdown Temperature']
+            openmc_plugin = watts.PluginOpenMC(build_openmc_model, show_stderr=True)
+            openmc_plugin(params, function=lambda: run_depletion_analysis(params))
+            params['keff 2D ARI'] = params['keff 2D']
+            params['keff 3D (2D corrected) ARI'] = params['keff 3D (2D corrected)']
+
+            params['Shutdown Margin Calc'] = False
+            params['Common Temperature'] = original_common_temperature
+            openmc_plugin = watts.PluginOpenMC(build_openmc_model, show_stderr=True)
+            openmc_plugin(params, function=lambda: run_depletion_analysis(params))
+            params['keff 2D ARO'] = params['keff 2D']
+            params['keff 3D (2D corrected) ARO'] = params['keff 3D (2D corrected)']
+
+            sdm_2d_per_step = [
+                    ((1.0 - k_s) / k_s) * 1e5
+                    for k_s in params['keff 2D ARI']
+            ]
+
+            sdm_3d_per_step = [
+                    ((1.0 - k_s) / k_s) * 1e5
+                    for k_s in params['keff 3D (2D corrected) ARI']
+            ]
+            params['Most Limiting Shutdown Margin 2D'] = np.min(sdm_2d_per_step)
+            params['Maximum Shutdown Margin 2D'] = np.max(sdm_2d_per_step)
+
+            params['Most Limiting Shutdown Margin 3D (2D corrected)'] = np.min(sdm_3d_per_step)
+            params['Maximum Shutdown Margin 3D (2D corrected)'] = np.max(sdm_3d_per_step)
+
+        else:
+            params['Most Limiting Shutdown Margin 2D'] = np.nan
+            params['Maximum Shutdown Margin 2D'] = np.nan
+            params['Most Limiting Shutdown Margin 3D (2D corrected)'] = np.nan
+            params['Maximum Shutdown Margin 3D (2D corrected)'] = np.nan
+
+            if params['Isothermal Temperature Coefficients']:
+                _run_isothermal_temperature_coefficients(build_openmc_model, params)
+            else:
+                params['Temp Coeff 2D'] = np.nan
+                params['Temp Coeff 3D (2D corrected)'] = np.nan
+
                 openmc_plugin = watts.PluginOpenMC(build_openmc_model, show_stderr=True)
                 openmc_plugin(params, function=lambda: run_depletion_analysis(params))
                 params['keff 2D ARO'] = params['keff 2D']
                 params['keff 3D (2D corrected) ARO'] = params['keff 3D (2D corrected)']
 
-                sdm_2d_per_step = [
-                        ((1.0 - k_s) / k_s) * 1e5
-                        for k_s in params['keff 2D ARI']
-                ]
+    except Exception as e:
+        print("\n\n\033[91mAn error occurred while running the OpenMC simulation:\033[0m\n\n")
+        traceback.print_exc()
+        raise
 
-                sdm_3d_per_step = [
-                        ((1.0 - k_s) / k_s) * 1e5
-                        for k_s in params['keff 3D (2D corrected) ARI']
-                ]
-                params['Most Limiting Shutdown Margin 2D'] = np.min(sdm_2d_per_step)
-                params['Maximum Shutdown Margin 2D'] = np.max(sdm_2d_per_step)
-
-                params['Most Limiting Shutdown Margin 3D (2D corrected)'] = np.min(sdm_3d_per_step)
-                params['Maximum Shutdown Margin 3D (2D corrected)'] = np.max(sdm_3d_per_step)
-
-            else:
-                params['Most Limiting Shutdown Margin 2D'] = np.nan
-                params['Maximum Shutdown Margin 2D'] = np.nan
-                params['Most Limiting Shutdown Margin 3D (2D corrected)'] = np.nan
-                params['Maximum Shutdown Margin 3D (2D corrected)'] = np.nan
-
-                if params['Isothermal Temperature Coefficients']:
-                    _run_isothermal_temperature_coefficients(build_openmc_model, params)
-                else:
-                    params['Temp Coeff 2D'] = np.nan
-                    params['Temp Coeff 3D (2D corrected)'] = np.nan
-
-                    openmc_plugin = watts.PluginOpenMC(build_openmc_model, show_stderr=True)
-                    openmc_plugin(params, function=lambda: run_depletion_analysis(params))
-                    params['keff 2D ARO'] = params['keff 2D']
-                    params['keff 3D (2D corrected) ARO'] = params['keff 3D (2D corrected)']
-
-        except Exception as e:
-            print("\n\n\033[91mAn error occurred while running the OpenMC simulation:\033[0m\n\n")
-            traceback.print_exc()
-            raise
-
-        finally:
-            params['Shutdown Margin Calc'] = original_shutdown_margin_calc
-            params['Isothermal Temperature Coefficients'] = original_isothermal_temperature_coefficients
-            params['Common Temperature'] = original_common_temperature
+    finally:
+        params['Shutdown Margin Calc'] = original_shutdown_margin_calc
+        params['Isothermal Temperature Coefficients'] = original_isothermal_temperature_coefficients
+        params['Common Temperature'] = original_common_temperature
 
 
 def cyclic_rotation(input_array, k):

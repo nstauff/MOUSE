@@ -341,6 +341,36 @@ def create_control_drums_positions(params):
     return positions
 
 
+def update_ltmr_reflector_geometry_from_drums(params):
+    """
+    For LTMR, derive:
+    - Core Radius
+    - Radial Reflector Thickness
+    - Axial Reflector Thickness
+    - Drum Height
+
+    from the actual drum layout implied by Number of Drums and Drum Radius.
+    """
+    drum_radius = resolve_drum_radius(params)
+    drum_tube_radius = drum_radius + drum_radius / 90.0
+
+    drum_positions = create_control_drums_positions(params)
+
+    max_outer_radius = max(
+        np.sqrt(x ** 2 + y ** 2) + drum_tube_radius
+        for x, y, _ in drum_positions
+    )
+
+    hex_apothem = calculate_hex_apothem(params)
+
+    params['Core Radius'] = max_outer_radius
+    params['Radial Reflector Thickness'] = params['Core Radius'] - hex_apothem
+    params['Axial Reflector Thickness'] = params['Radial Reflector Thickness']
+    params['Drum Height'] = params['Active Height'] + 2 * params['Axial Reflector Thickness']
+
+    return drum_positions
+
+
 def create_core_geometry(params, drums, drums_positions, assembly_universe):
     """
     Build the full 2D radial core geometry with reflector-embedded control drums.
@@ -556,7 +586,7 @@ def build_openmc_model_LTMR(params):
     #                                                Sec. 1.5 : Control Drum Placement and Core Geometry
     # **************************************************************************************************************************
 
-    control_drum_positions = create_control_drums_positions(params)
+    control_drum_positions = update_ltmr_reflector_geometry_from_drums(params)
     drums = create_drums_universe(
         params,
         control_drum_absorber,
