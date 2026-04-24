@@ -60,20 +60,32 @@ def compute_pin_peaking_factors(current_dir="."):
         t = sp.get_tally(name=tally_name)
         df = t.get_pandas_dataframe(paths=False)
 
-        # LTMR / distribcell case
+        # Detect tally format: distribcell (LTMR) or mesh-based (GCMR).
+        # Mesh column names depend on the OpenMC version and how many meshes have been
+        # created in the session (the mesh ID counter increments globally, so when
+        # build_openmc_model_GCMR is called twice — e.g. for Isothermal Temperature
+        # Coefficients — the second mesh gets ID 2, not 1).  We detect the mesh
+        # columns dynamically by regex rather than hard-coding "mesh 1 x" etc.
+        x_cols = [c for c in df.columns if re.match(r"mesh \d+ x$", c)]
+        y_cols = [c for c in df.columns if re.match(r"mesh \d+ y$", c)]
+        z_cols = [c for c in df.columns if re.match(r"mesh \d+ z$", c)]
+        flat_mesh_cols = [c for c in df.columns if re.match(r"mesh \d+$", c)]
+
         if "distribcell" in df.columns:
+            tally_type = "distribcell"
             per_region = df.groupby("distribcell")["mean"].sum()
-            region_ids = per_region.index.tolist()
-
-        # GCMR / mesh case
-        elif all(col in df.columns for col in ["mesh 1 x", "mesh 1 y", "mesh 1 z"]):
-            per_region = df.groupby(["mesh 1 x", "mesh 1 y", "mesh 1 z"])["mean"].sum()
-            region_ids = [f"({i},{j},{k})" for i, j, k in per_region.index.tolist()]
-
+        elif x_cols and y_cols and z_cols:
+            # New OpenMC format: separate x / y / z columns
+            tally_type = "mesh_xyz"
+            per_region = df.groupby([x_cols[0], y_cols[0], z_cols[0]])["mean"].sum()
+        elif flat_mesh_cols:
+            # Old OpenMC format: single "mesh N" column (flat voxel index)
+            tally_type = "mesh_flat"
+            per_region = df.groupby(flat_mesh_cols[0])["mean"].sum()
         else:
             raise ValueError(
-                "[PF] Unsupported tally format. Expected either a distribcell tally "
-                "or mesh columns ['mesh 1 x', 'mesh 1 y', 'mesh 1 z']."
+                "[PF] Unsupported tally format. Expected a distribcell or mesh tally. "
+                f"Found columns: {list(df.columns)}"
             )
 
         # Remove zero-power bins/cells
@@ -85,11 +97,13 @@ def compute_pin_peaking_factors(current_dir="."):
 
         pf = per_region / per_region.mean()
 
-        # Keep IDs aligned after zero-power filtering
-        if "distribcell" in df.columns:
+        # Build region IDs aligned with the zero-power-filtered index
+        if tally_type == "distribcell":
             region_ids = pf.index.tolist()
-        else:
+        elif tally_type == "mesh_xyz":
             region_ids = [f"({i},{j},{k})" for i, j, k in pf.index.tolist()]
+        else:  # mesh_flat
+            region_ids = [str(idx) for idx in pf.index.tolist()]
 
         out = pd.DataFrame({
             "Region_ID": region_ids,
