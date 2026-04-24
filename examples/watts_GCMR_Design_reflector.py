@@ -47,7 +47,7 @@ for params['Radial Reflector'] in ['Graphite', 'BeO']:
         update_params({
             'reactor type': "GCMR",  # LTMR or GCMR
             'TRISO Fueled': "Yes",
-            'Fuel': 'UN',
+            'Fuel': 'UCO',
             'Enrichment': 0.1975,  # The enrichment is a fraction. It has to be between 0 and 1
             'UO2 atom fraction': 0.7,  # Mixing UO2 and UC by atom fraction
             'Matrix Material': 'Graphite', # matrix material is a background material within the compact fuel element between the TRISO particles
@@ -65,8 +65,8 @@ for params['Radial Reflector'] in ['Graphite', 'BeO']:
         # **************************************************************************************************************************  
 
         update_params({
-            'Fuel Pin Materials': ['UN', 'buffer_graphite', 'PyC', 'SiC', 'PyC'],
-            'Fuel Pin Radii': [0.025, 0.035, 0.039, 0.0425, 0.047],  # cm
+            'Fuel Pin Materials': ['UCO', 'buffer_graphite', 'PyC', 'SiC', 'PyC'],
+            'Fuel Pin Radii': [0.0250, 0.0350, 0.0390, 0.0425, 0.0465],  # cm # https://art.inl.gov/NRC%20Training%202019/04_TRISO_Fuel.pdf
             'Compact Fuel Radius': 0.6225,  # cm
             'Packing Fraction': 0.3,
             'Coolant Channel Radius': 0.35,  # cm

@@ -43,7 +43,7 @@ update_params({
 update_params({
     'reactor type': "GCMR",  # LTMR or GCMR
     'TRISO Fueled': "Yes",
-    'Fuel': 'UN',
+    'Fuel': 'UCO',
     'Enrichment': 0.1975,  # The enrichment is a fraction. It has to be between 0 and 1
     'UO2 atom fraction': 0.7,  # Mixing UO2 and UC by atom fraction
     'Radial Reflector': 'Graphite',
@@ -63,8 +63,8 @@ update_params({
 # **************************************************************************************************************************  
 for params['Packing Fraction'] in np.linspace(0.25, 0.35, 2):
     update_params({
-        'Fuel Pin Materials': ['UN', 'buffer_graphite', 'PyC', 'SiC', 'PyC'],
-        'Fuel Pin Radii': [0.025, 0.035, 0.039, 0.0425, 0.047],  # cm
+        'Fuel Pin Materials': ['UCO', 'buffer_graphite', 'PyC', 'SiC', 'PyC'],
+        'Fuel Pin Radii': [0.0250, 0.0350, 0.0390, 0.0425, 0.0465],  # cm # https://art.inl.gov/NRC%20Training%202019/04_TRISO_Fuel.pdf
         'Compact Fuel Radius': 0.6225,  # cm
         'Coolant Channel Radius': 0.35,  # cm
         'Moderator Booster Radii': [0.55],  # cm
