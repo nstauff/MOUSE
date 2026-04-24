@@ -81,24 +81,30 @@ def collect_materials_data(params):
     # S(α,β) tables for mixing purposes only. The S(α,β) tables are then added
     # to the resulting UCO material after mixing.
     # The standalone UO2 material (used directly as fuel) is unaffected.
+   # UCO: Mixed uranium dioxide (UO2) and uranium carbide (UC)
     try:
         UO2_for_mix = openmc.Material(name='UO2_for_mix')
         UO2_for_mix.set_density('g/cm3', 10.41)
         UO2_for_mix.add_element('U', 1.0, enrichment=100 * params['Enrichment'])
         UO2_for_mix.add_nuclide('O16', 2.0)
-        # Note: S(α,β) intentionally NOT added here — will be added to UCO after mixing
 
         UCO = openmc.Material.mix_materials(
             [UO2_for_mix, UC],
-            [params['UO2 atom fraction'], 1 - params['UO2 atom fraction']], 'ao'
+            [params['UO2 atom fraction'], 1 - params['UO2 atom fraction']],
+            'ao',
+            name='UCO'
         )
-        # Add S(α,β) to the mixed UCO material after mixing
+        UCO.temperature = params['Common Temperature']
+
+        # Optional approximation:
         UCO.add_s_alpha_beta("c_U_in_UO2")
         UCO.add_s_alpha_beta("c_O_in_UO2")
+
         materials.append(UCO)
         materials_database.update({'UCO': UCO})
-    except KeyError as e:
-        print(f"Skipping UCO due to missing parameter: {e}") 
+
+    except (KeyError, NameError) as e:
+        print(f"Skipping UCO due to missing parameter/material: {e}")
     
     # Uranium Nitride
     try:
