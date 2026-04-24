@@ -13,25 +13,24 @@ def natural_sort_key(s: str):
 
 def compute_pin_peaking_factors(current_dir="."):
     """
-    Compute pin peaking factors for all OpenMC depletion statepoints 
+    Compute peaking factors for all OpenMC depletion statepoints.
 
-    For each file:
-        Computes per-pin kappa-fission power
-        Computes peaking factor PF = P_i / P_mean
-        Prints table: Rod_ID, Peaking_Factor for that depletion step
+    Supports both:
+      1) distribcell-based tally (LTMR-style)
+      2) mesh-based tally (GCMR-style)
 
-    Prints:
-      Per-step PF tables
-      Final summary: [Step, Max_PF, Rod_ID_Max]
+    For each statepoint:
+      - Reads tally 'pin_power_kappa'
+      - Sums kappa-fission power by pin/cell or mesh voxel
+      - Computes PF = P_i / mean(P)
 
     Returns:
-      summary       : DataFrame with columns [Step, Max_PF, Rod_ID_Max]
-      per_step_data : dict[step] -> DataFrame [Rod_ID, Peaking_Factor, Step]
+      summary       : DataFrame with columns [Step, Max_PF, Region_ID_Max]
+      per_step_data : dict[step] -> DataFrame [Region_ID, Peaking_Factor, Step]
     """
 
     base = Path(current_dir)
 
-    # Find depletion statepoint files: openmc_simulation_n*.h5
     sp_files = glob.glob(str(base / "openmc_simulation_n*.h5"))
     sp_files = sorted(sp_files, key=natural_sort_key)
 
@@ -50,59 +49,66 @@ def compute_pin_peaking_factors(current_dir="."):
         sp_path = Path(sp_file)
         basename = sp_path.name
 
-        # Extract raw numeric index from "openmc_simulation_nX.h5"
         m = re.search(r"n(\d+)\.h5", basename)
         if m:
-            step_raw = int(m.group(1))       # 0, 1, 2, ..., 15
-            step = step_raw + 1              # 1, 2, 3, ..., 16   (shifted numbering)
+            step_raw = int(m.group(1))
+            step = step_raw + 1
         else:
-            # Fallback: if pattern doesn't match, just keep the basename
             step = basename
 
-        # Load statepoint and tally
         sp = openmc.StatePoint(str(sp_path))
         t = sp.get_tally(name=tally_name)
-
-        # Avoid needing summary.h5 for distribcell paths
         df = t.get_pandas_dataframe(paths=False)
 
-        # Pick index column: distribcell for pin-based, or mesh index for mesh-based tallies
+        # LTMR / distribcell case
         if "distribcell" in df.columns:
-            id_col = "distribcell"
-        elif "mesh 1" in df.columns:
-            id_col = "mesh 1"
+            per_region = df.groupby("distribcell")["mean"].sum()
+            region_ids = per_region.index.tolist()
+
+        # GCMR / mesh case
+        elif all(col in df.columns for col in ["mesh 1 x", "mesh 1 y", "mesh 1 z"]):
+            per_region = df.groupby(["mesh 1 x", "mesh 1 y", "mesh 1 z"])["mean"].sum()
+            region_ids = [f"({i},{j},{k})" for i, j, k in per_region.index.tolist()]
+
         else:
-            id_col = df.columns[0]
+            raise ValueError(
+                "[PF] Unsupported tally format. Expected either a distribcell tally "
+                "or mesh columns ['mesh 1 x', 'mesh 1 y', 'mesh 1 z']."
+            )
 
-        # Per-pin/cell power and PF
-        per_pin = df.groupby(id_col)["mean"].sum()
+        # Remove zero-power bins/cells
+        per_region = per_region[per_region > 0]
 
-        # Filter out zero-power cells (e.g., mesh cells with no fuel)
-        per_pin = per_pin[per_pin > 0]
+        if len(per_region) == 0:
+            print(f"[PF] WARNING: no positive-power regions found in step {step}. Skipping.")
+            continue
 
-        pf = per_pin / per_pin.mean()
+        pf = per_region / per_region.mean()
 
-        # Per-step PF
+        # Keep IDs aligned after zero-power filtering
+        if "distribcell" in df.columns:
+            region_ids = pf.index.tolist()
+        else:
+            region_ids = [f"({i},{j},{k})" for i, j, k in pf.index.tolist()]
+
         out = pd.DataFrame({
-            "Rod_ID": per_pin.index,
+            "Region_ID": region_ids,
             "Peaking_Factor": pf.values,
             "Step": step
         })
+
         per_step_data[step] = out
 
-        # Print per-step PF table
         print(f"--- Peaking factors for depletion step {step} ---")
-        print(out[["Rod_ID", "Peaking_Factor"]].to_string(index=False))
+        print(out[["Region_ID", "Peaking_Factor"]].to_string(index=False))
         print()
 
-        # Collect for summary
         results.append({
             "Step": step,
             "Max_PF": float(pf.max()),
-            "Rod_ID_Max": pf.idxmax()
+            "Region_ID_Max": out.loc[out["Peaking_Factor"].idxmax(), "Region_ID"]
         })
 
-    # Build and print summary
     summary = pd.DataFrame(results).sort_values("Step")
 
     print("========== Peaking Factor Summary ==========")

@@ -301,7 +301,7 @@ def openmc_depletion(params, lattice_geometry, settings):
         idx_max = pf_summary['Max_PF'].idxmax()
         params['Max Peaking Factor'] = pf_summary.loc[idx_max, 'Max_PF']
         params['Step with Max Peaking Factor'] = pf_summary.loc[idx_max, 'Step']
-        params['Rod ID with Max Peaking Factor'] = pf_summary.loc[idx_max, 'Rod_ID_Max']
+        params['Region ID with Max Peaking Factor'] = pf_summary.loc[idx_max, 'Region_ID_Max']
         params['Max Peaking Factors per Step'] = pf_summary['Max_PF'].tolist()
         params['PF Summary'] = pf_summary.to_dict(orient='list')
 

@@ -631,9 +631,9 @@ PARAMS_REGISTRY = {
         'description': 'Depletion step number at which the maximum peaking factor occurs',
         'source': 'Calculated', 'hidden': False, 'array_mode': None},
 
-    'Rod ID with Max Peaking Factor': {
+    'Region ID with Max Peaking Factor': {
         'group': 'Physics Results', 'units': 'unitless',
-        'description': 'Pin/rod ID with the highest peaking factor across all depletion steps',
+        'description': 'Region ID with the highest peaking factor across all depletion steps; for LTMR this is typically a pin/distribcell ID, while for GCMR it is a mesh-region index',
         'source': 'Calculated', 'hidden': False, 'array_mode': None},
 
     'Max Peaking Factors per Step': {
