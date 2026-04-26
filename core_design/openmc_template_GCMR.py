@@ -387,7 +387,7 @@ def build_openmc_model_GCMR(params):
 
     if params['plotting'] == "Y":
             create_universe_plot(materials_database, active_core_universe, 
-            plot_width = 2.2 *params['Assembly FTF'] *  params['Core Rings'] ,
+            plot_width = 2.2 * params['Core Radius'],
             num_pixels = 500, 
             font_size = 32,
             title = "Core", 
