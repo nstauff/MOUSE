@@ -130,7 +130,7 @@ def calculate_total_number_of_TRISO_particles(params):
     )
     params['Number Of TRISO Particles Per Compact Fuel'] = number_of_particles_per_compact_fuel_vol
     total_number_of_particles = number_of_particles_per_compact_fuel_vol * \
-        calculate_number_of_rings(params['Assembly Rings']) * \
+        calculate_number_of_rings(params['Assembly Rings'] - 1) * \
         calculate_number_of_rings(params['Core Rings'])
     params['Total Number of TRISO Particles'] = total_number_of_particles
     return total_number_of_particles

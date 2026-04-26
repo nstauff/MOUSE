@@ -409,7 +409,8 @@ def build_openmc_model_GCMR(params):
     # The volume of a compact fuel volume defined before to have a a height of 4
     params['Lattice Compact Volume'] =  cylinder_volume(params['Compact Fuel Radius'], 4)
 
-    core_fuel_cells = assembly_number * assembly_fuel_cells
+    outer_fuel_ring_count = 6 * (params['Core Rings'] - 1)  # corner + edge assemblies not counted in assembly_number
+    core_fuel_cells = (assembly_number + outer_fuel_ring_count) * assembly_fuel_cells
     core_compact_volume = cylinder_volume(params['Compact Fuel Radius'], params['Active Height']) * core_fuel_cells
     core_triso_number = core_compact_volume / params['Lattice Compact Volume'] * compact_triso_particles_number
     kernel_volume = sphere_volume(params['Fuel Pin Radii'][0])

@@ -225,19 +225,26 @@ def calculate_reflector_mass_GCMR(params):
 
 def calculate_moderator_mass_GCMR(params):
     materials_database = collect_materials_data(params)
-    tot_number_assemblies = calculate_number_of_rings(params['Core Rings'])
+    AR = params['Assembly Rings']
+    CR = params['Core Rings']
+    tot_number_assemblies = calculate_number_of_rings(CR)
 
-    # The area of one hexagonal lattice in the core
+    # Area of one hexagonal assembly in the core lattice
     hex_area = hexagonal_area_from_ftf(params['Assembly FTF'])
 
-    # Area occupied by the fuel in one hexagonal lattice (assembly)
-    num_fuel_regions_per_hex = calculate_number_of_rings(params['Assembly Rings'] - 1)
-
+    # Fuel compact area per assembly (PF fraction only — graphite matrix inside compact counts as moderator)
+    num_fuel_regions_per_hex = calculate_number_of_rings(AR - 1)
     area_fuel_per_hex = params['Packing Fraction'] * circle_area(params['Compact Fuel Radius']) * num_fuel_regions_per_hex
-    area_coolant_per_hex = 2 * num_fuel_regions_per_hex * circle_area(params['Coolant Channel Radius'])
 
-    # Moderator booster: one or more concentric regions per pin.
-    # The outermost radius defines the total pin footprint used for moderator displacement.
+    # Every hex cell in the assembly (fuel, booster, or coolant lattice hex) has 6 coolant channels
+    # at its vertices.  Vertex sharing gives 2 effective channels per cell across all calculate_number_of_rings(AR)
+    # cells (inner fuel rings + outer booster/coolant ring).
+    area_coolant_per_hex = 2 * calculate_number_of_rings(AR) * circle_area(params['Coolant Channel Radius'])
+
+    # Booster pin count: each booster_lattice_hex has its pin at the CENTER (not a vertex), so it
+    # is never shared between adjacent cells — 1 full pin per booster cell.
+    # Standard assemblies have 6*(AR-1) booster cells in the outer ring.
+    # Corner and edge assemblies have partial booster outer rings (some cells replaced by coolant lattice hex).
     booster_materials = params['Moderator Booster Materials']
     booster_radii = params['Moderator Booster Radii']
     if len(booster_materials) != len(booster_radii):
@@ -246,18 +253,26 @@ def calculate_moderator_mass_GCMR(params):
             f"'Moderator Booster Radii' (len={len(booster_radii)}) must have the same length."
         )
 
-    num_booster_pins_per_hex = 0.5 * 6 * (params['Assembly Rings'] - 1)
-    area_moderator_booster_per_hex = num_booster_pins_per_hex * circle_area(booster_radii[-1])
+    n_standard = calculate_number_of_rings(CR - 1)
+    n_corners  = 6
+    n_edges    = 6 * (CR - 2)
+    total_booster_pins = (
+        n_standard * 6 * (AR - 1)
+        + n_corners * ((AR - 1) * 3 - 1)
+        + n_edges   * ((AR - 1) * 4 - 1)
+    )
 
-    # Per-region annular areas and masses
+    # Per-assembly average booster footprint (used to compute moderator area displacement)
+    area_moderator_booster_per_hex = (total_booster_pins / tot_number_assemblies) * circle_area(booster_radii[-1])
+
+    # Per-region booster mass (annular regions from innermost to outermost)
     tot_booster_mass = 0.0
     for i, (mat_name, r_outer) in enumerate(zip(booster_materials, booster_radii)):
         r_inner = booster_radii[i - 1] if i > 0 else 0.0
         annular_area = circle_area(r_outer) - circle_area(r_inner)
         density = materials_database[mat_name].density
         region_mass = (
-            tot_number_assemblies
-            * num_booster_pins_per_hex
+            total_booster_pins
             * annular_area
             * params['Active Height']
             * density
