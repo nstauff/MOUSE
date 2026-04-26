@@ -60,6 +60,16 @@ def compute_pin_peaking_factors(current_dir="."):
         t = sp.get_tally(name=tally_name)
         df = t.get_pandas_dataframe(paths=False)
 
+        # OpenMC returns MultiIndex (tuple) column names for multi-filter tallies
+        # (e.g. MeshFilter + MaterialFilter in GCMR).  Flatten to plain strings so
+        # that string operations below work regardless of OpenMC version.
+        if any(isinstance(c, tuple) for c in df.columns):
+            df.columns = [
+                " ".join(str(x) for x in c if str(x).strip()).strip()
+                if isinstance(c, tuple) else c
+                for c in df.columns
+            ]
+
         # Detect tally format: distribcell (LTMR) or mesh-based (GCMR).
         # Mesh column names depend on the OpenMC version and how many meshes have been
         # created in the session (the mesh ID counter increments globally, so when
