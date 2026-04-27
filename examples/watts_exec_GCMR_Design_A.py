@@ -77,18 +77,21 @@ update_params({
     'Core Rings': 5,
 })
 params['Assembly FTF'] = params['Lattice Pitch']*(params['Assembly Rings']-1)*np.sqrt(3)
-params['Radial Reflector Thickness'] = 27.393 # cm # radial reflector
-params['Axial Reflector Thickness'] = params['Radial Reflector Thickness'] # cm
-params['Core Radius'] = params['Assembly FTF']*params['Core Rings'] +  params['Radial Reflector Thickness']
+# if unspecified, radial reflector thickness defaults to just cover the drums,
+# and axial reflector thickness defaults to match the radial one
+# params['Radial Reflector Thickness'] = 27.393 # cm # radial reflector
+# params['Axial Reflector Thickness'] = params['Radial Reflector Thickness'] # cm
+# params['Core Radius'] = params['Assembly FTF']*params['Core Rings'] +  params['Radial Reflector Thickness']
 params['Active Height'] = 250
 
 # **************************************************************************************************************************
 #                                           Sec. 3: Control Drums
 # ************************************************************************************************************************** 
 update_params({
-    'Drum Radius': 9, # cm   
+    #'Drum Radius': 9, # cm  # if unavailable, maximize the drum radius while preventing overlaps  
     'Drum Absorber Thickness': 1, # cm
-    'Drum Height': params['Active Height'] + 2*params['Axial Reflector Thickness'],
+   # if unspecified, drum height defaults to active height + 2 * axial reflector thickness
+    #'Drum Height': params['Active Height'] + 2*params['Axial Reflector Thickness'],
     })
 calculate_drums_volumes_and_masses(params)
 calculate_reflector_mass_GCMR(params)          
