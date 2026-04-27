@@ -149,7 +149,7 @@ def build_openmc_model_GCMR(params):
                             control_drum_absorber_material,
                             control_drum_reflector_material):
 
-        absorber_arc = np.pi/3
+        absorber_arc = 1 / np.sqrt(3)  # plane coefficient b in x + b*y = 0 giving exactly 120° absorber arc
         REFERENCE_ANGLE = 240 # This angle is a constant that puts the drum in the correct orientation in reference to the lattice geometry
         rotation_angle = 180 if params['Shutdown Margin Calc'] else 0
 
