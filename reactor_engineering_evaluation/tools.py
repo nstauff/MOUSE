@@ -38,7 +38,8 @@ def cylinder_annulus_mass(outer_radius , inner_radius,height, material ):
 def calculate_shielding_masses(params):
     params['In Vessel Shield Mass'] = cylinder_annulus_mass(params['In Vessel Shield Outer Radius'],\
     params['In Vessel Shield Inner Radius'], params['Vessel Height'], params['In Vessel Shield Material'] )
-    params['Outer Shield Outer Radius'] = params['Out Of Vessel Shield Thickness']+ params['Vessels Total Radius']
+    params['Outer Shield Outer Radius'] = params['Out Of Vessel Shield Thickness'] + params['Vessels Total Radius']
+    params['Outer Shield Inner Radius'] = params['Outer Shield Outer Radius'] - params['Out Of Vessel Shield Thickness']
 
     outer_shield_mass = cylinder_annulus_mass(params['Outer Shield Outer Radius'], params['Outer Shield Inner Radius'],\
     params['Vessels Total Height'], params['Out Of Vessel Shield Material']) 
