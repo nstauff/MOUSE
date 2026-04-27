@@ -111,10 +111,33 @@ def _calculate_max_gcmr_drum_radius(params):
     return params['Assembly FTF'] / 2 * (45 / 46)
 
 
+def _calculate_max_hpmr_drum_radius(params):
+    """
+    Return the maximum HPMR drum radius (cm) such that no two adjacent
+    drums overlap on the placement ring.
+
+    Drums are placed on a ring of radius
+        cd_distance = r0 + drum_tube_radius
+    where r0 = (N_rings - 1)*Assembly_FTF + Assembly_FTF/2
+    and   drum_tube_radius = drum_radius * (91/90).
+
+    No-overlap condition (chord >= 2 * drum_tube_radius):
+        2 * cd_distance * sin(pi/n) >= 2 * drum_tube_radius
+    Solving the self-referential equation gives:
+        max_drum_tube = r0 * sin(pi/n) / (1 - sin(pi/n))
+    """
+    n_drums = int(params.get('Drum Count', 12))
+    r0 = ((params['Number of Rings per Core'] - 1) * params['Assembly FTF']
+          + params['Assembly FTF'] / 2)
+    sin_half = np.sin(np.pi / n_drums)
+    max_drum_tube = r0 * sin_half / (1.0 - sin_half)
+    return max_drum_tube * (90.0 / 91.0)
+
+
 def _resolve_drum_radius(params):
     """
     If Drum Radius is not provided, set it to the maximum feasible value (cm).
-    Supported for both LTMR and GCMR reactor types.
+    Supported for LTMR, GCMR, and HPMR reactor types.
     """
     if params.get('reactor type') == "LTMR":
         if 'Drum Radius' not in params:
@@ -123,6 +146,10 @@ def _resolve_drum_radius(params):
     elif params.get('reactor type') == "GCMR":
         if 'Drum Radius' not in params:
             params['Drum Radius'] = _calculate_max_gcmr_drum_radius(params)
+
+    elif params.get('reactor type') == "HPMR":
+        if 'Drum Radius' not in params:
+            params['Drum Radius'] = _calculate_max_hpmr_drum_radius(params)
 
     if 'Drum Radius' not in params:
         raise KeyError("Drum Radius is required for this reactor type.")
@@ -158,6 +185,59 @@ def calculate_drums_volumes_and_masses(params):
 
         if 'Drum Height' not in params:
             params['Drum Height'] = params['Active Height'] + 2 * params['Axial Reflector Thickness']
+
+    # --- HPMR: auto-resolve dependent geometry parameters ---
+    if params.get('reactor type') == 'HPMR':
+        drum_tube_radius = drum_radius + drum_radius / 90.0
+        n_drums = int(params.get('Drum Count', 12))
+        r0 = ((params['Number of Rings per Core'] - 1) * params['Assembly FTF']
+               + params['Assembly FTF'] / 2)
+        cd_distance = r0 + drum_tube_radius
+        hex_apothem = 0.5 * np.sqrt(3) * params['hexagonal Core Edge Length']
+
+        if 'Radial Reflector Thickness' not in params:
+            # Minimum reflector thickness that fully encloses all drums
+            params['Radial Reflector Thickness'] = cd_distance + drum_radius - hex_apothem
+
+        # Core Radius is always kept consistent with Radial Reflector Thickness
+        params['Core Radius'] = hex_apothem + params['Radial Reflector Thickness']
+        params['Active Height'] = 2 * params['Core Radius']
+
+        if 'Axial Reflector Thickness' not in params:
+            params['Axial Reflector Thickness'] = params['Radial Reflector Thickness']
+
+        if 'Drum Height' not in params:
+            params['Drum Height'] = params['Active Height'] + 2 * params['Axial Reflector Thickness']
+
+        # Validate that drums fit inside the reflector
+        drum_outer = cd_distance + drum_radius
+        if drum_outer > params['Core Radius']:
+            raise ValueError(
+                f"\n\n--- HPMR DRUM RADIUS ERROR ---\n"
+                f"Drum outer extent ({drum_outer:.4f} cm) exceeds Core Radius "
+                f"({params['Core Radius']:.4f} cm).\n"
+                f"Reduce Drum Radius or increase Radial Reflector Thickness.\n"
+                f"Maximum allowable Drum Radius: "
+                f"{_calculate_max_hpmr_drum_radius(params):.4f} cm\n"
+            )
+
+        if drum_radius <= absorber_thickness:
+            raise ValueError(
+                f"\n\n--- HPMR DRUM RADIUS ERROR ---\n"
+                f"Drum Radius ({drum_radius:.4f} cm) must be greater than "
+                f"Drum Absorber Thickness ({absorber_thickness:.4f} cm).\n"
+            )
+
+        # Validate no-overlap on the placement ring
+        chord = 2.0 * cd_distance * np.sin(np.pi / n_drums)
+        if 2.0 * drum_tube_radius > chord:
+            raise ValueError(
+                f"\n\n--- HPMR DRUM OVERLAP ERROR ---\n"
+                f"Drums overlap: tube diameter ({2*drum_tube_radius:.4f} cm) "
+                f"exceeds the chord between adjacent drum centres ({chord:.4f} cm).\n"
+                f"Maximum allowable Drum Radius: "
+                f"{_calculate_max_hpmr_drum_radius(params):.4f} cm\n"
+            )
 
     drum_height = params['Drum Height']
 
