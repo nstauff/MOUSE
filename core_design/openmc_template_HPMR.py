@@ -245,11 +245,14 @@ def create_hex_core_geometry(params, fuel_assembly, graphite_assembly, graphite_
 
 def _point_in_positive_halfspace(surface, x, y):
     coeffs = surface.coefficients
+    if 'x0' in coeffs:   # XPlane: positive side is x >= x0
+        return x >= coeffs['x0']
+    if 'y0' in coeffs:   # YPlane: positive side is y >= y0
+        return y >= coeffs['y0']
     a = coeffs.get('a', 0.0)
     b = coeffs.get('b', 0.0)
-    c = coeffs.get('c', 0.0)
     d = coeffs.get('d', 0.0)
-    return (a * x + b * y + c * 0.0 - d) >= 0.0
+    return (a * x + b * y - d) >= 0.0
 
 
 def _halfspace_toward_point(surface, x, y):
@@ -257,14 +260,13 @@ def _halfspace_toward_point(surface, x, y):
 
 
 def _make_radial_plane(angle_deg, surface_id, name):
-    angle_mod = angle_deg % 180.0
-    if np.isclose(angle_mod, 0.0):
-        return openmc.YPlane(surface_id=surface_id, y0=0.0, name=name)
-    elif np.isclose(angle_mod, 90.0):
-        return openmc.XPlane(surface_id=surface_id, x0=0.0, name=name)
-    else:
-        theta = np.deg2rad(angle_deg)
-        return openmc.Plane(surface_id=surface_id, a=-np.tan(theta), b=1.0, d=0.0, name=name)
+    # Always use a general Plane with normal (-sin θ, cos θ) so that
+    # _point_in_positive_halfspace works correctly for all angles,
+    # including 0°, 90°, 180°, 270°, and 360°.
+    theta = np.deg2rad(angle_deg)
+    return openmc.Plane(surface_id=surface_id,
+                        a=-np.sin(theta), b=np.cos(theta),
+                        d=0.0, name=name)
 
 
 def create_control_drums(params, materials_database):
@@ -329,15 +331,12 @@ def create_control_drums(params, materials_database):
     half_step_deg = drum_step_deg / 2.0
     rotation_angle = 180 if params['Shutdown Margin Calc'] else 0
 
-    # Hex outer-face surfaces used to keep each sector outside the inner hex boundary
-    hex_surfaces = [
-        c_right_1,
-        c_upper_right_1,
-        c_upper_left_1,
-        c_left_1,
-        c_lower_left_1,
-        c_lower_right_1,
-    ]
+    # Full outside-hex condition (De Morgan of "inside hex").
+    # Using all 6 faces handles every sector width (6, 12, 18, 24 drums)
+    # without needing to map each sector to its nearest single hex face.
+    outside_hex = (  +c_right_1 | -c_left_1
+                   | +c_upper_right_1 | +c_upper_left_1
+                   | -c_lower_right_1 | -c_lower_left_1)
 
     drum_sector_cells = []
 
@@ -349,7 +348,7 @@ def create_control_drums(params, materials_database):
         drum_instance = openmc.Cell(cell_id=1000 + i, name=f'cr_inst_{i + 1:02d}')
         drum_instance.fill = control_drum_uni
 
-        # Match the original 12-drum style orientation by snapping to 60-degree bins
+        # Snap absorber orientation to the nearest hex face normal (0°, 60°, …, 300°)
         base_rotation = (60.0 * np.floor((center_angle_deg + 15.0) / 60.0)) % 360.0
         drum_instance.rotation = [0, 0, base_rotation + rotation_angle]
         drum_instance.translation = [
@@ -360,30 +359,20 @@ def create_control_drums(params, materials_database):
 
         drum_universe = openmc.Universe(cells=[drum_instance])
 
-        # Sector boundaries
-        start_angle_deg = i * drum_step_deg
-        end_angle_deg = (i + 1) * drum_step_deg
+        # Sector angular boundaries — always general Planes so that
+        # _halfspace_toward_point works correctly at every angle.
+        start_surface = _make_radial_plane(i * drum_step_deg,       2000 + 2 * i,     f'CR_START_{i + 1:02d}')
+        end_surface   = _make_radial_plane((i + 1) * drum_step_deg, 2000 + 2 * i + 1, f'CR_END_{i + 1:02d}')
 
-        start_surface = _make_radial_plane(start_angle_deg, 2000 + 2 * i, f'CR_START_{i + 1:02d}')
-        end_surface = _make_radial_plane(end_angle_deg, 2000 + 2 * i + 1, f'CR_END_{i + 1:02d}')
-
-        # Test point in the middle of the sector
         test_r = max(core_radius * 0.95, 0.1)
         test_x = test_r * np.cos(center_angle_rad)
         test_y = test_r * np.sin(center_angle_rad)
 
         start_halfspace = _halfspace_toward_point(start_surface, test_x, test_y)
-        end_halfspace = _halfspace_toward_point(end_surface, test_x, test_y)
-
-        # Choose the correct outward hex-face halfspace for this sector.
-        # round() maps each drum to the nearest hex face normal (at 0°, 60°, 120°, …).
-        # floor() would assign the wrong face for sectors that straddle a face boundary
-        # (e.g. the 30°-60° sector would get the 0° face instead of the 60° face).
-        hex_surface = hex_surfaces[int(round(center_angle_deg / 60.0)) % 6]
-        hex_halfspace = _halfspace_toward_point(hex_surface, test_x, test_y)
+        end_halfspace   = _halfspace_toward_point(end_surface,   test_x, test_y)
 
         sector_cell = openmc.Cell(cell_id=3000 + i, name=f'cr_{i + 1:02d}')
-        sector_cell.region = start_halfspace & end_halfspace & hex_halfspace & -core_out
+        sector_cell.region = start_halfspace & end_halfspace & outside_hex & -core_out
         sector_cell.fill = drum_universe
 
         drum_sector_cells.append(sector_cell)
