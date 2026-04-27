@@ -86,6 +86,7 @@ number_of_heatpipes_hmpr(params)
 # ************************************************************************************************************************** 
 
 update_params({
+    'Drum Count': 12,   # allowed: 6, 12, 18, 24
     'Drum Radius': 0.4 * params['Radial Reflector Thickness'], 
     'Drum Absorber Thickness': 1,  # cm
     'Drum Height': params['Active Height']
@@ -125,7 +126,7 @@ params['Shutdown Margin Calc'] = False  # True or False
 # coefficient is then calculated in units of pcm/K.
 # A negative coefficient indicates the reactor is self-stabilizing (desired behavior).
 # Recommended: True for safety analysis; can be set to False to save computation time.
-params['Isothermal Temperature Coefficients'] = True  # True or False
+# params['Isothermal Temperature Coefficients'] = True  # True or False
 
 # --- Temperature Perturbation ---
 # The temperature step (in Kelvin) used for the isothermal temperature coefficient calculation.
@@ -135,7 +136,7 @@ params['Isothermal Temperature Coefficients'] = True  # True or False
 # avoiding nonlinear effects. 
 # Units: Kelvin
 # This parameter is REQUIRED only when 'Isothermal Temperature Coefficients' is True.
-params['Temperature Perturbation'] = 100  # K
+# params['Temperature Perturbation'] = 100  # K
 
 heat_flux_monitor = monitor_heat_flux(params)
 run_openmc(build_openmc_model_HPMR, heat_flux_monitor, params)
@@ -283,7 +284,7 @@ update_params({
 # **************************************************************************************************************************
 #                                           Sec. 11: Post Processing
 # **************************************************************************************************************************
-params['Number of Samples'] = 100  # number of samples for cost uncertainty analysis
+params['Number of Samples'] = 1  # number of samples for cost uncertainty analysis
 # Estimate costs using the cost database file and save the output to an Excel file
 estimate = detailed_bottom_up_cost_estimate('cost/Cost_Database.xlsx')
 elapsed_time = (time.time() - time_start) / 60  # calculate execution time

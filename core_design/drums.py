@@ -209,15 +209,21 @@ def calculate_drums_volumes_and_masses(params):
     if params['reactor type'] == "LTMR":
         number_of_drums = params['Number of Drums']
         params['Drum Count'] = number_of_drums
+
     elif params['reactor type'] == "GCMR":
         if 'Drum Count' in params:
             number_of_drums = params['Drum Count']
         else:
             number_of_drums = 6 * (params['Core Rings'] - 1)
             params['Drum Count'] = number_of_drums
+
     elif params['reactor type'] == "HPMR":
-        number_of_drums = 12
+        number_of_drums = int(params.get('Number of Drums', 12))
+        valid_drum_counts = [6, 12, 18, 24]
+        if number_of_drums not in valid_drum_counts:
+            raise ValueError(f"Number of Drums must be one of {valid_drum_counts}, got {number_of_drums}")
         params['Drum Count'] = number_of_drums
+
     else:
         raise ValueError(f"Unsupported reactor type: {params['reactor type']}")
 
