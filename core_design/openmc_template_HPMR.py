@@ -521,8 +521,8 @@ def build_openmc_model_HPMR(params):
     # **************************************************************************************************************************
     #                                                Sec. 1.4 : VOLUME INFO for Depletion
     # **************************************************************************************************************************
-    fissile_area = np.pi * 1 **2
-    fuel.volume = fissile_area * round(params['Active Height'],0) * params['Fuel Pin Count']
+    fissile_area = np.pi * params['Fuel Pin Radii'][0] **2
+    fuel.volume = fissile_area * params['Active Height'] * params['Fuel Pin Count']
 
    
     all_materials = fuel_materials +\
