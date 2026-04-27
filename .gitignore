@@ -7,4 +7,5 @@ output*.xlsx
 *.txt
 *.sh
 *.png
-*.sh
+.DS_Store
+webapp/.venv/
