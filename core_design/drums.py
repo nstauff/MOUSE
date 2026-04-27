@@ -99,15 +99,30 @@ def _calculate_max_ltmr_drum_radius(params, tol=1e-6, max_iter=100):
     return lower_bound
 
 
+def _calculate_max_gcmr_drum_radius(params):
+    """
+    Return the maximum allowable GCMR drum radius (cm).
+
+    Each drum sits in a hexagonal cell of the outermost core ring with
+    flat-to-flat size Assembly_FTF.  The drum tube (drum_radius * 46/45)
+    must fit within the cell's inscribed-circle radius (apothem = FTF/2),
+    giving:  drum_radius_max = Assembly_FTF / 2 * (45/46)
+    """
+    return params['Assembly FTF'] / 2 * (45 / 46)
+
+
 def _resolve_drum_radius(params):
     """
-    LTMR only:
     If Drum Radius is not provided, set it to the maximum feasible value (cm).
-    For other reactor types, Drum Radius must be provided by the caller.
+    Supported for both LTMR and GCMR reactor types.
     """
     if params.get('reactor type') == "LTMR":
         if 'Drum Radius' not in params:
             params['Drum Radius'] = _calculate_max_ltmr_drum_radius(params)
+
+    elif params.get('reactor type') == "GCMR":
+        if 'Drum Radius' not in params:
+            params['Drum Radius'] = _calculate_max_gcmr_drum_radius(params)
 
     if 'Drum Radius' not in params:
         raise KeyError("Drum Radius is required for this reactor type.")
