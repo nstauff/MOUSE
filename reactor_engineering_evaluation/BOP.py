@@ -54,9 +54,9 @@ def calculate_primary_pump_mechanical_power(params):
       Pump electric power [kW] = mdot*g*h / 1000 
     """
     core_mass_flow_rate = params['Primary Loop Mass Flow Rate']
-    core_active_height  = params['Active Height']
+    core_active_height  = params['Active Height'] 
     g    = 9.81                               # [m/s^2]
-    h    = core_active_height                 # [m] 
+    h    = core_active_height/100                 # [cm to m conversion] 
     mdot = core_mass_flow_rate                # [kg/s]
     params['Primary Pump Mechanical Power'] =  mdot* g* h / 1000 # kWe
 
