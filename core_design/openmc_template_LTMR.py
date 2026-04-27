@@ -440,18 +440,18 @@ def build_openmc_model_LTMR(params):
     params.setdefault('Shutdown Margin Calc', False)
     params.setdefault('Isothermal Temperature Coefficients', False)
 
-    # Ensure Drum Radius always becomes numeric before any downstream drum geometry use
+    # Ensure Drum Radius is always numeric before any downstream drum geometry use
     resolve_drum_radius(params)
 
     # **************************************************************************************************************************
     #                                                Sec. 1.1 : MATERIALS
     # **************************************************************************************************************************
 
-    # Reading all the materials properties
+    # Read all material properties
     materials_database = collect_materials_data(params)
 
-    # Reading the materials properties for the fuel, coolant, reflector, and control drum
-    # (the drum includes two materials: absorber and reflector)
+    # Read material properties for the fuel, coolant, reflector, and control drums
+    # (each drum contains two materials: absorber and reflector)
     fuel = materials_database[params['Fuel']]
     coolant = materials_database[params['Coolant']]
     reflector = materials_database[params['Radial Reflector']]
@@ -462,10 +462,10 @@ def build_openmc_model_LTMR(params):
     #                                                Sec. 1.2 : Pin Cell Universes and Coolant
     # **************************************************************************************************************************
 
-    # Creating fuel pin regions
+    # Create fuel pin regions
     fuel_pin_regions = create_pin_regions(params, 'fuel')
 
-    # Creating fuel pin materials
+    # Create fuel pin materials
     fuel_materials = []
     for mat in params['Fuel Pin Materials']:
         if mat is None:
@@ -482,10 +482,10 @@ def build_openmc_model_LTMR(params):
             f"the number of introduced materials ({len(fuel_materials)})."
         )
 
-    # Creating the fuel pin universe
+    # Create the fuel pin universe
     fuel_cells = create_cells(fuel_pin_regions, fuel_materials)
 
-    # The fuel region cell (to be used in distribcell tally)
+    # Fuel region cell (used in distribcell tally)
     fuel_cell = fuel_cells['fuel_meat']
     fuel_pin_universe = openmc.Universe(cells=fuel_cells.values())
 
@@ -501,10 +501,10 @@ def build_openmc_model_LTMR(params):
             output_file_name="fuel_pin_universe.png"
         )
 
-    # Creating moderator pin regions
+    # Create moderator pin regions
     moderator_pin_regions = create_pin_regions(params, 'moderator')
 
-    # Creating moderator pin materials
+    # Create moderator pin materials
     moderator_materials = []
     for mat in params['Moderator Pin Materials']:
         if mat is None:
@@ -521,7 +521,7 @@ def build_openmc_model_LTMR(params):
             f"the number of introduced materials ({len(moderator_materials)})."
         )
 
-    # Creating the moderator pin universe
+    # Create the moderator pin universe
     moderator_cells = create_cells(moderator_pin_regions, moderator_materials)
     moderator_pin_universe = openmc.Universe(cells=moderator_cells.values())
 
@@ -545,7 +545,7 @@ def build_openmc_model_LTMR(params):
     #                                                Sec. 1.3 : Fuel Assembly Universe
     # **************************************************************************************************************************
 
-    # The center-to-center distance between adjacent fuel/moderator pins
+    # Center-to-center distance between adjacent fuel/moderator pins
     pin_pitch = 2 * params['Fuel Pin Radii'][-1] + params["Pin Gap Distance"]
 
     assembly_universe = create_assembly_universe(
@@ -560,7 +560,7 @@ def build_openmc_model_LTMR(params):
     # **************************************************************************************************************************
     #                                                Sec. 1.4 : Material Volumes and Materials XML
     # **************************************************************************************************************************
-    # Find where the fuel is in the fuel pin
+    # Find the fuel region index within the fuel pin
     fuel_index = params['Fuel Pin Materials'].index(params['Fuel'])
 
     fissile_area = (
@@ -575,7 +575,7 @@ def build_openmc_model_LTMR(params):
         + [coolant, reflector, control_drum_absorber, control_drum_reflector]
     )
 
-    # Remove None materials while preserving deterministic order
+    # Remove None materials while preserving their deterministic order
     all_materials_cleaned_list = [item for item in all_materials if item is not None]
     materials = openmc.Materials(list(dict.fromkeys(all_materials_cleaned_list)))
 
@@ -622,7 +622,7 @@ def build_openmc_model_LTMR(params):
 
     tallies_file = openmc.Tallies()
 
-    # 11 energy groups from HPMR report table no. 5 in EV
+    # 11 energy groups from HPMR report table 5 in eV
     group_edges = np.array([1e-5, 6.7e-2, 3.2e-1, 1, 4, 9.88, 4.81e1, 4.54e2, 4.9e4, 1.83e5, 8.21e5, 4e7])
     groups = openmc.mgxs.EnergyGroups(group_edges)
 

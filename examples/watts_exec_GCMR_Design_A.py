@@ -48,8 +48,8 @@ update_params({
     'UO2 atom fraction': 0.7,  # Mixing UO2 and UC by atom fraction
     'Radial Reflector': 'Graphite',
     'Axial Reflector': 'Graphite',
-    'Matrix Material': 'Graphite', # matrix material is a background material within the compact fuel element between the TRISO particles
-    'Moderator': 'Graphite', # The moderator is outside this compact fuel region 
+    'Matrix Material': 'Graphite',  # matrix material is the background material within the compact fuel element between TRISO particles
+    'Moderator': 'Graphite',  # the moderator is outside the compact fuel region
     'Moderator Booster Materials': ['ZrH'],
     'Coolant': 'Helium',
     'Common Temperature': 850,  # Kelvins
@@ -100,7 +100,7 @@ calculate_moderator_mass_GCMR(params)
 update_params({
     'Power MWt': 15,  # MWt
     'Thermal Efficiency': 0.4,
-    'Heat Flux Criteria': 0.9,  # MW/m^2 (This one needs to be reviewed)
+    'Heat Flux Criteria': 0.9,  # MW/m^2 (needs review)
     'Burnup Steps': [0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 15.0, 20.0,
                      30.0, 40.0, 50.0, 60.0, 80.0, 100.0, 120.0]  # MWd_per_Kg
     })
@@ -151,13 +151,13 @@ params.update({
     'Secondary HX Mass': 0,
     'Compressor Pressure Ratio': 4,
     'Compressor Isentropic Efficiency': 0.8,
-    'Primary Loop Count': 2, # Number of Primary Coolant Loops present in plant
-    'Primary Loop per loop load fraction': 0.5, # assuming that each Primary Loop Handles the total load evenly (1/2)
+    'Primary Loop Count': 2,  # number of primary coolant loops in the plant
+    'Primary Loop per loop load fraction': 0.5,  # each loop handles an equal share of the total load
     'Primary Loop Inlet Temperature': 300 + 273.15, # K
     'Primary Loop Outlet Temperature': 550 + 273.15, # K
     'Secondary Loop Inlet Temperature': 290 + 273.15, # K
     'Secondary Loop Outlet Temperature': 500 + 273.15, # K,
-    'Primary Loop Pressure Drop': 50e3, # Pa. Assumption based on Enrique's estimate
+    'Primary Loop Pressure Drop': 50e3,  # Pa — estimated assumption
 })
 params['Primary HX Mass'] = calculate_heat_exchanger_mass(params)  # Kg
 # calculate coolant mass flow rate
@@ -166,8 +166,8 @@ compressor_power(params)
 
 # Update BoP Parameters
 params.update({
-    'BoP Count': 2, # Number of BoP present in plant
-    'BoP per loop load fraction': 0.5, # based on assuming that each BoP Handles the total load evenly (1/2)
+    'BoP Count': 2,  # number of BoP systems in the plant
+    'BoP per loop load fraction': 0.5,  # each BoP handles an equal share of the total load
     })
 params['BoP Power kWe'] = 1000 * params['Power MWe'] * params['BoP per loop load fraction']
 
@@ -231,12 +231,12 @@ update_params({
     'Security Staff Per Shift': 1
 })
 
-#Based on https://digital.library.unt.edu/ark:/67531/metadc893980/m2/1/high_res_d/919556.pdf (table 18 and table 17):
-# Estimate Helium mass per MWt is 3.3 kg/MWt
-params['Onsite Coolant Inventory'] = 3.3 * params['Power MWt'] # kg
-# According to https://www.nationalacademies.org/read/12844/chapter/6#69, the loss rate of helium is 10% per year so 1/10 of the initial
-# inventory is renewed per year
-# if there is no purification, He needs to be replaced more frequently
+# Based on https://digital.library.unt.edu/ark:/67531/metadc893980/m2/1/high_res_d/919556.pdf (tables 17 and 18):
+# Estimated helium mass per MWt is 3.3 kg/MWt.
+params['Onsite Coolant Inventory'] = 3.3 * params['Power MWt']  # kg
+# According to https://www.nationalacademies.org/read/12844/chapter/6#69, the helium loss rate is 10% per year,
+# so 1/10 of the initial inventory is replenished annually.
+# Without purification, helium needs to be replaced more frequently.
 params['Replacement Coolant Inventory'] = params['Onsite Coolant Inventory'] / 10
 params['Annual Coolant Supply Frequency'] = 1 if params['Primary Loop Purification'] else 6
 
@@ -343,8 +343,8 @@ update_params({
 # **************************************************************************************************************************
 #                                           Sec. 11: Post Processing
 # **************************************************************************************************************************
-params['Number of Samples'] = 100 # Accounting for cost uncertainties
+params['Number of Samples'] = 100  # number of samples for cost uncertainty analysis
 # Estimate costs using the cost database file and save the output to an Excel file
 estimate = detailed_bottom_up_cost_estimate('cost/Cost_Database.xlsx')
-elapsed_time = (time.time() - time_start) / 60  # Calculate execution time
+elapsed_time = (time.time() - time_start) / 60  # calculate execution time
 print('Execution time:', np.round(elapsed_time, 1), 'minutes')

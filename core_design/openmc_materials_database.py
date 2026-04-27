@@ -15,13 +15,12 @@ def collect_materials_data(params):
     # Sec. 1.1 : Fuels: TRIGA Fuel and UO2, Uranium Carbide and Nitride
     # """""""""""""""""""""
 
-    # The fuel is declared following a mechanism that is close to the logic of the
-    # fabrication of the actual TRIGA fuel. This type of fuel is specified for example
-    # as "45/20" fuel, which implies that 45% weight is composed of Uranium (metal)
-    # that is 20% enriched in a matrix of ZrH. TRIGA fuel can also contain 3% weight of
-    # Erbium as a burnable absorber in the fuel meat.
+    # The fuel is declared following a mechanism close to the logic of actual TRIGA fuel
+    # fabrication. This type of fuel is specified, for example, as "45/20" fuel,
+    # meaning 45% by weight is uranium metal (20% enriched) in a ZrH matrix.
+    # TRIGA fuel can also contain 3% by weight of erbium as a burnable absorber in the fuel meat.
 
-    # First let's declare the individual components of the fuel
+    # Declare the individual components of the fuel
     try:
         U_met = openmc.Material(name="U_met")
         U_met.set_density("g/cm3", 19.05)
@@ -81,7 +80,7 @@ def collect_materials_data(params):
     # S(α,β) tables for mixing purposes only. The S(α,β) tables are then added
     # to the resulting UCO material after mixing.
     # The standalone UO2 material (used directly as fuel) is unaffected.
-   # UCO: Mixed uranium dioxide (UO2) and uranium carbide (UC)
+    # UCO: Mixed uranium dioxide (UO2) and uranium carbide (UC)
     try:
         UO2_for_mix = openmc.Material(name='UO2_for_mix')
         UO2_for_mix.set_density('g/cm3', 10.41)
@@ -108,10 +107,10 @@ def collect_materials_data(params):
     
     # Uranium Nitride
     try:
-        UN = openmc.Material(name='UN') # This creates a new material named 'UN'.
+        UN = openmc.Material(name='UN')  # creates a new material named 'UN'
         UN.set_density('g/cm3', 14.0)
         UN.add_element('U', 1.0, enrichment=100 * params['Enrichment'])
-        UN.add_element('N', 1.0) # This adds nitrogen (N) to the material.
+        UN.add_element('N', 1.0)  # adds nitrogen (N) to the material
         UN.add_s_alpha_beta("c_U_in_UN")
         UN.add_s_alpha_beta("c_N_in_UN")
         materials.append(UN)
@@ -168,10 +167,10 @@ def collect_materials_data(params):
     # Yttrium hydride (YHx) 
     YHx = openmc.Material(name="YHx")
     YHx.set_density("g/cm3", 4.28)
-    YHx.add_nuclide("H1", 1.5) # This adds hydrogen-1 (H-1) nuclide to the material with an atomic ratio of 1.5.
-    YHx.add_element("yttrium", 1.0) # This adds yttrium to the material with an atomic ratio of 1.0.
-    # Adding thermal scattering data for hydrogen in yttrium hydride (YH2). 
-    # The add_s_alpha_beta method is used to specify the S(α,β) thermal scattering treatment for specific materials. 
+    YHx.add_nuclide("H1", 1.5)  # adds the hydrogen-1 (H-1) nuclide with an atomic ratio of 1.5
+    YHx.add_element("yttrium", 1.0)  # adds yttrium with an atomic ratio of 1.0
+    # Add thermal scattering data for hydrogen in yttrium hydride (YH2).
+    # The add_s_alpha_beta method specifies the S(α,β) thermal scattering treatment for specific materials.
     YHx.add_s_alpha_beta("c_H_in_YH2")
     YHx.temperature = params['Common Temperature']
 
@@ -288,13 +287,13 @@ def collect_materials_data(params):
     # This adds thermal scattering data for graphite.
     Graphite.add_s_alpha_beta('c_Graphite')
 
-    # Graphite of lower density (buffer_graphite)
+    # Graphite of lower density (buffer graphite)
     buffer_graphite = openmc.Material(name='Buffer')
     buffer_graphite.set_density('g/cm3', 0.95)
     buffer_graphite.add_element('C', 1.0)
     buffer_graphite.add_s_alpha_beta('c_Graphite') 
 
-    # Pyrolytic carbon (PyC) 
+    # Pyrolytic carbon (PyC)
     PyC = openmc.Material(name='PyC')
     PyC.set_density('g/cm3', 1.9)
     PyC.add_element('C', 1.0)
@@ -321,7 +320,7 @@ def collect_materials_data(params):
     WB.add_element('B', 1.0)
 
     W2B = openmc.Material(name='W2B')
-    W2B.set_density('g/cm3', 16.75) # doi.org/10.1016/j.jnucmat.2020.152062.
+    W2B.set_density('g/cm3', 16.75)  # doi.org/10.1016/j.jnucmat.2020.152062
     W2B.add_element('W', 2.0)
     W2B.add_element('B', 1.0)
 

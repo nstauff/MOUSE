@@ -222,10 +222,10 @@ for params['Fuel'] in ['TRIGA_fuel', 'UO2']:
         'Security Staff Per Shift': 1
     })
     ## Based on https://www.edf.fr/sites/default/files/mediatheque/dp_creys_2017.pdf :
-    ## 5,500 tonnes of sodium from the reactor vessel and the secondary circuits at Creys-Malville plant (France) which is 3,000 MWt
-    # This gives a rough estimate of 1833 kg/MWt
+    ## 5,500 tonnes of sodium from the reactor vessel and secondary circuits at the Creys-Malville plant (France), which is 3,000 MWt.
+    # This gives a rough estimate of 1833 kg/MWt.
     params['Onsite Coolant Inventory'] = 1833 * params['Power MWt']
-    params['Replacement Coolant Inventory'] = 0 # assume that NaK does not need to be replaced.
+    params['Replacement Coolant Inventory'] = 0  # NaK is assumed not to require replacement
 
     total_refueling_period = params['Fuel Lifetime'] + params['Refueling Period'] + params['Startup Duration after Refueling']
     total_refueling_period_yr = total_refueling_period/365

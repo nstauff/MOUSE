@@ -239,15 +239,14 @@ def learning_rate_multiplier(learning_rate, number_of_units):
 
 
 def FOAK_to_NOAK(df, params):
-    # Additional Cost Scaling Based on Assumed Learning Rate
-    # Learning Rate and Cost multiplier is based on 
-    # DOI: 10.1080/00295450.2023.2206779
-    # Cost Multiplier is capped after the 100th Unit for any component
+    # Additional cost scaling based on an assumed learning rate.
+    # Learning rate and cost multiplier are based on
+    # DOI: 10.1080/00295450.2023.2206779.
+    # Cost multiplier is capped at the 100th unit for any component.
     if 'NOAK Unit Number' not in params.keys():
-        # Assume the default value if no `NOAK Unit Number` is specified.
+        # Use the default value if 'NOAK Unit Number' is not specified.
         params['NOAK Unit Number'] = 10
-        # Custom Check to see if input specifies which Nth-of-a-Kind
-        # Default is ~10th with 20(2*10)-units assumed for Onsite Learning
+        # Defaults to approximately the 10th unit, with 20 (2×10) units assumed for onsite learning.
     params['Assumed Number Of Units For Onsite Learning'] = params['NOAK Unit Number'] * 2
     
     for multiplier_type in ['No Learning', 
@@ -294,7 +293,7 @@ def reorder_dataframe(df):
 
 def bottom_up_cost_estimate(cost_database_filename, params):
     # Validate tax credit params early — before any simulation or cost calculation runs.
-    # This catches the case where a user accidentally defines both ITC and PTC,
+    # This catches cases where a user accidentally defines both ITC and PTC,
     # which are mutually exclusive under the IRA.
     validate_tax_credit_params(params)
 
@@ -417,8 +416,8 @@ def parametric_studies(cost_database_filename, tracked_params_list):
     caller_file = caller_frame.f_globals.get('__file__', 'output')
     output_csv_filename = os.path.splitext(os.path.abspath(caller_file))[0] + '_output.csv'
 
-    detatiled_cost_table = bottom_up_cost_estimate(cost_database_filename, params)
-    tracked_costs = create_cost_dictionary(detatiled_cost_table, params, tracked_params_list)
+    detailed_cost_table = bottom_up_cost_estimate(cost_database_filename, params)
+    tracked_costs = create_cost_dictionary(detailed_cost_table, params, tracked_params_list)
 
     file_exists = os.path.isfile(output_csv_filename)
 

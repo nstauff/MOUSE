@@ -229,10 +229,10 @@ update_params({
     'Security Staff Per Shift': 1
 })
 ## Based on https://www.edf.fr/sites/default/files/mediatheque/dp_creys_2017.pdf :
-## 5,500 tonnes of sodium from the reactor vessel and the secondary circuits at Creys-Malville plant (France) which is 3,000 MWt
-# This gives a rough estimate of 1833 kg/MWt
+## 5,500 tonnes of sodium from the reactor vessel and secondary circuits at the Creys-Malville plant (France), which is 3,000 MWt.
+# This gives a rough estimate of 1833 kg/MWt.
 params['Onsite Coolant Inventory'] = 1833 * params['Power MWt']
-params['Replacement Coolant Inventory'] = 0 # assume that NaK does not need to be replaced.
+params['Replacement Coolant Inventory'] = 0  # NaK is assumed not to require replacement
 # params['Annual Coolant Supply Frequency']  # LTMR should not require frequent refilling
 
 total_refueling_period = params['Fuel Lifetime'] + params['Refueling Period'] + params['Startup Duration after Refueling'] # days
@@ -242,7 +242,7 @@ params['A75: Core Barrel Replacement Period (cycles)']   = np.floor(10/total_ref
 params['A75: Reflector Replacement Period (cycles)']     = np.floor(10/total_refueling_period_yr)
 params['A75: Drum Replacement Period (cycles)']          = np.floor(10/total_refueling_period_yr)
 params['Maintenance to Direct Cost Ratio']                = 0.015
-# A78: Annualized Decommisioning Cost
+# A78: Annualized Decommissioning Cost
 params['A78: CAPEX to Decommissioning Cost Ratio'] = 0.15
 
 # **************************************************************************************************************************
@@ -326,8 +326,8 @@ params['ITC credit level'] = 0.30  # fraction — assumes prevailing wage requir
 # **************************************************************************************************************************
 #                                           Sec. 11: Post Processing
 # **************************************************************************************************************************
-params['Number of Samples'] = 100 # Accounting for cost uncertainties
+params['Number of Samples'] = 100  # number of samples for cost uncertainty analysis
 # Estimate costs using the cost database file and save the output to an Excel file
 estimate = detailed_bottom_up_cost_estimate('cost/Cost_Database.xlsx')
-elapsed_time = (time.time() - time_start) / 60  # Calculate execution time
+elapsed_time = (time.time() - time_start) / 60  # calculate execution time
 print('Execution time:', np.round(elapsed_time, 1), 'minutes')

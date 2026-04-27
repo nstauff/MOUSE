@@ -222,10 +222,10 @@ update_params({
     'Security Staff Per Shift': 1
 })
 ## Based on https://www.edf.fr/sites/default/files/mediatheque/dp_creys_2017.pdf :
-## 5,500 tonnes of sodium from the reactor vessel and the secondary circuits at Creys-Malville plant (France) which is 3,000 MWt
-# This gives a rough estimate of 1833 kg/MWt
+## 5,500 tonnes of sodium from the reactor vessel and secondary circuits at the Creys-Malville plant (France), which is 3,000 MWt.
+# This gives a rough estimate of 1833 kg/MWt.
 params['Onsite Coolant Inventory'] = 1833 * params['Power MWt']
-params['Replacement Coolant Inventory'] = 0 # assume that NaK does not need to be replaced.
+params['Replacement Coolant Inventory'] = 0  # NaK is assumed not to require replacement
 
 total_refueling_period = params['Fuel Lifetime'] + params['Refueling Period'] + params['Startup Duration after Refueling']
 total_refueling_period_yr = total_refueling_period/365
@@ -301,15 +301,15 @@ update_params({
 # Note: ITC and PTC are mutually exclusive — only one can be selected per project.
 
 """
-Adding variable cost for YHx
-For unknown costs or to parametrize the cost, replace the cost value inside the "Cost_DataBase" 
-with a variable. For example, you can call it "variable_cost_1" and add a parameter with the same variable name.
-In this example, the unit cost of YHx is called "variable_cost_1".
+Adding a variable cost for YHx.
+For unknown costs or to parametrize costs, replace the cost value in the "Cost_Database"
+with a variable name. For example, name it "variable_cost_1" and add a parameter with the same name.
+In this example, the unit cost of YHx is mapped to "variable_cost_1".
 """
 
 for params['variable_cost_1'] in [0, 1000, 5000, 10000]:
-    params['variable_cost_1_low'] = 0.9 * params['variable_cost_1']  # lower bound for uncertainty
-    params['variable_cost_1_high'] = 1.3 * params['variable_cost_1']  # higher bound for uncertainty
+    params['variable_cost_1_low'] = 0.9 * params['variable_cost_1']   # lower bound for uncertainty
+    params['variable_cost_1_high'] = 1.3 * params['variable_cost_1']  # upper bound for uncertainty
 
     # **************************************************************************************************************************
     #                                           Sec. 11: Post Processing

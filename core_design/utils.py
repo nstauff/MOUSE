@@ -35,7 +35,7 @@ def sphere_area(radius):
 
 
 def cylinder_radial_shell(r, h):
-    # calculating the outer area of a cylinder
+    # Calculates the lateral surface area of a cylinder
     return circle_perimeter(r) * h
 
 
@@ -89,9 +89,9 @@ def calculate_heat_flux(params):
 
 
 def calculate_pins_in_assembly(params, pin_type):
-    # Get the rings configuration from the parameters
+    # Get the ring configuration from the parameters
     rings = params['Pins Arrangement']
-    # Only keep the last 'Number of Rings per Assembly' number of rings as specified in the parameters
+    # Keep only the last 'Number of Rings per Assembly' rings as specified in the parameters
     rings = rings[-params['Number of Rings per Assembly']:]
     return sum(row.count(pin_type) for row in rings)
 
@@ -104,7 +104,7 @@ def create_cells(regions: dict, materials: list) -> dict:
 
 
 def calculate_number_of_rings(rings_over_one_edge):
-    # total number of rings given the rings over one edge
+    # Total number of positions given the number of rings along one edge
     return 2 * rings_over_one_edge * (rings_over_one_edge - 1) + \
         2 * sum(range(1, rings_over_one_edge - 1)) + \
         2 * rings_over_one_edge - 1
@@ -253,7 +253,7 @@ def openmc_depletion(params, lattice_geometry, settings):
     if 'Burnup Steps' in params:
         burnup_steps_list_MWd_per_Kg = params['Burnup Steps']
         burnup_step = np.array(burnup_steps_list_MWd_per_Kg)
-        burnup = np.diff(burnup_step, prepend=0.0)
+        burnup = np.diff(burnup_step, prepend=0.0)  # step-wise burnup increments
 
         integrator = openmc.deplete.PredictorIntegrator(
             operator,
@@ -266,9 +266,9 @@ def openmc_depletion(params, lattice_geometry, settings):
         power_list = [params['Power MWt'] * 1e6] * len(time_steps_list)
         integrator = openmc.deplete.CECMIntegrator(operator, time_steps_list, power_list)
 
-    print("Start Depletion")
+    print("Starting depletion")
     integrator.integrate()
-    print("End Depletion")
+    print("Depletion complete")
 
     depletion_2d_results_file = openmc.deplete.Results("./depletion_results.h5")
 
@@ -278,9 +278,9 @@ def openmc_depletion(params, lattice_geometry, settings):
     # 3) raw 2D keff values
     # 4) 3D-corrected keff values
     # 5) beginning-of-life axial non-leakage probability
-    # 6) beginning-of-life estimated axial leakage percent
+    # 6) beginning-of-life estimated axial leakage percentage
     # 7) beginning-of-life total non-leakage probability (NaN if core radius is unavailable)
-    # 8) beginning-of-life estimated total leakage percent (NaN if core radius is unavailable)
+    # 8) beginning-of-life estimated total leakage percentage (NaN if core radius is unavailable)
     (
         fuel_lifetime_days,
         time_steps,
@@ -323,7 +323,7 @@ def openmc_depletion(params, lattice_geometry, settings):
     params['Estimated Axial Leakage (%)'] = bol_axial_leakage_percent
 
     # Total leakage uses both axial and radial buckling.
-    # If Core Radius is unavailable, these values are returned as NaN.
+    # If Core Radius is not available, these values are returned as NaN.
     params['BOL Total Non-Leakage Probability'] = bol_total_non_leakage_probability
     params['Estimated Total Leakage (%)'] = bol_total_leakage_percent
 
@@ -346,10 +346,10 @@ def run_depletion_analysis(params):
 def monitor_heat_flux(params):
     if params['Heat Flux'] <= params['Heat Flux Criteria']:
         print("\n")
-        print(f"\033[92mHEAT FLUX is: {np.round(params['Heat Flux'], 2)} MW/m^2.\033[0m")
+        print(f"\033[92mHeat flux: {np.round(params['Heat Flux'], 2)} MW/m^2.\033[0m")
         print("\n")
     else:
-        print(f"\033[91mERROR: HIGH HEAT FLUX IS TOO HIGH: {np.round(params['Heat Flux'], 2)} MW/m^2.\033[0m")
+        print(f"\033[91mERROR: Heat flux is too high: {np.round(params['Heat Flux'], 2)} MW/m^2.\033[0m")
 
 
 def _run_isothermal_temperature_coefficients(build_openmc_model, params):
@@ -358,7 +358,7 @@ def _run_isothermal_temperature_coefficients(build_openmc_model, params):
     1) ARO at Common Temperature + Temperature Perturbation
     2) ARO at Common Temperature
 
-    Stores:
+    Stores the following results in params:
       - keff 2D high temp
       - keff 3D (2D corrected) high temp
       - keff 2D ARO

@@ -103,7 +103,7 @@ def _resolve_drum_radius(params):
     """
     LTMR only:
     If Drum Radius is not provided, set it to the maximum feasible value (cm).
-    For other reactor types, Drum Radius must still be provided by the caller.
+    For other reactor types, Drum Radius must be provided by the caller.
     """
     if params.get('reactor type') == "LTMR":
         if 'Drum Radius' not in params:
@@ -188,7 +188,7 @@ def calculate_reflector_mass_LTMR(params):
     area_of_all_drums = params['All Drums Area']
     drum_height = params['Drum Height']
 
-    # Assume all drums are fully inside the reflector region.
+    # Assumes all drums lie fully inside the reflector region.
     area_reflector = np.pi * core_radius * core_radius - hex_area - area_of_all_drums  # cm^2
     vol_reflector = area_reflector * drum_height  # cm^3
 
@@ -229,22 +229,22 @@ def calculate_moderator_mass_GCMR(params):
     CR = params['Core Rings']
     tot_number_assemblies = calculate_number_of_rings(CR)
 
-    # Area of one hexagonal assembly in the core lattice
+    # Area of one hexagonal assembly cell in the core lattice
     hex_area = hexagonal_area_from_ftf(params['Assembly FTF'])
 
-    # Fuel compact area per assembly (PF fraction only — graphite matrix inside compact counts as moderator)
+    # Fuel compact area per assembly (packing fraction only — graphite matrix inside the compact counts as moderator)
     num_fuel_regions_per_hex = calculate_number_of_rings(AR - 1)
     area_fuel_per_hex = params['Packing Fraction'] * circle_area(params['Compact Fuel Radius']) * num_fuel_regions_per_hex
 
     # Every hex cell in the assembly (fuel, booster, or coolant lattice hex) has 6 coolant channels
-    # at its vertices.  Vertex sharing gives 2 effective channels per cell across all calculate_number_of_rings(AR)
+    # at its vertices. Vertex sharing gives 2 effective channels per cell across all calculate_number_of_rings(AR)
     # cells (inner fuel rings + outer booster/coolant ring).
     area_coolant_per_hex = 2 * calculate_number_of_rings(AR) * circle_area(params['Coolant Channel Radius'])
 
     # Booster pin count: each booster_lattice_hex has its pin at the CENTER (not a vertex), so it
     # is never shared between adjacent cells — 1 full pin per booster cell.
     # Standard assemblies have 6*(AR-1) booster cells in the outer ring.
-    # Corner and edge assemblies have partial booster outer rings (some cells replaced by coolant lattice hex).
+    # Corner and edge assemblies have partial booster outer rings (some cells replaced by coolant lattice hexes).
     booster_materials = params['Moderator Booster Materials']
     booster_radii = params['Moderator Booster Radii']
     if len(booster_materials) != len(booster_radii):
@@ -262,7 +262,7 @@ def calculate_moderator_mass_GCMR(params):
         + n_edges   * ((AR - 1) * 4 - 1)
     )
 
-    # Per-assembly average booster footprint (used to compute moderator area displacement)
+    # Per-assembly average booster footprint (used to compute the moderator area displacement)
     area_moderator_booster_per_hex = (total_booster_pins / tot_number_assemblies) * circle_area(booster_radii[-1])
 
     # Per-region booster mass (annular regions from innermost to outermost)

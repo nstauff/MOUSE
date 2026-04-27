@@ -5,7 +5,7 @@ This script performs a bottom-up cost estimate for a Gas Cooled Microreactor (GC
 OpenMC is used for core design calculations, and other Balance of Plant components are estimated.
 Users can modify parameters in the "params" dictionary below.
 
-This input models an aspirational 2nd Generation Microreactor (e.g. low power testing on Factory).
+This input models an aspirational second-generation microreactor (e.g., low-power factory testing).
 """
 
 import numpy as np
@@ -50,8 +50,8 @@ update_params({
     'UO2 atom fraction': 0.7,  # Mixing UO2 and UC by atom fraction
     'Radial Reflector': 'Graphite',
     'Axial Reflector': 'Graphite',
-    'Matrix Material': 'Graphite', # matrix material is a background material within the compact fuel element between the TRISO particles
-    'Moderator': 'Graphite', # The moderator is outside this compact fuel region 
+    'Matrix Material': 'Graphite',  # matrix material is the background material within the compact fuel element between TRISO particles
+    'Moderator': 'Graphite',  # the moderator is outside the compact fuel region
     'Moderator Booster Materials': ['ZrH'],
     'Coolant': 'Helium',
     'Common Temperature': 750,  # Kelvins
@@ -77,7 +77,7 @@ update_params({
 })
 params['Assembly FTF'] = params['Lattice Pitch']*(params['Assembly Rings']-1)*np.sqrt(3)
 params['Radial Reflector Thickness'] = 27.393 # cm
-params['Axial Reflector Thickness'] = 40 # cm. Current CAD model only hosts a top axial refl
+params['Axial Reflector Thickness'] = 40  # cm — current CAD model only includes a top axial reflector
 params['Core Radius'] = params['Assembly FTF']*params['Core Rings'] + params['Radial Reflector Thickness']
 params['Active Height'] = 250
 
@@ -221,12 +221,12 @@ update_params({
     'Security Staff Per Shift': 1
 })
 
-#Based on https://digital.library.unt.edu/ark:/67531/metadc893980/m2/1/high_res_d/919556.pdf (table 18 and table 17):
-# Estimate Helium mass per MWt is 3.3 kg/MWt
-params['Onsite Coolant Inventory'] = 3.3 * params['Power MWt'] # kg
-# According to https://www.nationalacademies.org/read/12844/chapter/6#69, the loss rate of helium is 10% per year so 1/10 of the initial
-# inventory is renewed per year
-# if there is no purification, He needs to be replaced more frequently
+# Based on https://digital.library.unt.edu/ark:/67531/metadc893980/m2/1/high_res_d/919556.pdf (tables 17 and 18):
+# Estimated helium mass per MWt is 3.3 kg/MWt.
+params['Onsite Coolant Inventory'] = 3.3 * params['Power MWt']  # kg
+# According to https://www.nationalacademies.org/read/12844/chapter/6#69, the helium loss rate is 10% per year,
+# so 1/10 of the initial inventory is replenished annually.
+# Without purification, helium needs to be replaced more frequently.
 params['Replacement Coolant Inventory'] = params['Onsite Coolant Inventory'] / 10
 params['Annual Coolant Supply Frequency'] = 1 if params['Primary Loop Purification'] else 6
 
@@ -306,7 +306,7 @@ update_params({
 # **************************************************************************************************************************
 #                                           Sec. 11: Post Processing
 # **************************************************************************************************************************
-params['Number of Samples'] = 1 # Accounting for cost uncertainties
+params['Number of Samples'] = 1  # number of samples for cost uncertainty analysis
 estimate = detailed_bottom_up_cost_estimate('cost/Cost_Database.xlsx')
 elapsed_time = (time.time() - time_start) / 60
 print('Execution time:', np.round(elapsed_time, 1), 'minutes')

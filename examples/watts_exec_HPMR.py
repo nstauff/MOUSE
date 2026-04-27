@@ -40,7 +40,7 @@ update_params({
 # **************************************************************************************************************************
 #                                                Sec. 1: Materials
 # **************************************************************************************************************************
-# These params are based on this report: https://inldigitallibrary.inl.gov/sites/sti/sti/Sort_99962.pdf
+# These parameters are based on: https://inldigitallibrary.inl.gov/sites/sti/sti/Sort_99962.pdf
 update_params({
     'reactor type': "HPMR",
     'TRISO Fueled': "Yes",
@@ -214,7 +214,7 @@ update_params({
     'Security Staff Per Shift': 1
 })
 
-params['Onsite Coolant Inventory'] = 0 # the helium gap is extremely thin so this can be ignored
+params['Onsite Coolant Inventory'] = 0  # the helium gap is extremely thin and can be neglected
 params['Replacement Coolant Inventory'] = 0
 # params['Annual Coolant Supply Frequency'] = 1 if params['Primary Loop Purification'] else 6
 
@@ -283,8 +283,8 @@ update_params({
 # **************************************************************************************************************************
 #                                           Sec. 11: Post Processing
 # **************************************************************************************************************************
-params['Number of Samples'] = 100 # Accounting for cost uncertainties
+params['Number of Samples'] = 100  # number of samples for cost uncertainty analysis
 # Estimate costs using the cost database file and save the output to an Excel file
 estimate = detailed_bottom_up_cost_estimate('cost/Cost_Database.xlsx')
-elapsed_time = (time.time() - time_start) / 60  # Calculate execution time
+elapsed_time = (time.time() - time_start) / 60  # calculate execution time
 print('Execution time:', np.round(elapsed_time, 1), 'minutes')

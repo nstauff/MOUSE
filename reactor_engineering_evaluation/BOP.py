@@ -4,16 +4,14 @@ from reactor_engineering_evaluation.tools import *
 from math import log
 
 def calculate_heat_exchanger_mass(params):
-
-
     """
-      Assuming a printed circuit heat exchanger (PCHE).
-      Input for this function are as follows
-        - hx_thermal_load : thermal load of PCHE in [MW]
-        - th_in           : PCHE hot side inlet temprture [K]
-        - th_out          : PCHE hot side outlet temperature [K]
-        - tc_in           : PCHE cold side inlet temperature [K]
-        - tc_out          : PCHE cold side outlet temperature [K]
+    Assuming a printed circuit heat exchanger (PCHE).
+    Inputs for this function are as follows:
+      - hx_thermal_load : thermal load of the PCHE [MW]
+      - th_in           : PCHE hot-side inlet temperature [K]
+      - th_out          : PCHE hot-side outlet temperature [K]
+      - tc_in           : PCHE cold-side inlet temperature [K]
+      - tc_out          : PCHE cold-side outlet temperature [K]
     """
     hx_thermal_load = params['Power MWt']
 
@@ -22,8 +20,8 @@ def calculate_heat_exchanger_mass(params):
     tc_in  = params['Secondary Loop Inlet Temperature']
     tc_out = params['Secondary Loop Outlet Temperature']
 
-    # Assumption on overall heat transfer coefficient
-    U = 500  # [w/m2/K] This is an average value obtained by scanning of literature
+    # Assumed overall heat transfer coefficient
+    U = 500  # [W/m2/K] — average value from a literature survey
 
     # PCHE channel dimensions assumptions
     hx_channel_diameter = 0.0015   # [m]
@@ -35,7 +33,7 @@ def calculate_heat_exchanger_mass(params):
     rho_ss = 7850   #  density of stainless steel :: Kg/m^3
 
     hx_channel_perimeter = 3.14* hx_channel_diameter/2 + hx_channel_diameter
-    hx_channel_ht_area = hx_channel_perimeter* hx_channel_length   # assuming a semi circular channel
+    hx_channel_ht_area = hx_channel_perimeter* hx_channel_length   # assumes a semicircular channel
 
     delta_t1 = abs(th_in - tc_out)
     delta_t2 = abs(th_out - tc_in)
@@ -56,7 +54,7 @@ def calculate_primary_pump_mechanical_power(params):
     core_mass_flow_rate = params['Primary Loop Mass Flow Rate']
     core_active_height  = params['Active Height'] 
     g    = 9.81                               # [m/s^2]
-    h    = core_active_height/100                 # [cm to m conversion] 
+    h    = core_active_height/100                 # [cm to m conversion]
     mdot = core_mass_flow_rate                # [kg/s]
     params['Primary Pump Mechanical Power'] =  mdot* g* h / 1000 # kWe
 
@@ -68,7 +66,7 @@ def calculate_secondary_pump_mechanical_power(secondary_mass_flow_rate):
       Pump electric power [kW] = mdot*g*h / 1000
     """
     g    = 9.81                               # [m/s^2]
-    h    = 58.56* 0.3048                      # [m]  I found that this was an assumption based on literature of reactors with similar power
+    h    = 58.56* 0.3048                      # [m] — assumption based on literature for reactors of similar power
     mdot = secondary_mass_flow_rate           # [kg/s]
 
     return mdot* g* h / 1000     # [kWe]
@@ -109,9 +107,8 @@ def calculate_building_structure_volumes(building):
   
 def calculate_reactor_building_structure_volume(building_char):
     """
-      * Reactor building considers that the internal walls have the dimensions
-        of an ISO container.
-      * The wall thickness is assumed to be 2 [m]
+    Reactor building: internal wall dimensions match an ISO container.
+    Wall thickness is assumed to be 2 m.
     """
     reactor_building_dimensions = building_char
 
@@ -122,8 +119,7 @@ def calculate_reactor_building_structure_volume(building_char):
   
 def calculate_energy_conversion_building_structure_volume(building_char):
     """
-      * Energy conversion building considers that the internal walls have dimensions 
-        of an ISO container placed horizontally.
+    Energy conversion building: internal wall dimensions match an ISO container placed horizontally.
     """
     energy_conversion_building_structure_dimensions = building_char
 
@@ -133,9 +129,8 @@ def calculate_energy_conversion_building_structure_volume(building_char):
 
 def calculate_control_building_structure_volume(building_char):
     """
-      * The control building dimensions are not completely based on assumptions.
-      * The idea is that the control building is assumed to be occupied by two operators
-        .. if needed.
+    Control building: dimensions are not entirely based on assumptions.
+    The building is assumed to be occupied by up to two operators if needed.
     """
     control_building_dimensions = building_char
 
@@ -146,11 +141,10 @@ def calculate_control_building_structure_volume(building_char):
   
 def calculate_refueling_building_strucutre_volume(building_char):
     """
-      * Refueling building dimensions are entirely based on assumptions.
-      * Some key notes prior to assumptions:
-        - refueling building is larger than control building
-        - Radioactive material needs to be handled so area needs to be large in
-          order to account for existing shielding and equipment.
+    Refueling building: dimensions are entirely based on assumptions.
+    Key assumptions:
+      - The refueling building is larger than the control building.
+      - Radioactive material handling requires additional space for shielding and equipment.
     """
     refueling_building_dimensions = building_char
 
@@ -160,8 +154,8 @@ def calculate_refueling_building_strucutre_volume(building_char):
   
 def calculate_spent_fuel_building_structure_volume(building_char):
     """
-      * It is expected that spent fuel building will have less equipment compared to refueling area
-      * As a result, it has a smaller area
+    Spent fuel building: expected to house less equipment than the refueling area,
+    resulting in a smaller footprint.
     """
     spent_fuel_building_dimensions = building_char
 
@@ -171,8 +165,7 @@ def calculate_spent_fuel_building_structure_volume(building_char):
 
 def calculate_emergency_building_structure_volume(building_char):
     """
-      * Dimensions are solely based on assumptions.
-      * No supporting details for assumptions
+    Emergency building: dimensions are based entirely on assumptions with no supporting details.
     """
     emergency_building_dimensions = building_char
 
@@ -182,8 +175,7 @@ def calculate_emergency_building_structure_volume(building_char):
   
 def calculate_storage_building_structure_volume(building_char):
     """
-      * Dimensions are solely based on assumptinos
-      * No supporting details for assumptions
+    Storage building: dimensions are based entirely on assumptions with no supporting details.
     """
     storage_building_dimensions = building_char
 
@@ -193,8 +185,7 @@ def calculate_storage_building_structure_volume(building_char):
   
 def calculate_radwaste_building_structure_volume(building_char):
     """
-      * Dimensions are solely based on dimensions.
-      * No elaboration on details of the assumptions
+    Radwaste storage building: dimensions are based entirely on assumptions with no supporting details.
     """
     radwaste_storage_building_dimensions = building_char
 

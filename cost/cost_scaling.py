@@ -14,8 +14,8 @@ def non_standard_cost_scale(account, unit_cost, scaling_variable_value, exponent
     elif account == 222.13:
         if 'Primary Loop Count' in params.keys():
             # Account for multiple primary loops and their individual rated load
-            ## PR1: Updated cost correlation based on ANL/NSE-20/28 in-place of default
-            ## due to inherent uncertainty of compressor pressure ratio between GCMR designs
+            ## PR1: Updated cost correlation based on ANL/NSE-20/28 in place of the default,
+            ## due to inherent uncertainty in the compressor pressure ratio across GCMR designs
             cost_multiplier = (((params['Primary Loop Outlet Temperature'] - 273.15)/650)**1.29 *
                                 (params['Primary Loop Compressor Power']/1e6/2.6)**0.74)
             cost = cost_multiplier * unit_cost
@@ -54,16 +54,16 @@ def non_standard_cost_scale(account, unit_cost, scaling_variable_value, exponent
 
 
 def scale_redundant_BOP_and_primary_loop(df, params):
-    # Scales special cases to handle redundant / multiple coolant, BoP loops
+    # Scales special cases to handle redundant or multiple coolant/BoP loops
     escalation_year = params['Escalation Year']
     cost_col = f'FOAK Estimated Cost (${escalation_year })'
 
     if 'Primary Loop Count' in params.keys():
         df.loc[df['Account'].astype(str).str.startswith('222'), cost_col] *= params['Primary Loop Count']
     if 'BoP Count' in params.keys():
-        # Balance of Plant
+        # Balance of plant
         df.loc[df['Account'].astype(str).str.startswith('232'), cost_col] *= params['BoP Count']
-        # Balance of Plant Building - Assumed to be High 40' CONEX Container with 20 cm wall thickness (including conex wall)
+        # Balance-of-plant building — assumed to be a high 40-ft CONEX container with 20 cm wall thickness (including the CONEX wall)
         df.loc[df['Account'].astype(str).str.startswith('213.1'), cost_col] *= params['BoP Count']
     if 'Primary Loop Purification' in params.keys():
         df.loc[df['Account'] == 226, cost_col] *= int(params['Primary Loop Purification'])
@@ -149,13 +149,13 @@ def scale_cost(initial_database, params):
                     estimated_cost = 0
                 
                 else:     
-                    # Check if there is a ref value for the scaling variable or just use the unit cost
+                    # Check whether a reference value exists for the scaling variable; otherwise use the unit cost directly
                     if row['Scaling Variable Ref Value'] > 0:
                         estimated_cost = fixed_cost +\
                         unit_cost * pow(scaling_variable_value,exponent) /(pow(scaling_variable_ref_value,exponent-1))
 
                     else:
-                        # Calculate the 'Estimated Cost
+                        # Calculate the estimated cost
                         estimated_cost = fixed_cost + unit_cost * scaling_variable_value
             
             elif row['Standard Cost Equation?'] == 'nonstandard':
@@ -166,7 +166,7 @@ def scale_cost(initial_database, params):
                     unit_cost, scaling_variable_value, exponent, params)
 
 
-            # Assign the calculated value to the corresponding row in the new DataFrame
+            # Assign the calculated value to the corresponding row in the DataFrame
             scaled_cost.at[index, f'FOAK Estimated Cost (${escalation_year })'] = estimated_cost
     return scaled_cost
 
@@ -272,7 +272,7 @@ def scale_central_facility_cost(initial_database, params):
 
             scaled_cost.at[index, f'FOAK Estimated Cost (${escalation_year })'] = estimated_cost
         else:
-                # Explicitly assign 0 so these rows don't remain NaN
+                # Explicitly assign 0 so these rows do not remain NaN
                 # and cause parent account aggregation to fail
                 scaled_cost.at[index, f'FOAK Estimated Cost (${escalation_year })'] = 0
     return scaled_cost

@@ -6,8 +6,8 @@ from core_design.utils import create_universe_plot, create_cells, cyclic_rotatio
 from core_design.openmc_materials_database import collect_materials_data
 
 """
-An OpenMC function that accepts an instance of "parameters" 
-and generates the necessary XMl files
+An OpenMC function that accepts an instance of "parameters"
+and generates the necessary XML files.
 """
 
 def build_openmc_model_GCMR(params):
@@ -20,8 +20,8 @@ def build_openmc_model_GCMR(params):
     #                                                Sec. 0 : Helper Functions
     # **************************************************************************************************************************
     def create_fuel_pin_regions_TRISO(params):
-        # Read what the used decided for the dimensions of the fuel pin
-        ## Fuel (these variables' names need to be reviewed!)
+        # Read what the user specified for the dimensions of the fuel pin
+        ## Fuel (these variable names need to be reviewed!)
         fuel_radii = {'kernel': params['Fuel Pin Radii'][0],
                     'buffer': params['Fuel Pin Radii'][1],
                     'layer_1': params['Fuel Pin Radii'][2],
@@ -29,7 +29,7 @@ def build_openmc_model_GCMR(params):
                     'layer_3': params['Fuel Pin Radii'][4]
         }
 
-        # # Creating surfaces
+        # Creating surfaces
         shells = [openmc.Sphere(r=r) for r in fuel_radii.values()]
 
         
@@ -149,14 +149,14 @@ def build_openmc_model_GCMR(params):
                             control_drum_absorber_material,
                             control_drum_reflector_material):
 
-        absorber_arc = 1 / np.sqrt(3)  # plane coefficient b in x + b*y = 0 giving exactly 120° absorber arc
-        REFERENCE_ANGLE = 240 # This angle is a constant that puts the drum in the correct orientation in reference to the lattice geometry
+        absorber_arc = 1 / np.sqrt(3)  # plane coefficient b in x + b*y = 0 giving exactly a 120° absorber arc
+        REFERENCE_ANGLE = 240  # constant that orients the drum correctly relative to the lattice geometry
         rotation_angle = 180 if params['Shutdown Margin Calc'] else 0
 
         cd_inner_shell = openmc.ZCylinder(r= drum_radius - absorber_thickness)
         cd_outer_shell = openmc.ZCylinder(r= drum_radius)
         
-        # The radius of the tube of the control drum
+        # The tube radius of the control drum
         params['Drum Tube Radius'] = params['Drum Radius'] +(params['Drum Radius']/ 45)  # cm
 
         cd_gap_shell = openmc.ZCylinder(r= params['Drum Tube Radius'] )
@@ -203,7 +203,7 @@ def build_openmc_model_GCMR(params):
     #                                                Sec. 2 : GEOMETRY: TRISO particles
     # **************************************************************************************************************************
 
-    # # # ## TRISO particles
+    # TRISO particles
     fuel_pin_region = create_fuel_pin_regions_TRISO(params)
     fuel_materials = []
     for mat in params['Fuel Pin Materials']:
@@ -212,9 +212,9 @@ def build_openmc_model_GCMR(params):
         else: 
             material_1 = materials_database[mat]
             fuel_materials.append(material_1)
-    # Giving the user error message if the number of materials is not the same as the number of regions
+    # Give the user an error message if the number of materials does not match the number of regions
     assert len(fuel_pin_region) == len(fuel_materials), "The number of regions, {len(fuel_pin_region)} should be\
-        the same as the number of introduced materials, {len(fuel_materials)}"  
+        the same as the number of introduced materials, {len(fuel_materials)}"
     
     triso_cells = create_cells(fuel_pin_region, fuel_materials)
     triso_universe = openmc.Universe(cells=triso_cells.values())  
@@ -229,13 +229,12 @@ def build_openmc_model_GCMR(params):
                         fig_size = 8, 
                         output_file_name = "TRISO_Particle.png")
 
-    # The Fuel Universe (TRISO particles with background material in between and moderator material around the TRISO)
-    # compact_cell is the fuel compact cell (to be used in distribcell tally for peaking factor)
+    # The fuel universe (TRISO particles with background material in between and moderator material around the TRISO)
+    # compact_cell is the fuel compact cell (used in distribcell tally for peaking factor)
     active_core_maxz, active_core_minz, fuel_universe, compact_triso_particles_number, compact_cell = create_TRISO_particles_lattice_universe(params, triso_universe, materials_database)
    
-                            
-    # # ## coolat channels & Booster Pins & Burnable Poison
-    #small coolant channels
+    # Coolant channels, booster pins, and burnable poison
+    # Small coolant channels
     small_coolant_universe = create_universe_from_core_top_and_bottom_planes(params['Coolant Channel Radius'],\
     active_core_maxz, active_core_minz, coolant , materials_database[params['Matrix Material']])
     
@@ -247,7 +246,7 @@ def build_openmc_model_GCMR(params):
     )
 
 
-    # # # Construct hexagonal cells surrounded by coolant channels
+    # Construct hexagonal cells surrounded by coolant channels
     params['Hex Lattice Radius'] = params['Lattice Pitch'] /np.sqrt(3)
     # Define the boundary of the hexagonal prism with the given edge length
     hex_boundary = openmc.model.hexagonal_prism(edge_length= params['Hex Lattice Radius'])
@@ -307,35 +306,39 @@ def build_openmc_model_GCMR(params):
 
 
 
-    # ## Corner and Edge Assemblies
+    # Corner and Edge Assemblies
     """
-    The edge and corner assemblies are special cases of the normal assembly. 
-    If nothing was done, moderator rods would appear as half-rods in the outer region of the assembled core.
-    To address this we have 2 options:
-    1- Keep moderator pins in the outer region
-    2- Remove moderator pins in the outer region
- 
-    1 requires defining a graphite assembly with moderator rods in part of the outer region and use this to surround the core.
-    2 requires defining edge and corner assemblies that do not have moderator pins in a part of the outer region.
- 
-    We will use solution 2, since it would introduce a relatively good parasitic absorber (H1) between the core and the reflector.
-    The easiest way to define this special assemblies is to define a special outer ring, 
-    where only part of the outer ring has moderator cells, then we perform a cyclic rotation of the list of pins, 
-    which will cause the assembly to effectively rotate using the outer pins as a reference.
-    The defining characteristic of these special assemblies is that edge assemblies have 4 sides with moderator pins, while corner assemblies have 3 sides with moderator pins.
-     
-    Due to the way OpenMC numbers the pins in a HexLattice, the easiest way is to make a reference outer ring for both the edge and the corner cases based on the numbering criteria, 
-    then to use a cyclic rotation of this list to bring these reference rings into their proper position to represent assemblies at the correct rotation.
+    The edge and corner assemblies are special cases of the normal assembly.
+    If nothing were done, moderator rods would appear as half-rods in the outer region of the assembled core.
+    To address this, there are two options:
+    1- Keep moderator pins in the outer region.
+    2- Remove moderator pins in the outer region.
+
+    Option 1 requires defining a graphite assembly with moderator rods in part of the outer region
+    and using it to surround the core.
+    Option 2 requires defining edge and corner assemblies that do not have moderator pins in part of the outer region.
+
+    We use option 2, since it introduces a relatively effective parasitic absorber (H-1)
+    between the core and the reflector.
+    The easiest way to define these special assemblies is to define a special outer ring
+    where only part of the ring has moderator cells, then perform a cyclic rotation of the pin list,
+    which effectively rotates the assembly using the outer pins as a reference.
+    The defining characteristic of these special assemblies is that edge assemblies have 4 sides
+    with moderator pins, while corner assemblies have 3 sides with moderator pins.
+
+    Due to the way OpenMC numbers pins in a HexLattice, the easiest approach is to construct a
+    reference outer ring for both edge and corner cases based on the numbering convention,
+    then apply a cyclic rotation to place these rings in the correct position.
     """
 
-    # # # Corner assembly universe
+    # Corner assembly universe
     corner_ring_ref = [coolant_lattice_hex]*((params['Assembly Rings']-1)*3+1) + [booster_lattice_hex]*((params['Assembly Rings']-1)*3-1)
     corner_ring_1 = cyclic_rotation(corner_ring_ref, (params['Assembly Rings']-1)*3)
     corner_rings = [corner_ring_1] + [cyclic_rotation(corner_ring_1, (params['Assembly Rings']-1)*i) for i in range(1,6)]
     corner_assembly_universe = [create_assembly(params['Assembly Rings'], params['Lattice Pitch'], openmc.Universe(cells=[openmc.Cell(fill= materials_database[params['Moderator']])]),\
      fuel_lattice_hex, booster_lattice_hex, outer_ring=cr, simplified_output=True) for cr in corner_rings]
 
-    # # Edge assembly universe
+    # Edge assembly universe
     edge_ring_ref = [coolant_lattice_hex]*((params['Assembly Rings']-1)*2+1) + [booster_lattice_hex]*((params['Assembly Rings']-1)*4-1)
     edge_ring_1 = cyclic_rotation(edge_ring_ref, (params['Assembly Rings']-1)*4)
     edge_rings = [edge_ring_1] + [cyclic_rotation(edge_ring_1, (params['Assembly Rings']-1)*i) for i in range(1,6)]
@@ -346,7 +349,7 @@ def build_openmc_model_GCMR(params):
     #                                           Sec. 4 : User-Defined Parameters (Control Drums)
     # ************************************************************************************************************************** 
 
-    # # # ## Drum Assembly
+    # Drum Assembly
 
     drums = create_drums_universe_CGMR(params, absorber_thickness = params['Drum Absorber Thickness'],
                                   drum_radius = params['Drum Radius'],
@@ -406,7 +409,7 @@ def build_openmc_model_GCMR(params):
     # **************************************************************************************************************************
     #                                                Sec. 6 : VOLUME INFO for Depletion
     # **************************************************************************************************************************
-    # The volume of a compact fuel volume defined before to have a a height of 4
+    # The compact fuel volume defined earlier has a height of 4
     params['Lattice Compact Volume'] =  cylinder_volume(params['Compact Fuel Radius'], 4)
 
     outer_fuel_ring_count = 6 * (params['Core Rings'] - 1)  # corner + edge assemblies not counted in assembly_number
@@ -418,7 +421,7 @@ def build_openmc_model_GCMR(params):
     fuel.volume = fuel_volume
     all_materials = fuel_materials + [fuel, reflector, moderator] + booster_materials_list + [control_drum_absorber, coolant, control_drum_reflector]
     
-    # removing "None" materials
+    # Remove None materials
     all_materials_cleaned_list = [item for item in all_materials if item is not None]
     materials = openmc.Materials(list(set(all_materials_cleaned_list)))
    
@@ -428,13 +431,13 @@ def build_openmc_model_GCMR(params):
     core_geometry = openmc.Geometry(core)
     core_geometry.export_to_xml()
     
-    # # **************************************************************************************************************************
-    # #                                                Sec. 1.7 : TALLIES
-    # # **************************************************************************************************************************
+    # **************************************************************************************************************************
+    #                                                Sec. 1.7 : TALLIES
+    # **************************************************************************************************************************
 
     tallies_file = openmc.Tallies()
 
-    group_edges = np.array([1e-5, 6.7e-2, 3.2e-1, 1, 4, 9.88, 4.81e1, 4.54e2, 4.9e4, 1.83e5, 8.21e5, 4e7])# 11 energy groups from HPMR report table no.5 in ev
+    group_edges = np.array([1e-5, 6.7e-2, 3.2e-1, 1, 4, 9.88, 4.81e1, 4.54e2, 4.9e4, 1.83e5, 8.21e5, 4e7])  # 11 energy groups from HPMR report table 5 in eV
     groups = openmc.mgxs.EnergyGroups(group_edges)
 
     mgxs_lib = openmc.mgxs.Library(core_geometry)
@@ -446,15 +449,15 @@ def build_openmc_model_GCMR(params):
     mgxs_lib.build_library()
     mgxs_lib.add_to_tallies_file(tallies_file, merge=False)
 
-    # Peaking factor tally (mesh-based for GCMR to avoid slow distribcell on stochastic TRISO geometry)
-    # Uses a 20x20 mesh with material filter on the fuel kernel for accurate spatial power distribution
+    # Peaking factor tally (mesh-based for GCMR to avoid slow distribcell on stochastic TRISO geometry).
+    # Uses a 20×20 mesh with a material filter on the fuel kernel for accurate spatial power distribution.
     mesh = openmc.RegularMesh()
     mesh.dimension = [20, 20, 1]
     mesh.lower_left = [-params['Core Radius'], -params['Core Radius'], -2]
     mesh.upper_right = [params['Core Radius'], params['Core Radius'], 2]
 
     mesh_filter = openmc.MeshFilter(mesh)
-    kernel_material = fuel_materials[0]  # First material is the fuel kernel (e.g., UN, UCO)
+    kernel_material = fuel_materials[0]  # The first material is the fuel kernel (e.g., UN, UCO)
     material_filter = openmc.MaterialFilter([kernel_material])
 
     pin_power = openmc.Tally(name='pin_power_kappa')

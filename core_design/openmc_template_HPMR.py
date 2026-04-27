@@ -50,9 +50,9 @@ def create_fuel_pin(params, materials_database):
 
     # Append the moderator to the list of fuel pin materials
     fuel_materials.append(materials_database[params['Moderator']])
-    # creating the fuel pin universe
+    # Create the fuel pin universe
     fuel_cells = create_cells(fuel_pin_regions, fuel_materials)
-    # The fuel region cell (to be used in distribcell tally)
+    # Fuel region cell (used in distribcell tally)
     fuel_cell = fuel_cells['fuel_meat']
     fuel_pin_universe = openmc.Universe(cells=fuel_cells.values())
 
@@ -67,7 +67,7 @@ def create_htpipe_pin(params, materials_database):
 
     # Append the moderator to the list of heat pipe materials
     htpipe_materials.append(materials_database[params['Moderator']])
-    # creating the heat pipe pin universe
+    # Create the heat pipe pin universe
     htpipe_cells = create_cells(htpipe_pin_regions, htpipe_materials)
     htpipe_universe = openmc.Universe(cells=htpipe_cells.values())
 
@@ -175,7 +175,7 @@ def create_hex_core_geometry(params, fuel_assembly, graphite_assembly, graphite_
 
     # Define the hex core planes
     assembly_pitch = params['Assembly FTF']
-    no_of_core_rings = params['Number of Rings per Core'] + 1  #The outermost ring in the original input is filled with graphite universes which is extra ring to the no of rings in the core
+    no_of_core_rings = params['Number of Rings per Core'] + 1  # The outermost ring in the original input is filled with graphite universes, adding one extra ring to the number of core rings
     lc             = params['hexagonal Core Edge Length']
     cr             = np.sqrt(3.)/3.
     x2             = 0.0
@@ -187,7 +187,7 @@ def create_hex_core_geometry(params, fuel_assembly, graphite_assembly, graphite_
     c_lower_right  = openmc.Plane(surface_id=35, a=-cr,  b=1., d=-lc-x2*cr+y2, name='c_lower_right')
     c_lower_left   = openmc.Plane(surface_id=36,  a=cr,  b=1., d=-lc+x2*cr+y2, name='c_lower_left')
 
-    lc             = params['hexagonal Core Edge Length'] + 0.06  #From the original input
+    lc             = params['hexagonal Core Edge Length'] + 0.06  # from the original input
     cr             = np.sqrt(3.)/3.
     x2             = 0.0
     y2             = 0.0
@@ -252,7 +252,7 @@ def create_control_drums(params, materials_database):
     cr_in_radius = cr_out_radius - params['Drum Absorber Thickness'] 
     core_radius = params['Core Radius']
 
-    lc             = params['hexagonal Core Edge Length'] + 0.06  #From the original input
+    lc             = params['hexagonal Core Edge Length'] + 0.06  # from the original input
     cr             = np.sqrt(3.)/3.
     x2             = 0.0
     y2             = 0.0
@@ -357,7 +357,7 @@ def create_control_drums(params, materials_database):
     cr_300.rotation         = [0,  0,  -60 + rotation_angle]
 
     # Translate the control drums
-    params['Drum Tube Radius'] = params['Drum Radius'] + params['Drum Radius'] / 90 # cm
+    params['Drum Tube Radius'] = params['Drum Radius'] + params['Drum Radius'] / 90  # cm
     cd_distance = ((params['Number of Rings per Core'] - 1) * params['Assembly FTF']) + (params['Assembly FTF'] / 2) + params['Drum Tube Radius']
 
     r_0                  = cd_distance            #calculated in the original input as (78 + 112)/2.0
@@ -422,7 +422,7 @@ def create_control_drums(params, materials_database):
 
 def create_core_geometry(core_reg, core_reg_out, cr_01, cr_02, cr_03, cr_04, cr_05, cr_06, cr_07, cr_08, cr_09, cr_10, cr_11, cr_12):
 
-   # Create a universe for the whole core
+   # Create a universe for the full core
    core = openmc.Universe(cells=[core_reg, core_reg_out, cr_01, cr_02, cr_03, cr_04, cr_05, cr_06, cr_07, cr_08, cr_09, cr_10, cr_11, cr_12])
    core_geometry = openmc.Geometry(core)
 
@@ -434,8 +434,8 @@ def create_core_geometry(core_reg, core_reg_out, cr_01, cr_02, cr_03, cr_04, cr_
 # **************************************************************************************************************************
 
 """
-An OpenMC function that accepts an instance of "parameters" 
-and generates the necessary XMl files
+An OpenMC function that accepts an instance of "parameters"
+and generates the necessary XML files.
 """
 def build_openmc_model_HPMR(params):
     params.setdefault('Cold Shutdown Temperature', 300)
@@ -506,7 +506,7 @@ def build_openmc_model_HPMR(params):
                         plot_width = 1.3 * params['Assembly FTF'],
                         num_pixels = 500, 
                         font_size = 32,
-                        title = "Fuel Asembly", 
+                        title = "Fuel Assembly",
                         fig_size = 8, 
                         output_file_name = "fuel_assembly.png")                              
 
@@ -518,9 +518,9 @@ def build_openmc_model_HPMR(params):
                         fig_size = 8, 
                         output_file_name = "core.png")
 
-   # # **************************************************************************************************************************
-   # #                                                Sec. 1.4 : VOLUME INFO for Depletion
-   # # **************************************************************************************************************************
+    # **************************************************************************************************************************
+    #                                                Sec. 1.4 : VOLUME INFO for Depletion
+    # **************************************************************************************************************************
     fissile_area = np.pi * 1 **2
     fuel.volume = fissile_area * round(params['Active Height'],0) * params['Fuel Pin Count']
 
@@ -528,18 +528,18 @@ def build_openmc_model_HPMR(params):
     all_materials = fuel_materials +\
         htpipe_materials + [coolant, reflector, moderator, gap, control_drum_absorber, control_drum_reflector]
     
-    # removing "None" materials
+    # Remove None materials
     all_materials_cleaned_list = [item for item in all_materials if item is not None]
     materials = openmc.Materials(list(set(all_materials_cleaned_list)))
    
     openmc.Materials.cross_sections = params['cross_sections_xml_location']
     materials.export_to_xml()
-         #=================================================================================================
-    #                                     tallies.xml File
-    #=================================================================================================
+    # =================================================================================================
+    #                                     tallies.xml file
+    # =================================================================================================
     tallies_file = openmc.Tallies()
 
-    group_edges = np.array([1e-5, 6.7e-2, 3.2e-1, 1, 4, 9.88, 4.81e1, 4.54e2, 4.9e4, 1.83e5, 8.21e5, 4e7])# 11 energy groups from HPMR report table no.5 in ev
+    group_edges = np.array([1e-5, 6.7e-2, 3.2e-1, 1, 4, 9.88, 4.81e1, 4.54e2, 4.9e4, 1.83e5, 8.21e5, 4e7])  # 11 energy groups from HPMR report table 5 in eV
     groups = openmc.mgxs.EnergyGroups(group_edges)
 
     mgxs_lib = openmc.mgxs.Library(core_geometry)
@@ -560,9 +560,9 @@ def build_openmc_model_HPMR(params):
     tallies_file.export_to_xml()
 
 
-    # # **************************************************************************************************************************
-    # #                                                Sec. 1.5 : SIMULATION
-    # # **************************************************************************************************************************
+    # **************************************************************************************************************************
+    #                                                Sec. 1.5 : SIMULATION
+    # **************************************************************************************************************************
   
     settings = openmc.Settings()
     settings.batches = 100

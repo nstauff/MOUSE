@@ -61,10 +61,10 @@ def vessels_specs(params):
     total_vessels_mass = vessel_mass_kg + guard_vessel_mass_kg + cooling_vessel_mass + intake_vessel_mass
     
     # NOTE for GCMR:
-    # Designs are different in that the Vessels Total Radius or Height 
-    # is not the true vessel specs and includes the RCCS and the RCCS Intake.
-    # Guard Vessel refers to the RPV
-    # Vessel refers to the Core Barrel
+    # The Vessels Total Radius and Height are not the true vessel dimensions —
+    # they include the RCCS and the RCCS Intake.
+    # Guard Vessel refers to the RPV.
+    # Vessel refers to the Core Barrel.
     params['Vessels Total Radius'] = vessels_full_radius 
     params['Vessel Height'] = vessel_height
     params['Vessels Total Height'] = total_vessel_height

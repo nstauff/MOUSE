@@ -62,8 +62,8 @@ update_params({
     'UO2 atom fraction': 0.7,  # Mixing UO2 and UC by atom fraction
     'Radial Reflector': 'Graphite',
     'Axial Reflector': 'Graphite',
-    'Matrix Material': 'Graphite', # matrix material is a background material within the compact fuel element between the TRISO particles
-    'Moderator': 'Graphite', # The moderator is outside this compact fuel region 
+    'Matrix Material': 'Graphite',  # matrix material is the background material within the compact fuel element between TRISO particles
+    'Moderator': 'Graphite',  # the moderator is outside the compact fuel region
     'Moderator Booster Materials': ['ZrH'],
     'Coolant': 'Helium',
     'Common Temperature': 850,  # Kelvins
@@ -114,7 +114,7 @@ calculate_moderator_mass_GCMR(params)
 update_params({
     'Power MWt': 15,  # MWt
     'Thermal Efficiency': 0.4,
-    'Heat Flux Criteria': 0.9,  # MW/m^2 (This one needs to be reviewed)
+    'Heat Flux Criteria': 0.9,  # MW/m^2 (needs review)
     'Burnup Steps': [0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 15.0, 20.0,
                      30.0, 40.0, 50.0, 60.0, 80.0, 100.0, 120.0]  # MWd_per_Kg
     })
@@ -165,13 +165,13 @@ params.update({
     'Secondary HX Mass': 0,
     'Compressor Pressure Ratio': 4,
     'Compressor Isentropic Efficiency': 0.8,
-    'Primary Loop Count': 2, # Number of Primary Coolant Loops present in plant
-    'Primary Loop per loop load fraction': 0.5, # assuming that each Primary Loop Handles the total load evenly (1/2)
+    'Primary Loop Count': 2,  # number of primary coolant loops in the plant
+    'Primary Loop per loop load fraction': 0.5,  # each loop handles an equal share of the total load
     'Primary Loop Inlet Temperature': 300 + 273.15, # K
     'Primary Loop Outlet Temperature': 550 + 273.15, # K
     'Secondary Loop Inlet Temperature': 290 + 273.15, # K
     'Secondary Loop Outlet Temperature': 500 + 273.15, # K,
-    'Primary Loop Pressure Drop': 50e3, # Pa. Assumption based on Enrique's estimate
+    'Primary Loop Pressure Drop': 50e3,  # Pa — estimated assumption
 })
 params['Primary HX Mass'] = calculate_heat_exchanger_mass(params)  # Kg
 # calculate coolant mass flow rate
@@ -180,8 +180,8 @@ compressor_power(params)
 
 # Update BoP Parameters
 params.update({
-    'BoP Count': 2, # Number of BoP present in plant
-    'BoP per loop load fraction': 0.5, # based on assuming that each BoP Handles the total load evenly (1/2)
+    'BoP Count': 2,  # number of BoP systems in the plant
+    'BoP per loop load fraction': 0.5,  # each BoP handles an equal share of the total load
     })
 params['BoP Power kWe'] = 1000 * params['Power MWe'] * params['BoP per loop load fraction']
 
@@ -245,12 +245,12 @@ update_params({
     'Security Staff Per Shift': 1
 })
 
-#Based on https://digital.library.unt.edu/ark:/67531/metadc893980/m2/1/high_res_d/919556.pdf (table 18 and table 17):
-# Estimate Helium mass per MWt is 3.3 kg/MWt
-params['Onsite Coolant Inventory'] = 3.3 * params['Power MWt'] # kg
-# According to https://www.nationalacademies.org/read/12844/chapter/6#69, the loss rate of helium is 10% per year so 1/10 of the initial
-# inventory is renewed per year
-# if there is no purification, He needs to be replaced more frequently
+# Based on https://digital.library.unt.edu/ark:/67531/metadc893980/m2/1/high_res_d/919556.pdf (tables 17 and 18):
+# Estimated helium mass per MWt is 3.3 kg/MWt.
+params['Onsite Coolant Inventory'] = 3.3 * params['Power MWt']  # kg
+# According to https://www.nationalacademies.org/read/12844/chapter/6#69, the helium loss rate is 10% per year,
+# so 1/10 of the initial inventory is replenished annually.
+# Without purification, helium needs to be replaced more frequently.
 params['Replacement Coolant Inventory'] = params['Onsite Coolant Inventory'] / 10
 params['Annual Coolant Supply Frequency'] = 1 if params['Primary Loop Purification'] else 6
 
@@ -334,7 +334,7 @@ update_params({
 
     # Maximum number of reactor units the central facility is designed to support.
     # Used to calculate fleet-wide metrics and normalize costs per kW.
-    'Maximum Number of Operating Reactors': 100,  # number of reactor units. This is the number of reactors served by all the facilities
+    'Maximum Number of Operating Reactors': 100,  # total number of reactors served by all facilities
 
     # Construction duration for the central facility (may differ from reactor construction).
     # Used for calculating financing costs (interest during construction).
@@ -368,7 +368,7 @@ update_params({
     'Helium Purification and Storage Building Walls Volume': 80,  # m^3
     'Helium Purification and Storage Building Volume': 1000,  # m^3
 
-    'Servicing Facility Integrated Control Room Roof Volume': 50,  # m^3 # mainly the hot cell
+    'Servicing Facility Integrated Control Room Roof Volume': 50,  # m^3 — mainly the hot cell
     'Servicing Facility Integrated Control Room Basement Volume': 50,  # m^3
     'Servicing Facility Integrated Control Room Walls Volume': 40,  # m^3
     'Servicing Facility Integrated Control Room Volume': 500,  # m^3
@@ -390,17 +390,16 @@ update_params({
     'Total Servicing Rate': 50,  # reactors/year
 
     # Number of hot cells for reactor servicing operations
-    'Servicing Hot Cell Count': 10,  # number of hot cells # 'Total Servicing Rate' divided by capacity of hot cell
+    'Servicing Hot Cell Count': 10,  # number of hot cells ('Total Servicing Rate' divided by hot cell capacity)
 
     # Volume of each servicing hot cell
-    'Servicing Hot Cell Volume': 500,  # m^3 per hot cell # volume of empty space
+    'Servicing Hot Cell Volume': 500,  # m^3 per hot cell (empty interior volume)
 
     # Number of defueling/refueling lines (typically equals hot cell count)
-    'Defueling/Refueling Line Count': 10,  # number of lines # maybe remove this one
+    'Defueling/Refueling Line Count': 10,  # number of lines
 })
 
 # Total volume of all servicing hot cells combined
-# maybe remove this.
 params['Total Servicing Hot Cell Volume'] = params['Servicing Hot Cell Count'] * params['Servicing Hot Cell Volume']
 # Thermal power processed by servicing facility (assumes 5% power for low-power testing per hot cell)
 params['Power Mwt Processed by Servicing'] = 0.05 * params['Power MWt'] * params['Servicing Hot Cell Count']
@@ -528,8 +527,8 @@ update_params({
 # --- Transportation Parameters --- 
 # Vehicles and equipment for transporting reactors, fuel, and waste between facilities.
 update_params({
-    # Local transport vehicles (within central facility complex)
-    'Local Transport Vehicle Count': 80,  # number of vehicles (how many cars inside the facility) # this variable is repeated!!!
+    # Local transport vehicles (within the central facility complex)
+    'Local Transport Vehicle Count': 80,  # number of vehicles inside the facility
 
     # Vehicles for transporting complete reactor units to/from field sites
     'Reactor Transport Vehicle Count': 20,  # number of vehicles
@@ -546,7 +545,7 @@ update_params({
 # These are consumable items that need periodic replacement.
 update_params({
     # Annual replacement rate for spent fuel transport casks
-    'Annual Spent Fuel Cask Replacement': 20,  # casks/year @# 20 casks are used and disposed every year because of spent fuel
+    'Annual Spent Fuel Cask Replacement': 20,  # casks/year — 20 casks are used and disposed of annually for spent fuel transport
 
     # Annual replacement rate for reactor transport casks
     'Annual Reactor Cask Replacement': 10,  # casks/year
@@ -602,9 +601,9 @@ params['Tax Rate'] = 0.21  # fraction
 # **************************************************************************************************************************
 #                                           Sec. 12: Post Processing
 # **************************************************************************************************************************
-params['Number of Samples'] = 100 # Accounting for cost uncertainties
+params['Number of Samples'] = 100  # number of samples for cost uncertainty analysis
 # Estimate costs using the cost database file and save the output to an Excel file
-# Note: Output will include both reactor costs and central facility costs (separate sheets)
+# Note: Output will include both reactor costs and central facility costs (separate sheets).
 estimate = detailed_bottom_up_cost_estimate('cost/Cost_Database.xlsx')
-elapsed_time = (time.time() - time_start) / 60  # Calculate execution time
+elapsed_time = (time.time() - time_start) / 60  # calculate execution time
 print('Execution time:', np.round(elapsed_time, 1), 'minutes')
