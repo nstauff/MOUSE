@@ -490,10 +490,12 @@ def build_openmc_model_GCMR(params):
         'tolerance': 50.0
 }
 
-    # Define a cylindrical source distribution
-    r = openmc.stats.Uniform(0, params['Core Radius'])
+    # Define a cylindrical source distribution uniform over the core area.
+    # PowerLaw(0, R, n=2) gives PDF ∝ r, which is uniform per unit area (area element = r dr dθ).
+    # This is preferred over Uniform(0, R) which over-weights the center and slows convergence.
+    r = openmc.stats.PowerLaw(0, params['Core Radius'], n=2)
     theta = openmc.stats.Uniform(0, 2*np.pi)
-    z = openmc.stats.Uniform(- 2, 2)
+    z = openmc.stats.Uniform(-2, 2)
     uniform_cyl = openmc.stats.CylindricalIndependent(r, theta, z)
     src = openmc.Source(space=uniform_cyl)
     src.only_fissionable = True
