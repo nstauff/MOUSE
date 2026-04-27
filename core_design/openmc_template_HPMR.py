@@ -375,8 +375,11 @@ def create_control_drums(params, materials_database):
         start_halfspace = _halfspace_toward_point(start_surface, test_x, test_y)
         end_halfspace = _halfspace_toward_point(end_surface, test_x, test_y)
 
-        # Choose the correct outward hex-face halfspace for this sector
-        hex_surface = hex_surfaces[int(np.floor(center_angle_deg / 60.0)) % 6]
+        # Choose the correct outward hex-face halfspace for this sector.
+        # round() maps each drum to the nearest hex face normal (at 0°, 60°, 120°, …).
+        # floor() would assign the wrong face for sectors that straddle a face boundary
+        # (e.g. the 30°-60° sector would get the 0° face instead of the 60° face).
+        hex_surface = hex_surfaces[int(round(center_angle_deg / 60.0)) % 6]
         hex_halfspace = _halfspace_toward_point(hex_surface, test_x, test_y)
 
         sector_cell = openmc.Cell(cell_id=3000 + i, name=f'cr_{i + 1:02d}')

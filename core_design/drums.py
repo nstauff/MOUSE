@@ -218,7 +218,7 @@ def calculate_drums_volumes_and_masses(params):
             params['Drum Count'] = number_of_drums
 
     elif params['reactor type'] == "HPMR":
-        number_of_drums = int(params.get('Number of Drums', 12))
+        number_of_drums = int(params.get('Drum Count', 12))
         valid_drum_counts = [6, 12, 18, 24]
         if number_of_drums not in valid_drum_counts:
             raise ValueError(f"Number of Drums must be one of {valid_drum_counts}, got {number_of_drums}")
