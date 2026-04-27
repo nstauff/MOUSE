@@ -217,8 +217,13 @@ for params['Radial Reflector'] in ['Graphite', 'BeO']:
             'Security Staff Per Shift': 1
         })
 
-        params['Onsite Coolant Inventory'] = 10 * 24.417 * 8.2402 # kg
-        params['Replacement Coolant Inventory'] = params['Onsite Coolant Inventory'] / 4
+        #Based on https://digital.library.unt.edu/ark:/67531/metadc893980/m2/1/high_res_d/919556.pdf (table 18 and table 17):
+        # Estimate Helium mass per MWt is 3.3 kg/MWt
+        params['Onsite Coolant Inventory'] = 3.3 * params['Power MWt'] # kg
+        # According to https://www.nationalacademies.org/read/12844/chapter/6#69, the loss rate of helium is 10% per year so 1/10 of the initial
+        # inventory is renewed per year
+        # if there is no purification, He needs to be replaced more frequently
+        params['Replacement Coolant Inventory'] = params['Onsite Coolant Inventory'] / 10
         params['Annual Coolant Supply Frequency'] = 1 if params['Primary Loop Purification'] else 6
 
         total_refueling_period = params['Fuel Lifetime'] + params['Refueling Period'] + params['Startup Duration after Refueling']
