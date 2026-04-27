@@ -125,6 +125,35 @@ def calculate_drums_volumes_and_masses(params):
     drum_height = params['Drum Height']
     absorber_thickness = params['Drum Absorber Thickness']
 
+    # --- GCMR drum radius validation ---
+    # Each drum sits inside a hexagonal cell of the outermost core ring.
+    # The cell's inscribed-circle radius (apothem) is Assembly_FTF / 2.
+    # The drum tube (drum + small clearance gap) must fit within this apothem.
+    # The tube radius is drum_radius * (46/45) due to the 1/45 gap factor.
+    if params.get('reactor type') == 'GCMR' and 'Assembly FTF' in params:
+        apothem = params['Assembly FTF'] / 2
+        drum_tube_radius = drum_radius * (46 / 45)
+        max_drum_radius = apothem * (45 / 46)
+
+        if drum_tube_radius > apothem:
+            raise ValueError(
+                f"\n\n--- DRUM RADIUS ERROR ---\n"
+                f"Drum radius {drum_radius:.4f} cm is too large.\n"
+                f"The drum tube radius ({drum_tube_radius:.4f} cm) exceeds the hex cell "
+                f"apothem (Assembly FTF / 2 = {apothem:.4f} cm), causing the drum to "
+                f"overlap into adjacent cells.\n"
+                f"Maximum allowable drum radius: {max_drum_radius:.4f} cm\n"
+            )
+
+        if drum_radius <= absorber_thickness:
+            raise ValueError(
+                f"\n\n--- DRUM RADIUS ERROR ---\n"
+                f"Drum radius ({drum_radius:.4f} cm) must be greater than the absorber "
+                f"thickness ({absorber_thickness:.4f} cm).\n"
+                f"The inner drum shell radius would be zero or negative, which is not physical.\n"
+                f"Minimum allowable drum radius: > {absorber_thickness:.4f} cm\n"
+            )
+
     drum_volume = np.pi * drum_radius * drum_radius * drum_height
     if 'coating_angle' in params:
         drum_absorp_vol = (
