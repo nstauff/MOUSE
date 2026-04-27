@@ -214,7 +214,7 @@ update_params({
     'Security Staff Per Shift': 1
 })
 
-params['Onsite Coolant Inventory'] = 1 * 24.417 * 8.2402 # kg
+params['Onsite Coolant Inventory'] = 0 # the helium gap is extremely thin so this can be ignored
 params['Replacement Coolant Inventory'] = 0
 # params['Annual Coolant Supply Frequency'] = 1 if params['Primary Loop Purification'] else 6
 

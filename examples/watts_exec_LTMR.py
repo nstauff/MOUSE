@@ -228,9 +228,10 @@ update_params({
     'Reactors Monitored Per Operator': 10,
     'Security Staff Per Shift': 1
 })
-## Calculated based on 1 tanks
-## Density of NaK=855  kg/m3, Volume=8.2402 m3 (standard tank size)
-params['Onsite Coolant Inventory'] = 1 * 855 * 8.2402 # kg
+## Based on https://www.edf.fr/sites/default/files/mediatheque/dp_creys_2017.pdf :
+## 5,500 tonnes of sodium from the reactor vessel and the secondary circuits at Creys-Malville plant (France) which is 3,000 MWt
+# This gives a rough estimate of 1833 kg/MWt
+params['Onsite Coolant Inventory'] = 1833 * params['Power MWt']
 params['Replacement Coolant Inventory'] = 0 # assume that NaK does not need to be replaced.
 # params['Annual Coolant Supply Frequency']  # LTMR should not require frequent refilling
 

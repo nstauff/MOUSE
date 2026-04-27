@@ -119,7 +119,7 @@ params['Heat Flux'] = calculate_heat_flux_TRISO(params) # MW/m^2
 # A positive SDM means the reactor can be safely shut down with all drums inserted.
 # Recommended: True for final design verification; can be set to False to save
 # computation time during early design exploration.
-params['Shutdown Margin Calc'] = False  # True or False
+# params['Shutdown Margin Calc'] = False  # True or False
 
 # --- Isothermal Temperature Coefficient ---
 # When True, two additional OpenMC simulations are run: one at 'Common Temperature'
@@ -231,8 +231,13 @@ update_params({
     'Security Staff Per Shift': 1
 })
 
-params['Onsite Coolant Inventory'] = 10 * 24.417 * 8.2402 # kg
-params['Replacement Coolant Inventory'] = params['Onsite Coolant Inventory'] / 4
+#Based on https://digital.library.unt.edu/ark:/67531/metadc893980/m2/1/high_res_d/919556.pdf (table 18 and table 17):
+# Estimate Helium mass per MWt is 3.3 kg/MWt
+params['Onsite Coolant Inventory'] = 3.3 * params['Power MWt'] # kg
+# According to https://www.nationalacademies.org/read/12844/chapter/6#69, the loss rate of helium is 10% per year so 1/10 of the initial
+# inventory is renewed per year
+# if there is no purification, He needs to be replaced more frequently
+params['Replacement Coolant Inventory'] = params['Onsite Coolant Inventory'] / 10
 params['Annual Coolant Supply Frequency'] = 1 if params['Primary Loop Purification'] else 6
 
 total_refueling_period = params['Fuel Lifetime'] + params['Refueling Period'] + params['Startup Duration after Refueling'] # days
@@ -302,14 +307,14 @@ update_params({
 #   - $15/MWh if prevailing wage + apprenticeship requirements ARE met (5x multiplier)
 # Assumed here: $15/MWh (prevailing wage requirements met)
 # Units: $/MWh
-params['PTC credit value'] = 15.0  # $/MWh
+# params['PTC credit value'] = 15.0  # $/MWh
 
 # Duration of the PTC credit period.
 # Under the IRA Section 45Y, the credit is available for 10 years after the facility
 # is placed in service.
 # Units: years
 # Typical value: 10 years
-params['PTC credit period'] = 10  # years
+# params['PTC credit period'] = 10  # years
 
 # --- PTC Bonus Multipliers (optional, stackable) ---
 # Under the IRA, additional bonus credits can be stacked on top of the base PTC
@@ -322,8 +327,8 @@ params['PTC credit period'] = 10  # years
 #   (areas affected by coal plant closures or fossil fuel employment decline)
 #   Typical value: 0.10 (10%)
 # To disable bonuses, set both to 0.0 or remove them entirely.
-params['domestic_content_bonus'] = 0.10   # fraction — assumes domestic content standard is met
-params['energy_community_bonus'] = 0.10   # fraction — assumes facility is in an energy community
+# params['domestic_content_bonus'] = 0.10   # fraction — assumes domestic content standard is met
+# params['energy_community_bonus'] = 0.10   # fraction — assumes facility is in an energy community
 
 # --- Corporate Tax Rate ---
 # The US federal corporate tax rate used to gross up the PTC tax credit to its
@@ -333,7 +338,7 @@ params['energy_community_bonus'] = 0.10   # fraction — assumes facility is in 
 # Municipal utilities and non-profit cooperatives may use 0.0 (tax-exempt).
 # Units: fraction (e.g. 0.21 for 21%)
 # Typical values: 0.21 (federal only), 0.27 (federal + average state)
-params['Tax Rate'] = 0.21  # fraction
+# params['Tax Rate'] = 0.21  # fraction
 
 # **************************************************************************************************************************
 #                                           Sec. 11: Post Processing
