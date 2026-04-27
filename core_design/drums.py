@@ -137,8 +137,29 @@ def _resolve_drum_radius(params):
 
 def calculate_drums_volumes_and_masses(params):
     drum_radius = _resolve_drum_radius(params)
-    drum_height = params['Drum Height']
     absorber_thickness = params['Drum Absorber Thickness']
+
+    # --- GCMR: auto-resolve dependent geometry parameters ---
+    # Drum ring cells sit at Core_Rings × Assembly_FTF from the core center.
+    # The drum tube (radius = drum_radius × 46/45) extends that far beyond the ring,
+    # so the reflector must be at least that thick to fully enclose the drums.
+    if params.get('reactor type') == 'GCMR':
+        drum_tube_radius = drum_radius * (46 / 45)
+
+        if 'Radial Reflector Thickness' not in params:
+            params['Radial Reflector Thickness'] = drum_tube_radius
+
+        if 'Axial Reflector Thickness' not in params:
+            params['Axial Reflector Thickness'] = params['Radial Reflector Thickness']
+
+        # Core Radius is always kept consistent with Radial Reflector Thickness
+        params['Core Radius'] = (params['Assembly FTF'] * params['Core Rings']
+                                 + params['Radial Reflector Thickness'])
+
+        if 'Drum Height' not in params:
+            params['Drum Height'] = params['Active Height'] + 2 * params['Axial Reflector Thickness']
+
+    drum_height = params['Drum Height']
 
     # --- GCMR drum radius validation ---
     # Each drum sits inside a hexagonal cell of the outermost core ring.
