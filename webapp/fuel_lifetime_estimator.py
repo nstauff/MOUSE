@@ -13,7 +13,9 @@ simple linear regression of the normalised lifetime
 
     L* = Lifetime × Power / ((3N²−3N+1) × H)
 
-against Enrichment on those K neighbours.
+against Enrichment on those K neighbours.  Subcritical cases have
+L*=0 and are included in the training pool — they anchor the local
+fit near the criticality boundary and improve A2 estimation.
 
 Key detail
 ----------
@@ -21,7 +23,7 @@ N=6 neighbours are excluded when predicting N≥10, because the
 small-assembly near-critical regime is physically discontinuous from
 the rest of the design space.
 
-Accuracy (5-fold CV on 247 non-zero training points)
+Accuracy (5-fold CV on 247 non-zero training points, subcritical rows anchor boundary)
 -----------------------------------------------------
   Median absolute error : ~110 days
   Median MAPE           : ~2.6 %   (N≥10 only: ~2–3 %)
@@ -52,7 +54,11 @@ _feat_max  = None   # max of each feature
 
 
 def _load():
-    """Load and cache the training data on first call."""
+    """Load and cache the training data on first call.
+
+    All rows including subcritical (LT=0) are loaded — they anchor the
+    local linear fit near the criticality boundary.
+    """
     global _train_df, _feat_min, _feat_max
     if _train_df is not None:
         return
@@ -61,11 +67,10 @@ def _load():
     df = df[['Number of Rings per Assembly', 'Active Height',
              'Enrichment', 'Power MWt', 'Fuel Lifetime']].copy()
     df.columns = ['N', 'H', 'E', 'P', 'LT']
-
-    # Keep only critical cases (positive lifetime)
-    df = df[df['LT'] > 0].reset_index(drop=True)
+    df['LT'] = df['LT'].fillna(0)
 
     # Pre-compute N_pins and normalised lifetime L*
+    # Subcritical cases (LT=0) get L*=0, anchoring the local fit.
     df['N_pins'] = 3 * df['N'] ** 2 - 3 * df['N'] + 1
     df['L_star'] = df['LT'] * df['P'] / (df['N_pins'] * df['H'])
 
