@@ -64,7 +64,7 @@ def _build_minimal_ltmr_params(n_rings, active_height_cm=80.0):
         # --- materials (same as webapp/_build_ltmr) ---
         'reactor type': 'LTMR',
         'TRISO Fueled': 'No',
-        'Fuel': 'TRIGA_fuel',
+        'Fuel': 'UZrH_alloy',
         'H_Zr_ratio': 1.6,
         'U_met_wo': 0.3,
         'er_wo': 0,
@@ -79,7 +79,7 @@ def _build_minimal_ltmr_params(n_rings, active_height_cm=80.0):
         'Enrichment': 0.1975,           # placeholder
         'Power MWt': 1.0,               # placeholder
         # --- geometry ---
-        'Fuel Pin Materials': ['Zr', None, 'TRIGA_fuel', None, 'SS304'],
+        'Fuel Pin Materials': ['Zr', None, 'UZrH_alloy', None, 'SS304'],
         'Fuel Pin Radii':     [0.28575, 0.3175, 1.5113, 1.5367, 1.5875],
         'Moderator Pin Materials': ['ZrH', 'SS304'],
         'Moderator Pin Inner Radius': 1.5367,
