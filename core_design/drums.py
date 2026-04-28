@@ -201,8 +201,7 @@ def calculate_drums_volumes_and_masses(params):
 
         # Core Radius is always kept consistent with Radial Reflector Thickness
         params['Core Radius'] = hex_apothem + params['Radial Reflector Thickness']
-        params['Active Height'] = 2 * params['Core Radius']
-
+        
         if 'Axial Reflector Thickness' not in params:
             params['Axial Reflector Thickness'] = params['Radial Reflector Thickness']
 
