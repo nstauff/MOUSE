@@ -36,7 +36,9 @@ from core_design.drums import (
     calculate_moderator_mass,  # used by LTMR
 )
 from core_design.pins_arrangement import LTMR_pins_arrangement
+from core_design.openmc_template_LTMR import update_ltmr_reflector_geometry_from_drums
 from reactor_engineering_evaluation.fuel_calcs import fuel_calculations
+from webapp.fuel_lifetime_estimator import estimate_ltmr_fuel_lifetime
 # BOP.py re-exports everything from tools.py and adds its own functions
 from reactor_engineering_evaluation.BOP import (
     calculate_heat_exchanger_mass,
@@ -63,6 +65,15 @@ _lookup_df = None
 class SubcriticalError(Exception):
     """Raised when the interpolated fuel lifetime is zero (subcritical core)."""
     pass
+
+
+class ShortLifetimeError(Exception):
+    """Raised when the estimated fuel lifetime is too short (< 90 days) to be a
+    meaningful design point — cost calculations are skipped."""
+    pass
+
+
+_MIN_USEFUL_LIFETIME_DAYS = 90
 
 
 def _load_lookup():
@@ -135,10 +146,17 @@ def interpolate_openmc_results(reactor_type, power_mwt, enrichment):
 
 
 def _build_ltmr(params):
-    """Populate params for LTMR (Liquid Metal Thermal Microreactor)."""
+    """Populate params for LTMR (Liquid Metal Thermal Microreactor).
+
+    The user-controlled inputs are:
+        Power MWt, Enrichment, Number of Rings per Assembly, Active Height
+    All four are pre-set by build_params before this function is called.
+    Drum Radius and Radial Reflector Thickness are auto-resolved from N
+    using the LTMR drum-cover rule.  Fuel Lifetime, Mass U235, Mass U238
+    are derived from the KNN estimator and physics scaling.
+    """
 
     # Sec 1: Materials
-    # Note: 'Enrichment' and 'Power MWt' are pre-set by build_params from user input.
     params.update({
         'reactor type': 'LTMR',
         'TRISO Fueled': 'No',
@@ -157,6 +175,7 @@ def _build_ltmr(params):
     })
 
     # Sec 2: Geometry
+    # 'Number of Rings per Assembly' and 'Active Height' come from build_params.
     params.update({
         'Fuel Pin Materials': ['Zr', None, params['Fuel'], None, 'SS304'],
         'Fuel Pin Radii': [0.28575, 0.3175, 1.5113, 1.5367, 1.5875],
@@ -165,30 +184,26 @@ def _build_ltmr(params):
         'Moderator Pin Radii': [1.5367, 1.5875],
         'Pin Gap Distance': 0.1,
         'Pins Arrangement': LTMR_pins_arrangement,
-        'Number of Rings per Assembly': 12,
-        'Radial Reflector Thickness': 14,
     })
-    params['Lattice Radius'] = calculate_hex_apothem(params)  
+    params['Lattice Radius'] = calculate_hex_apothem(params)
     params['Assembly FTF'] = 2 * params['Lattice Radius']
-    params['Active Height'] = 78.4
-    params['Axial Reflector Thickness'] = params['Radial Reflector Thickness']
-    params['Fuel Pin Count'] = calculate_pins_in_assembly(params, 'FUEL')
+    params['Fuel Pin Count']      = calculate_pins_in_assembly(params, 'FUEL')
     params['Moderator Pin Count'] = calculate_pins_in_assembly(params, 'MODERATOR')
-    params['Moderator Mass'] = calculate_moderator_mass(params)
-    params['Core Radius'] = calculate_core_radius_from_hex(params)
+    params['Moderator Mass']      = calculate_moderator_mass(params)
 
-    # Sec 3: Control drums
+    # Sec 3: Control drums — count fixed at 18 (matches parametric study).
+    # Drum Radius is auto-maximised; reflector thickness then auto-set to
+    # cover the drums (LTMR rule: max_outer_radius - hex_apothem).
     params.update({
-        'Number of Drums': 12,
+        'Number of Drums': 18,
         'Drum Absorber Thickness': 1,
         'Drum Absorber Arc Degrees': 120,
-        'Drum Height': params['Active Height'] + 2 * params['Axial Reflector Thickness'],
     })
+    update_ltmr_reflector_geometry_from_drums(params)
     calculate_drums_volumes_and_masses(params)
     calculate_reflector_mass_LTMR(params)
 
     # Sec 4: Overall system
-    # 'Power MWt' is pre-set by build_params; do not override it here.
     params.update({
         'Thermal Efficiency': 0.31,
         'Heat Flux Criteria': 0.9,
@@ -198,15 +213,38 @@ def _build_ltmr(params):
     params['Power MWe'] = params['Power MWt'] * params['Thermal Efficiency']
     params['Heat Flux'] = calculate_heat_flux(params)
 
-    # Sec 5: Interpolate OpenMC results from parametric study table
-    _omc = interpolate_openmc_results('LTMR', params['Power MWt'], params['Enrichment'])
-    if _omc['Fuel Lifetime'] == 0:
+    # Sec 5: Fuel lifetime via KNN estimator on the LTMR parametric study.
+    # Mass U235 / U238 are derived from physics scaling: total uranium
+    # mass per (pin × cm) is constant for TRIGA fuel; the reference
+    # (N=12, H=78.4) parametric case has 345,481 g of U total.
+    fl = estimate_ltmr_fuel_lifetime(
+        n_rings_per_assembly = params['Number of Rings per Assembly'],
+        active_height        = params['Active Height'],
+        enrichment           = params['Enrichment'],
+        power_mwt            = params['Power MWt'],
+    )
+    if fl == 0:
         raise SubcriticalError(
-            f"Fuel lifetime is zero for LTMR at Power={params['Power MWt']} MWt, "
-            f"Enrichment={params['Enrichment']:.4f}. The reactor is subcritical."
+            f"Reactor is subcritical for LTMR at "
+            f"N_rings={params['Number of Rings per Assembly']}, "
+            f"H={params['Active Height']:.1f} cm, "
+            f"E={params['Enrichment']:.4f}, P={params['Power MWt']} MWt."
         )
-    params.update(_omc)
-    params['Uranium Mass'] = (params['Mass U235'] + params['Mass U238']) / 1000  # kg
+    if fl < _MIN_USEFUL_LIFETIME_DAYS:
+        raise ShortLifetimeError(
+            f"Estimated fuel lifetime is only {fl} days "
+            f"({fl / 30.0:.1f} months) — too short for a meaningful "
+            f"design point. Try increasing the diameter, the height, "
+            f"or the enrichment."
+        )
+
+    _U_PER_PIN_CM = 345481.0 / (397.0 * 78.4)   # ≈ 11.10 g/(pin·cm) — TRIGA constant
+    total_u_mass = _U_PER_PIN_CM * params['Fuel Pin Count'] * params['Active Height']
+
+    params['Fuel Lifetime'] = fl
+    params['Mass U235']     = int(round(total_u_mass * params['Enrichment']))
+    params['Mass U238']     = int(round(total_u_mass * (1.0 - params['Enrichment'])))
+    params['Uranium Mass']  = (params['Mass U235'] + params['Mass U238']) / 1000  # kg
     fuel_calculations(params)
 
     # Sec 6: Primary Loop + BoP
@@ -732,7 +770,8 @@ def _build_hpmr(params):
     # No ITC/PTC credits for HPMR by default
 
 
-def build_params(reactor_type, power_mwt, enrichment, user_overrides):
+def build_params(reactor_type, power_mwt, enrichment, user_overrides,
+                 n_rings_per_assembly=None, active_height=None):
     """
     Build a fully-populated params dict for the given reactor type,
     then apply user_overrides on top.
@@ -742,13 +781,17 @@ def build_params(reactor_type, power_mwt, enrichment, user_overrides):
     reactor_type : str
         One of 'LTMR', 'GCMR', 'HPMR'.
     power_mwt : float
-        Thermal power in MWt (1–20). Controls all power-dependent params and
-        is used to interpolate Fuel Lifetime from the parametric study table.
+        Thermal power in MWt.
     enrichment : float
-        U-235 enrichment fraction (0.05–0.1975). Controls all enrichment-dependent
-        params (Uranium masses, Fuel Lifetime) via the parametric study table.
+        U-235 enrichment fraction (0.05–0.1975).
     user_overrides : dict
         User-supplied values that override defaults (e.g. Interest Rate).
+    n_rings_per_assembly : int, optional
+        Number of rings per fuel assembly. Required for LTMR (training range
+        6–24); ignored by GCMR/HPMR for now.
+    active_height : float, optional
+        Active core height in cm. Required for LTMR (training range
+        50–180); ignored by GCMR/HPMR for now.
 
     Returns
     -------
@@ -758,12 +801,20 @@ def build_params(reactor_type, power_mwt, enrichment, user_overrides):
     Raises
     ------
     SubcriticalError
-        If the interpolated Fuel Lifetime is zero at the requested operating point.
+        If the reactor is subcritical at the requested operating point.
     """
     params = {}
-    # Set power and enrichment FIRST so all builder sections can use them.
-    params['Power MWt'] = float(power_mwt)
+    # Set the user-controlled inputs FIRST so all builder sections can use them.
+    params['Power MWt']  = float(power_mwt)
     params['Enrichment'] = float(enrichment)
+
+    if reactor_type == 'LTMR':
+        if n_rings_per_assembly is None or active_height is None:
+            raise ValueError(
+                "LTMR requires n_rings_per_assembly and active_height."
+            )
+        params['Number of Rings per Assembly'] = int(n_rings_per_assembly)
+        params['Active Height']                = float(active_height)
 
     builders = {'LTMR': _build_ltmr, 'GCMR': _build_gcmr, 'HPMR': _build_hpmr}
     if reactor_type not in builders:

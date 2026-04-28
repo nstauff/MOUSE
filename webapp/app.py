@@ -97,7 +97,7 @@ import streamlit as st
 import streamlit_analytics2 as streamlit_analytics
 from st_cookies_manager import EncryptedCookieManager
 
-from reactor_config import build_params, SubcriticalError, ESCALATION_YEAR
+from reactor_config import build_params, SubcriticalError, ShortLifetimeError, ESCALATION_YEAR
 from cost.cost_estimation import bottom_up_cost_estimate, transform_dataframe
 from cost.cost_drivers import cost_drivers_estimate, is_double_digit_excluding_multiples_of_10, get_detailed_driver_rows
 
@@ -225,11 +225,29 @@ _REACTOR_IMAGES = {
 # ---------------------------------------------------------------------------
 # Cached cost estimate (module-level so cache persists across reruns)
 # ---------------------------------------------------------------------------
+# LTMR diameter lookup — keys are N (rings per assembly), values are
+# total core diameter in cm (= 2 × Core Radius from the parametric study).
+LTMR_N_TO_DIAMETER_CM = {
+    6:  46,
+    8:  62,
+    10: 79,
+    12: 95,
+    14: 112,
+    18: 144,
+    24: 194,
+}
+# Mapping the other way for the slider: diameter label → N
+LTMR_DIAMETER_LABELS = [f"{d} cm  (N={n})" for n, d in LTMR_N_TO_DIAMETER_CM.items()]
+LTMR_DIAMETER_LABEL_TO_N = {label: n for n, label in zip(LTMR_N_TO_DIAMETER_CM.keys(),
+                                                          LTMR_DIAMETER_LABELS)}
+
+
 @st.cache_data(show_spinner=False)
 def _run_estimate(reactor_type, power_mwt, enrichment, interest_rate, discount_rate,
                   construction_duration, debt_to_equity, operation_mode,
                   emergency_shutdowns, startup_duration, startup_duration_refueling,
-                  tax_credit_type, tax_credit_value, plant_lifetime):
+                  tax_credit_type, tax_credit_value, plant_lifetime,
+                  n_rings_per_assembly=None, active_height=None):
     overrides = {
         'Interest Rate': interest_rate,
         'Discount Rate': discount_rate,
@@ -249,7 +267,9 @@ def _run_estimate(reactor_type, power_mwt, enrichment, interest_rate, discount_r
     elif tax_credit_type == 'ITC':
         overrides['ITC credit level'] = tax_credit_value
 
-    p = build_params(reactor_type, power_mwt, enrichment, overrides)
+    p = build_params(reactor_type, power_mwt, enrichment, overrides,
+                     n_rings_per_assembly=n_rings_per_assembly,
+                     active_height=active_height)
     raw_df = bottom_up_cost_estimate('cost/Cost_Database.xlsx', p)
     enriched_df, detailed_sorted_df = cost_drivers_estimate(raw_df, p)
     return transform_dataframe(enriched_df), enriched_df, detailed_sorted_df, p
@@ -774,7 +794,7 @@ with streamlit_analytics.track():
         st.caption(f'{enrichment * 100:.2f}% enriched')
 
         _power_defaults = {'LTMR': 20, 'GCMR': 15, 'HPMR': 7}
-        _power_max = {'LTMR': 20, 'GCMR': 20, 'HPMR': 7}
+        _power_max = {'LTMR': 64, 'GCMR': 20, 'HPMR': 7}
 
         power_mwt = st.slider(
             'Thermal Power (MWt)',
@@ -785,6 +805,33 @@ with streamlit_analytics.track():
             key=f'power_{reactor_type}',
             help='Thermal power output. Affects power-dependent params and fuel lifetime via interpolation.',
         )
+
+        # LTMR-only: total core diameter (discrete, mapped to rings per assembly)
+        # and active core height (continuous slider).
+        n_rings_per_assembly = None
+        active_height        = None
+        if reactor_type == 'LTMR':
+            _default_diameter_label = LTMR_DIAMETER_LABELS[3]   # 95 cm  (N=12)
+            _diameter_label = st.select_slider(
+                'Total Core Diameter',
+                options=LTMR_DIAMETER_LABELS,
+                value=_default_diameter_label,
+                key='ltmr_diameter',
+                help=('Total core diameter (including reflector). Discrete values '
+                      'corresponding to the number of fuel rings per assembly used '
+                      'in the parametric study.'),
+            )
+            n_rings_per_assembly = LTMR_DIAMETER_LABEL_TO_N[_diameter_label]
+
+            active_height = st.slider(
+                'Active Height (cm)',
+                min_value=50,
+                max_value=180,
+                value=80,
+                step=5,
+                key='ltmr_active_height',
+                help='Active fuel height in cm. Affects fuel inventory and fuel lifetime.',
+            )
 
         st.divider()
         st.markdown('**B — Operation Parameters**')
@@ -1025,6 +1072,8 @@ with streamlit_analytics.track():
                 interest_rate / 100.0, discount_rate / 100.0, construction_duration, debt_to_equity,
                 operation_mode, emergency_shutdowns, startup_duration, startup_duration_refueling,
                 tax_credit_type, tax_credit_value, plant_lifetime,
+                n_rings_per_assembly=n_rings_per_assembly,
+                active_height=active_height,
             )
         except SubcriticalError as exc:
             st.error('### ⚠ Reactor is Subcritical')
@@ -1035,6 +1084,32 @@ with streamlit_analytics.track():
             _info_card(cc, 'Enrichment',    f'{enrichment*100:.2f}%', accent='#9a3412', bg='#fff7ed', border='#fed7aa')
             st.info('No cost estimate is available for a subcritical operating point. '
                     'Try reducing the power or increasing the enrichment.')
+
+            st.markdown(
+                """
+                <div style='text-align: center; font-size: 0.9rem; color: gray; padding-top: 2rem; padding-bottom: 1rem;'>
+                    © 2025 Battelle Energy Alliance, LLC. MOUSE is released under the MIT License.
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            st.stop()
+        except ShortLifetimeError as exc:
+            # Extract the estimated lifetime in days from the message ("only N days")
+            import re
+            m = re.search(r'only (\d+) days', str(exc))
+            est_lt_days = int(m.group(1)) if m else 0
+            st.error('### ⚠ Fuel Lifetime Too Short')
+            st.warning(str(exc))
+            ca, cb, cc = st.columns(3)
+            _info_card(ca, 'Fuel Lifetime', f'{est_lt_days} days',
+                       accent='#dc2626', bg='#fef2f2', border='#fecaca')
+            _info_card(cb, 'Thermal Power', f'{power_mwt} MW<sub>t</sub>',
+                       accent='#9a3412', bg='#fff7ed', border='#fed7aa')
+            _info_card(cc, 'Enrichment',    f'{enrichment*100:.2f}%',
+                       accent='#9a3412', bg='#fff7ed', border='#fed7aa')
+            st.info('No cost estimate is performed when the fuel lifetime is below 90 days. '
+                    'Try increasing the diameter, the height, or the enrichment.')
 
             st.markdown(
                 """
