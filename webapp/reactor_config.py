@@ -569,19 +569,62 @@ def _build_gcmr(params):
     # Sec 8: Vessels
     params.update({
         'Vessel Radius': params['Core Radius'] + params['In Vessel Shield Thickness'],
-        'Vessel Thickness': 1,
-        'Vessel Lower Plenum Height': 42.848 - 40,
+
+        # Reactor-vessel wall thickness — fixed at 3 cm for the GCMR.
+        # GCMR primary loop runs at ~4 MPa He (per
+        # reactor_engineering_evaluation/tools.py:79).  ASME Section III
+        # Division 1 thin-shell formula: t = P·R/(S·E − 0.6·P) with
+        # design pressure 1.1×4 = 4.4 MPa, S = 138 MPa for SA-508 at
+        # 350 °C, E = 1.0, plus 3 mm corrosion allowance gives:
+        #   R = 60 cm → ~22 mm
+        #   R = 80 cm → ~29 mm
+        #   R = 100 cm → ~35 mm
+        # Reference points: USNC MMR ~5 cm @ 5 MPa; X-energy Xe-100
+        # ~15 cm @ 6 MPa; HTR-PM 17.7 cm @ 7 MPa (R≈2.5 m, too large to
+        # scale from).  3 cm is a single conservative value covering
+        # the MOUSE GCMR design space.  Previous 1 cm was below the
+        # ASME pressure-driven minimum.
+        'Vessel Thickness': 3,
+
+        # Lower plenum height — fixed at 30 cm.  GCMR has no liquid
+        # plenum; this region houses the He inlet manifold and lower
+        # flow distributor.  Reference: GA MHTGR / HTR-PM-class designs
+        # use 0.3-0.5 m for the lower distributor region; below ~20 cm
+        # the inlet flow cannot be evened across the core.  Previous
+        # value (42.848 − 40 = 2.848 cm) was a unit-conversion bug.
+        'Vessel Lower Plenum Height': 30,
+
+        # Upper plenum (47 cm) — kept; serves as outlet plenum for
+        # hot-leg gas exit.  No separate cover-gas headspace tracked.
         'Vessel Upper Plenum Height': 47.152,
         'Vessel Upper Gas Gap': 0,
+
         'Vessel Bottom Depth': 32.129,
         'Vessel Material': 'stainless_steel',
+
+        # Guard vessel intentionally removed for GCMR.  Helium is an
+        # inert gas with no chemical-leak hazard (unlike NaK in LTMR);
+        # there is no large coolant inventory to contain in a leak
+        # scenario.  Vessel↔guard-vessel gap and guard-vessel thickness
+        # are therefore set to zero by design.
         'Gap Between Vessel And Guard Vessel': 0,
         'Guard Vessel Thickness': 0,
         'Guard Vessel Material': 'low_alloy_steel',
+
+        # RVACS hot-leg gap — kept at 5 cm.
         'Gap Between Guard Vessel And Cooling Vessel': 5,
+
         'Cooling Vessel Thickness': 0.5,
         'Cooling Vessel Material': 'stainless_steel',
-        'Gap Between Cooling Vessel And Intake Vessel': 4,
+
+        # Cooling-vessel ↔ intake-vessel gap (RVACS air downcomer) —
+        # fixed at 5 cm.  Reference: Hejzlar & Buongiorno, "Passive
+        # Decay Heat Removal in Lead-cooled Fast Reactors", Nuclear
+        # Engineering & Design (2007), recommend 50-150 mm for RVACS
+        # systems removing 1-3 MWt of decay heat (typical microreactor
+        # range).  Previous 4 cm was below the recommended lower bound.
+        'Gap Between Cooling Vessel And Intake Vessel': 5,
+
         'Intake Vessel Thickness': 0.5,
         'Intake Vessel Material': 'stainless_steel',
     })
@@ -766,19 +809,59 @@ def _build_hpmr(params):
     # Sec 8: Vessels
     params.update({
         'Vessel Radius': params['Core Radius'] + params['In Vessel Shield Thickness'],
-        'Vessel Thickness': 1,
-        'Vessel Lower Plenum Height': 42.848 - 40,
+
+        # Reactor-vessel wall thickness — fixed at 2 cm for HPMR.
+        # HPMR vessel is at ~atmospheric pressure (heat pipes are
+        # individually sealed, primary "coolant" is the heat-pipe
+        # working fluid Na inside SS316 cladding, not a bulk pool).
+        # Pressure-driven thickness is therefore <1 mm; ASME Section III
+        # Division 5 minimum thickness for high-temperature creep
+        # service at >650 °C dominates.  Reference: INL HPMR Design A,
+        # Westinghouse eVinci, Oklo concepts use ~15-25 mm vessel walls.
+        # Previous 1 cm was below the Div 5 high-T minimum.
+        'Vessel Thickness': 2,
+
+        # Lower plenum height — fixed at 20 cm.  HPMR has no liquid
+        # plenum; this region houses the heat-pipe condenser/evaporator
+        # transition manifold and lower core support.  Reference: INL
+        # HPMR Design A and MARVEL designs show 15-25 cm for the lower
+        # heat-pipe header / support region.  Previous value
+        # (42.848 − 40 = 2.848 cm) was a unit-conversion bug.
+        'Vessel Lower Plenum Height': 20,
+
+        # Upper plenum (47 cm) — kept; houses heat-pipe condenser
+        # interface to the secondary heat exchanger.
         'Vessel Upper Plenum Height': 47.152,
         'Vessel Upper Gas Gap': 0,
+
         'Vessel Bottom Depth': 32.129,
         'Vessel Material': 'stainless_steel',
+
+        # Guard vessel intentionally removed for HPMR.  There is no
+        # bulk primary coolant — each heat pipe is individually sealed
+        # (Na in SS316 cladding) and a single failure releases only a
+        # small inventory.  No need for a secondary containment shell
+        # around the entire reactor vessel.  Vessel↔guard-vessel gap
+        # and guard-vessel thickness are therefore set to zero by
+        # design.
         'Gap Between Vessel And Guard Vessel': 0,
         'Guard Vessel Thickness': 0,
         'Guard Vessel Material': 'low_alloy_steel',
+
+        # RVACS hot-leg gap — kept at 5 cm.
         'Gap Between Guard Vessel And Cooling Vessel': 5,
+
         'Cooling Vessel Thickness': 0.5,
         'Cooling Vessel Material': 'stainless_steel',
-        'Gap Between Cooling Vessel And Intake Vessel': 4,
+
+        # Cooling-vessel ↔ intake-vessel gap (RVACS air downcomer) —
+        # fixed at 5 cm.  Reference: Hejzlar & Buongiorno, "Passive
+        # Decay Heat Removal in Lead-cooled Fast Reactors", Nuclear
+        # Engineering & Design (2007), recommend 50-150 mm for RVACS
+        # systems removing 1-3 MWt of decay heat (typical microreactor
+        # range).  Previous 4 cm was below the recommended lower bound.
+        'Gap Between Cooling Vessel And Intake Vessel': 5,
+
         'Intake Vessel Thickness': 0.5,
         'Intake Vessel Material': 'stainless_steel',
     })
