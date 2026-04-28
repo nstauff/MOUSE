@@ -146,8 +146,8 @@ def calculate_heat_flux_TRISO(params):
 def create_universe_plot(materials_database, universe, plot_width, num_pixels, font_size, title, fig_size, output_file_name):
     import matplotlib.colors as mcolors
 
-    potential_colors = {
-        'TRIGA_fuel': 'red',
+    potential_colors = { 
+        'UZrH_alloy': 'red',
         'ZrH': 'yellow',
         'UO2': 'green',
         'UC': 'purple',

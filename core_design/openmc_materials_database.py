@@ -38,17 +38,17 @@ def collect_materials_data(params):
 
         er_wo = params['er_wo'] # burnable poison
 
-        TRIGA_fuel = openmc.Material.mix_materials(
+        UZrH_alloy = openmc.Material.mix_materials(
             [U_met, ZrH_fuel, Er_bp],
             [params['U_met_wo'], 1 - params['U_met_wo'] - er_wo, er_wo],
             "wo", name="UZrH")
-        TRIGA_fuel.temperature = params['Common Temperature']
-        TRIGA_fuel.add_s_alpha_beta("c_H_in_ZrH")
-        materials.append(TRIGA_fuel)
-        materials_database.update({'TRIGA_fuel': TRIGA_fuel})
+        UZrH_alloy.temperature = params['Common Temperature']
+        UZrH_alloy.add_s_alpha_beta("c_H_in_ZrH")
+        materials.append(UZrH_alloy)
+        materials_database.update({'UZrH_alloy': UZrH_alloy})
     
     except KeyError as e:
-        print(f"Skipping TRIGA_fuel due to missing parameter: {e}")    
+        print(f"Skipping UZrH_alloy due to missing parameter: {e}")    
 
     # UO2
     try:
