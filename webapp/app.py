@@ -226,20 +226,29 @@ _REACTOR_IMAGES = {
 # Cached cost estimate (module-level so cache persists across reruns)
 # ---------------------------------------------------------------------------
 # LTMR diameter lookup — keys are N (rings per assembly), values are
-# total core diameter in cm (= 2 × Core Radius from the parametric study).
+# total core diameter in cm (= 2 × Core Radius). Trained N values come
+# directly from the parametric study Excel; intermediate N values are
+# linearly interpolated from the trained Core Radius table — adequate for
+# slider display, but flagged in the UI as interpolated estimates.
+LTMR_TRAINED_N = {6, 8, 10, 12, 14, 18, 24}
 LTMR_N_TO_DIAMETER_CM = {
-    6:  46,
-    8:  62,
-    10: 79,
-    12: 95,
-    14: 112,
-    18: 144,
-    24: 194,
+    6:  46,   7:  54,   8:  62,   9:  71,  10:  79,
+    11: 87,  12:  95,  13: 103,  14: 112,  15: 120,
+    16: 128, 17: 136,  18: 144,  19: 153,  20: 161,
+    21: 169, 22: 177,  23: 185,  24: 194,
 }
-# Mapping the other way for the slider: diameter label → N
-LTMR_DIAMETER_LABELS = [f"{d} cm  (N={n})" for n, d in LTMR_N_TO_DIAMETER_CM.items()]
-LTMR_DIAMETER_LABEL_TO_N = {label: n for n, label in zip(LTMR_N_TO_DIAMETER_CM.keys(),
-                                                          LTMR_DIAMETER_LABELS)}
+
+
+def _ltmr_diameter_label(n, d):
+    star = '' if n in LTMR_TRAINED_N else ' *'
+    return f"{d} cm  (N={n}){star}"
+
+
+LTMR_DIAMETER_LABELS = [_ltmr_diameter_label(n, d)
+                        for n, d in LTMR_N_TO_DIAMETER_CM.items()]
+LTMR_DIAMETER_LABEL_TO_N = {label: n
+                            for n, label in zip(LTMR_N_TO_DIAMETER_CM.keys(),
+                                                LTMR_DIAMETER_LABELS)}
 
 
 @st.cache_data(show_spinner=False)
@@ -811,15 +820,19 @@ with streamlit_analytics.track():
         n_rings_per_assembly = None
         active_height        = None
         if reactor_type == 'LTMR':
-            _default_diameter_label = LTMR_DIAMETER_LABELS[3]   # 95 cm  (N=12)
+            # Default to N=12 (95 cm), a mid-range trained geometry.
+            _default_diameter_label = next(
+                lbl for lbl in LTMR_DIAMETER_LABELS
+                if LTMR_DIAMETER_LABEL_TO_N[lbl] == 12
+            )
             _diameter_label = st.select_slider(
                 'Total Core Diameter',
                 options=LTMR_DIAMETER_LABELS,
                 value=_default_diameter_label,
                 key='ltmr_diameter',
                 help=('Total core diameter (including reflector). Discrete values '
-                      'corresponding to the number of fuel rings per assembly used '
-                      'in the parametric study.'),
+                      'mapped to the number of fuel rings per assembly. Values '
+                      'marked with * are interpolated between trained geometries.'),
             )
             n_rings_per_assembly = LTMR_DIAMETER_LABEL_TO_N[_diameter_label]
 
@@ -1269,6 +1282,15 @@ with streamlit_analytics.track():
             _info_card(ic2, 'Fuel Lifetime', _fl_str, subtitle=_fl_days)
             _info_card(ic3, 'Capacity Factor', _cf_str,
                        subtitle='Accounts for refueling & shutdowns')
+
+            if reactor_type == 'LTMR':
+                st.caption(
+                    'Fuel Lifetime is estimated by KNN local regression on the LTMR '
+                    'parametric study. Typical error is **5–15%** for cases close to '
+                    'the trained design space, and may be larger for combinations '
+                    'with non-trained ring counts (marked * in the diameter slider) '
+                    'or near the criticality boundary.'
+                )
 
             st.markdown('<div style="height:1rem"></div>', unsafe_allow_html=True)
 
