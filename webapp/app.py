@@ -715,14 +715,15 @@ def _make_side_view_figure(diameter_cm, active_height_cm,
     # (yellow) envelope. annotation_clip=False so labels can spill
     # outside the axis box.
     #
-    # H_active: just to the RIGHT of the inner core, in the radial
-    # reflector gap. H_total: outside the outer envelope on the right.
+    # H_active: just to the RIGHT of the inner core, slightly ABOVE the
+    # vertical centre. H_total: outside the outer envelope on the right,
+    # slightly BELOW centre — staggered so the two labels don't overlap.
     ax.annotate(f'H_active = {active_height_cm:.0f} cm',
-                xy=(active_d / 2.0 + 0.01 * half_d_int, 0),
+                xy=(active_d / 2.0 + 0.01 * half_d_int, +half_h_int * 0.30),
                 ha='left', va='center', fontsize=7, fontweight='bold',
                 color='#7f1d1d', annotation_clip=False)
     ax.annotate(f'H_total = {total_h:.0f} cm',
-                xy=(half_d_int * 1.04, 0),
+                xy=(half_d_int * 1.04, -half_h_int * 0.30),
                 ha='left', va='center', fontsize=8, fontweight='bold',
                 color='#92400e', annotation_clip=False)
     #

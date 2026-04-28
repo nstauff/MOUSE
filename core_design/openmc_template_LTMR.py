@@ -611,7 +611,7 @@ def build_openmc_model_LTMR(params):
             plot_width=2.01 * params['Core Radius'],
             num_pixels=2000,
             font_size=32,
-            title=f"Reactor Core - {drum_state_label.capitalize()}",
+            title="Reactor Core",
             fig_size=8,
             output_file_name=f"core_{drum_state_label}.png"
         )
