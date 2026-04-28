@@ -165,30 +165,31 @@ _REACTOR_IMAGES = {
         ],
     },
     'GCMR': {
+        # The main image is overridden at runtime with the per-(N_A, N_C)
+        # core PNG; this static entry is the fallback when the per-pair
+        # image isn't available.
         'main': (
             os.path.join(_ASSETS, 'GCMR_Core.png'),
             'GCMR core cross-section — hexagonal fuel assemblies containing TRISO fuel '
             'compacts arranged in a honeycomb pattern, cooled by helium gas flowing '
             'through dedicated coolant channels, with graphite reflector and control drums.',
         ),
+        # The fuel assembly entry below is overridden at runtime with the
+        # per-N_A image. The TRISO particle and zoomed fuel-assembly
+        # images don't depend on geometry — kept static.
         'details': [
-            (
-                os.path.join(_ASSETS, 'GCMR_Core (zoomed in).png'),
-                'GCMR core zoomed — detailed view of the hexagonal assembly arrangement '
-                'showing the compact-to-assembly packing and inter-assembly helium flow paths.',
-            ),
             (
                 os.path.join(_ASSETS, 'GCMR_Fuel Assembly.png'),
                 'GCMR fuel assembly cross-section — TRISO fuel compacts, helium coolant '
                 'channels, and ZrH moderator booster pins embedded in a graphite matrix.',
             ),
             (
-                os.path.join(_ASSETS, 'GCMR_Fuel Assembly (zoomed in).png'),
+                os.path.join(_ASSETS, 'GCMR_fuel_assembly_zoomed.png'),
                 'GCMR fuel assembly zoomed — individual TRISO particles visible within '
                 'the graphite fuel compact at the target packing fraction.',
             ),
             (
-                os.path.join(_ASSETS, 'GCMR_TRISO_Particle.png'),
+                os.path.join(_ASSETS, 'GCMR_TRISO_particle.png'),
                 'TRISO fuel particle — multi-layer design with UN fuel kernel, buffer '
                 'graphite, inner PyC, SiC pressure vessel, and outer PyC coating that '
                 'retains fission products up to ~1600 °C.',
@@ -1491,6 +1492,22 @@ with streamlit_analytics.track():
                         f"graphite radial reflector with 18 control drums."
                     )
 
+            # For GCMR, pick the per-(N_A, N_C) core cross-section.
+            if reactor_type == 'GCMR':
+                _na = int(params.get('Assembly Rings', 6))
+                _nc = int(params.get('Core Rings', 5))
+                _per_pair_path = os.path.join(
+                    _ASSETS, f'GCMR_core_NA{_na}_NC{_nc}.png'
+                )
+                if os.path.exists(_per_pair_path):
+                    main_img = _per_pair_path
+                    main_caption = (
+                        f"GCMR core cross-section for (N_A={_na} assembly rings, "
+                        f"N_C={_nc} core rings). Hexagonal fuel assemblies containing "
+                        f"TRISO fuel compacts arranged in a honeycomb pattern, cooled "
+                        f"by helium gas, with graphite reflector and control drums."
+                    )
+
             # Cross-section on top, side-view directly below (LTMR/GCMR
             # only — both have geometry-driven height inputs). Both render
             # at the column width, so the side view's vertical extent
@@ -1520,6 +1537,21 @@ with streamlit_analytics.track():
 
             with st.expander('View detailed cross-sections'):
                 for img_path, img_caption in _REACTOR_IMAGES[reactor_type]['details']:
+                    # GCMR: replace the static fuel-assembly image with the
+                    # per-N_A version that matches the user's selection.
+                    if reactor_type == 'GCMR' and 'Fuel Assembly.png' in img_path:
+                        _na = int(params.get('Assembly Rings', 6))
+                        _per_na_path = os.path.join(
+                            _ASSETS, f'GCMR_fuel_assembly_NA{_na}.png'
+                        )
+                        if os.path.exists(_per_na_path):
+                            img_path = _per_na_path
+                            img_caption = (
+                                f"GCMR fuel assembly cross-section for N_A={_na} "
+                                f"(assembly rings). TRISO fuel compacts, helium coolant "
+                                f"channels, and ZrH moderator booster pins embedded in "
+                                f"a graphite matrix."
+                            )
                     st.image(img_path, use_container_width=True)
                     st.caption(img_caption)
 
