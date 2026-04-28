@@ -214,12 +214,23 @@ def create_universe_plot(materials_database, universe, plot_width, num_pixels, f
         color_by='material',
         colors=colors
     )
-    universe_plot.set_xlabel('x [cm]', fontsize=font_size)
-    universe_plot.set_ylabel('y [cm]', fontsize=font_size)
-    universe_plot.set_title(title, fontsize=font_size)
+    # Use a slightly smaller font for tick labels so 5 ticks fit cleanly
+    label_font = font_size
+    tick_font  = max(8, int(font_size * 0.75))
 
-    universe_plot.tick_params(axis='x', labelsize=font_size)
-    universe_plot.tick_params(axis='y', labelsize=font_size)
+    universe_plot.set_xlabel('x [cm]', fontsize=label_font)
+    universe_plot.set_ylabel('y [cm]', fontsize=label_font)
+    universe_plot.set_title(title, fontsize=label_font)
+
+    # Show 5 ticks per axis: -half, -quarter, 0, +quarter, +half
+    half = plot_width / 2.0
+    ticks = [-half, -half / 2.0, 0.0, half / 2.0, half]
+    universe_plot.set_xticks(ticks)
+    universe_plot.set_yticks(ticks)
+    universe_plot.set_xlim(-half, half)
+    universe_plot.set_ylim(-half, half)
+    universe_plot.tick_params(axis='x', labelsize=tick_font)
+    universe_plot.tick_params(axis='y', labelsize=tick_font)
 
     fig = universe_plot.figure
     fig.set_size_inches(fig_size, fig_size)
