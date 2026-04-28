@@ -782,7 +782,13 @@ def _build_hpmr(params):
         'Primary Loop Purification': True,
         'Secondary HX Mass': 0,
         'Primary Loop Count': 2,
-        'Primary Loop Inlet Temperature': 900 + 273.15,
+        # HPMR primary "loop" is the heat-pipe condenser interface to
+        # the HX.  Sodium heat pipes are nearly isothermal (vapor-stream
+        # ΔT typically 5-20 °C); represent as Tin = Tout = 650 °C to
+        # match watts_exec_HPMR.py and the underlying physics.  The
+        # previous value (Tin=900, Tout=650) implied a 250 °C sensible-
+        # heat drop, which is incorrect for a heat-pipe device.
+        'Primary Loop Inlet Temperature': 650 + 273.15,
         'Primary Loop Outlet Temperature': 650 + 273.15,
         'Secondary Loop Inlet Temperature': 300 + 273.15,
         'Secondary Loop Outlet Temperature': 630 + 273.15,
