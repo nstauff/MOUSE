@@ -39,6 +39,7 @@ from core_design.pins_arrangement import LTMR_pins_arrangement
 from core_design.openmc_template_LTMR import update_ltmr_reflector_geometry_from_drums
 from reactor_engineering_evaluation.fuel_calcs import fuel_calculations
 from webapp.fuel_lifetime_estimator import estimate_ltmr_fuel_lifetime
+from webapp.gcmr_fuel_lifetime_estimator import estimate_gcmr_fuel_lifetime
 # BOP.py re-exports everything from tools.py and adds its own functions
 from reactor_engineering_evaluation.BOP import (
     calculate_heat_exchanger_mass,
@@ -392,6 +393,7 @@ def _build_gcmr(params):
     })
 
     # Sec 2: Geometry
+    # 'Assembly Rings', 'Core Rings', 'Active Height' come from build_params.
     params.update({
         'Fuel Pin Materials': ['UN', 'buffer_graphite', 'PyC', 'SiC', 'PyC'],
         'Fuel Pin Radii': [0.025, 0.035, 0.039, 0.0425, 0.047],
@@ -400,28 +402,20 @@ def _build_gcmr(params):
         'Coolant Channel Radius': 0.35,
         'Moderator Booster Radii': [0.55],
         'Lattice Pitch': 2.25,
-        'Assembly Rings': 6,
-        'Core Rings': 5,
     })
     params['Assembly FTF'] = params['Lattice Pitch'] * (params['Assembly Rings'] - 1) * np.sqrt(3)
-    params['Radial Reflector Thickness'] = 27.393
-    params['Axial Reflector Thickness'] = params['Radial Reflector Thickness']
-    params['Core Radius'] = (params['Assembly FTF'] * params['Core Rings']
-                             + params['Radial Reflector Thickness'])
-    params['Active Height'] = 250
 
-    # Sec 3: Control drums
+    # Sec 3: Control drums — GCMR auto-resolution sets Drum Radius,
+    # Radial Reflector Thickness, Core Radius, Drum Height inside
+    # calculate_drums_volumes_and_masses (drum-cell rule).
     params.update({
-        'Drum Radius': 9,
         'Drum Absorber Thickness': 1,
-        'Drum Height': params['Active Height'] + 2 * params['Axial Reflector Thickness'],
     })
     calculate_drums_volumes_and_masses(params)
     calculate_reflector_mass_GCMR(params)
     calculate_moderator_mass_GCMR(params)
 
     # Sec 4: Overall system
-    # 'Power MWt' is pre-set by build_params; do not override it here.
     params.update({
         'Thermal Efficiency': 0.4,
         'Heat Flux Criteria': 0.9,
@@ -431,15 +425,43 @@ def _build_gcmr(params):
     params['Power MWe'] = params['Power MWt'] * params['Thermal Efficiency']
     params['Heat Flux'] = calculate_heat_flux_TRISO(params)
 
-    # Sec 5: Interpolate OpenMC results from parametric study table
-    _omc = interpolate_openmc_results('GCMR', params['Power MWt'], params['Enrichment'])
-    if _omc['Fuel Lifetime'] == 0:
+    # Sec 5: Fuel lifetime via KNN estimator on the GCMR parametric study.
+    # Mass U235 / U238 are derived from the physics scaling formula:
+    #   Total uranium mass = G_PER_VOL_INDEX × F_A × F_C × H
+    # where F_A = 3(N_A−1)²−3(N_A−1)+1, F_C = 3 N_C²−3 N_C+1.
+    fl = estimate_gcmr_fuel_lifetime(
+        assembly_rings = params['Assembly Rings'],
+        core_rings     = params['Core Rings'],
+        active_height  = params['Active Height'],
+        enrichment     = params['Enrichment'],
+        power_mwt      = params['Power MWt'],
+    )
+    if fl == 0:
         raise SubcriticalError(
-            f"Fuel lifetime is zero for GCMR at Power={params['Power MWt']} MWt, "
-            f"Enrichment={params['Enrichment']:.4f}. The reactor is subcritical."
+            f"Reactor is subcritical for GCMR at "
+            f"N_A={params['Assembly Rings']}, N_C={params['Core Rings']}, "
+            f"H={params['Active Height']:.1f} cm, "
+            f"E={params['Enrichment']:.4f}, P={params['Power MWt']} MWt."
         )
-    params.update(_omc)
-    params['Uranium Mass'] = (params['Mass U235'] + params['Mass U238']) / 1000  # kg
+    if fl < _MIN_USEFUL_LIFETIME_DAYS:
+        raise ShortLifetimeError(
+            f"Estimated fuel lifetime is only {fl} days "
+            f"({fl / 30.0:.1f} months) — too short for a meaningful "
+            f"design point. Try increasing the diameter, the height, "
+            f"or the enrichment."
+        )
+
+    _GCMR_G_PER_VOL_INDEX = 0.5776   # g of total uranium per (F_A × F_C × H)
+    _na = params['Assembly Rings']
+    _nc = params['Core Rings']
+    _F_A = 3 * (_na - 1) ** 2 - 3 * (_na - 1) + 1
+    _F_C = 3 * _nc ** 2 - 3 * _nc + 1
+    total_u_mass = _GCMR_G_PER_VOL_INDEX * _F_A * _F_C * params['Active Height']
+
+    params['Fuel Lifetime'] = fl
+    params['Mass U235']     = int(round(total_u_mass * params['Enrichment']))
+    params['Mass U238']     = int(round(total_u_mass * (1.0 - params['Enrichment'])))
+    params['Uranium Mass']  = (params['Mass U235'] + params['Mass U238']) / 1000  # kg
     fuel_calculations(params)
 
     # Sec 6: Primary Loop + BoP
@@ -771,7 +793,8 @@ def _build_hpmr(params):
 
 
 def build_params(reactor_type, power_mwt, enrichment, user_overrides,
-                 n_rings_per_assembly=None, active_height=None):
+                 n_rings_per_assembly=None, active_height=None,
+                 n_assembly_rings=None, n_core_rings=None):
     """
     Build a fully-populated params dict for the given reactor type,
     then apply user_overrides on top.
@@ -815,6 +838,15 @@ def build_params(reactor_type, power_mwt, enrichment, user_overrides,
             )
         params['Number of Rings per Assembly'] = int(n_rings_per_assembly)
         params['Active Height']                = float(active_height)
+
+    if reactor_type == 'GCMR':
+        if n_assembly_rings is None or n_core_rings is None or active_height is None:
+            raise ValueError(
+                "GCMR requires n_assembly_rings, n_core_rings, and active_height."
+            )
+        params['Assembly Rings'] = int(n_assembly_rings)
+        params['Core Rings']     = int(n_core_rings)
+        params['Active Height']  = float(active_height)
 
     builders = {'LTMR': _build_ltmr, 'GCMR': _build_gcmr, 'HPMR': _build_hpmr}
     if reactor_type not in builders:

@@ -225,11 +225,18 @@ _REACTOR_IMAGES = {
 # ---------------------------------------------------------------------------
 # Cached cost estimate (module-level so cache persists across reruns)
 # ---------------------------------------------------------------------------
-# LTMR diameter lookup — keys are N (rings per assembly), values are
-# total core diameter in cm (= 2 × Core Radius). Trained N values come
-# directly from the parametric study Excel; intermediate N values are
-# linearly interpolated from the trained Core Radius table — adequate for
-# slider display, but flagged in the UI as interpolated estimates.
+# Aspect-ratio bounds for the Active Height slider:
+#     0.5 ≤ H / active_radius ≤ 2.0
+# where active_radius = Core Radius − Radial Reflector Thickness.
+ASPECT_RATIO_MIN = 0.5
+ASPECT_RATIO_MAX = 2.0
+
+# LTMR per-N geometry:
+#  - DIAMETER  = 2 × Core Radius (total, including reflector)
+#  - ACTIVE_R  = Core Radius − Reflector Thickness  (≈ 2.836·N − 1.136 cm)
+# Trained N values come directly from the parametric study Excel;
+# intermediate N values are linearly interpolated from the trained table —
+# adequate for slider display, but flagged in the UI as interpolated.
 LTMR_TRAINED_N = {6, 8, 10, 12, 14, 18, 24}
 LTMR_N_TO_DIAMETER_CM = {
     6:  46,   7:  54,   8:  62,   9:  71,  10:  79,
@@ -237,6 +244,8 @@ LTMR_N_TO_DIAMETER_CM = {
     16: 128, 17: 136,  18: 144,  19: 153,  20: 161,
     21: 169, 22: 177,  23: 185,  24: 194,
 }
+LTMR_N_TO_ACTIVE_RADIUS_CM = {n: round(2.836 * n - 1.136, 1)
+                              for n in LTMR_N_TO_DIAMETER_CM.keys()}
 
 
 def _ltmr_diameter_label(n, d):
@@ -250,13 +259,66 @@ LTMR_DIAMETER_LABEL_TO_N = {label: n
                             for n, label in zip(LTMR_N_TO_DIAMETER_CM.keys(),
                                                 LTMR_DIAMETER_LABELS)}
 
+# GCMR per-(N_A, N_C) geometry. Formulas (verified against parametric study):
+#     Assembly_FTF(N_A) = 2.25 × (N_A − 1) × √3
+#     Reflector(N_A)    = Assembly_FTF / 2
+#     Active_Radius     = Assembly_FTF × N_C
+#     Core_Radius       = Active_Radius + Reflector
+#     Diameter          = 2 × Core_Radius
+import math as _math
+GCMR_TRAINED_PAIRS = {(4, 3), (5, 3), (6, 4), (6, 5), (7, 5)}
+GCMR_NA_VALUES = [4, 5, 6, 7]
+GCMR_NC_VALUES = [3, 4, 5]
+
+
+def _gcmr_assembly_ftf(n_a):
+    return 2.25 * (n_a - 1) * _math.sqrt(3.0)
+
+
+def _gcmr_active_radius(n_a, n_c):
+    return _gcmr_assembly_ftf(n_a) * n_c
+
+
+def _gcmr_diameter_cm(n_a, n_c):
+    ftf = _gcmr_assembly_ftf(n_a)
+    return 2.0 * (ftf * n_c + ftf / 2.0)
+
+
+# Build the 12-pair lookup, sorted by total diameter
+GCMR_PAIR_TO_DIAMETER_CM = {}
+for _na in GCMR_NA_VALUES:
+    for _nc in GCMR_NC_VALUES:
+        GCMR_PAIR_TO_DIAMETER_CM[(_na, _nc)] = round(_gcmr_diameter_cm(_na, _nc))
+GCMR_PAIR_TO_DIAMETER_CM = dict(sorted(GCMR_PAIR_TO_DIAMETER_CM.items(),
+                                       key=lambda kv: kv[1]))
+
+
+def _gcmr_diameter_label(na, nc, d):
+    star = '' if (na, nc) in GCMR_TRAINED_PAIRS else ' *'
+    return f"{d} cm  (N_A={na}, N_C={nc}){star}"
+
+
+GCMR_DIAMETER_LABELS = [_gcmr_diameter_label(na, nc, d)
+                        for (na, nc), d in GCMR_PAIR_TO_DIAMETER_CM.items()]
+GCMR_DIAMETER_LABEL_TO_PAIR = {
+    label: pair
+    for pair, label in zip(GCMR_PAIR_TO_DIAMETER_CM.keys(),
+                           GCMR_DIAMETER_LABELS)
+}
+
+# Mass-scaling constant derived from the GCMR parametric study reference
+# row (N_A=6, N_C=5, H=215 cm, E=0.1975, P=1 MWt).  Total uranium mass per
+# unit of [F_A × F_C × H] volume index.
+GCMR_G_PER_VOLUME_INDEX = 0.5776
+
 
 @st.cache_data(show_spinner=False)
 def _run_estimate(reactor_type, power_mwt, enrichment, interest_rate, discount_rate,
                   construction_duration, debt_to_equity, operation_mode,
                   emergency_shutdowns, startup_duration, startup_duration_refueling,
                   tax_credit_type, tax_credit_value, plant_lifetime,
-                  n_rings_per_assembly=None, active_height=None):
+                  n_rings_per_assembly=None, active_height=None,
+                  n_assembly_rings=None, n_core_rings=None):
     overrides = {
         'Interest Rate': interest_rate,
         'Discount Rate': discount_rate,
@@ -278,7 +340,9 @@ def _run_estimate(reactor_type, power_mwt, enrichment, interest_rate, discount_r
 
     p = build_params(reactor_type, power_mwt, enrichment, overrides,
                      n_rings_per_assembly=n_rings_per_assembly,
-                     active_height=active_height)
+                     active_height=active_height,
+                     n_assembly_rings=n_assembly_rings,
+                     n_core_rings=n_core_rings)
     raw_df = bottom_up_cost_estimate('cost/Cost_Database.xlsx', p)
     enriched_df, detailed_sorted_df = cost_drivers_estimate(raw_df, p)
     return transform_dataframe(enriched_df), enriched_df, detailed_sorted_df, p
@@ -803,7 +867,7 @@ with streamlit_analytics.track():
         st.caption(f'{enrichment * 100:.2f}% enriched')
 
         _power_defaults = {'LTMR': 20, 'GCMR': 15, 'HPMR': 7}
-        _power_max = {'LTMR': 64, 'GCMR': 20, 'HPMR': 7}
+        _power_max = {'LTMR': 64, 'GCMR': 50, 'HPMR': 7}
 
         power_mwt = st.slider(
             'Thermal Power (MWt)',
@@ -815,9 +879,10 @@ with streamlit_analytics.track():
             help='Thermal power output. Affects power-dependent params and fuel lifetime via interpolation.',
         )
 
-        # LTMR-only: total core diameter (discrete, mapped to rings per assembly)
-        # and active core height (continuous slider).
-        n_rings_per_assembly = None
+        # LTMR / GCMR: extra geometry inputs (diameter + active height).
+        n_rings_per_assembly = None  # LTMR only
+        n_assembly_rings     = None  # GCMR only
+        n_core_rings         = None  # GCMR only
         active_height        = None
         if reactor_type == 'LTMR':
             # Default to N=12 (95 cm), a mid-range trained geometry.
@@ -836,14 +901,57 @@ with streamlit_analytics.track():
             )
             n_rings_per_assembly = LTMR_DIAMETER_LABEL_TO_N[_diameter_label]
 
+            _ar_ltmr = LTMR_N_TO_ACTIVE_RADIUS_CM[n_rings_per_assembly]
+            _h_min = max(1, int(round(ASPECT_RATIO_MIN * _ar_ltmr)))
+            _h_max = int(round(ASPECT_RATIO_MAX * _ar_ltmr))
+            _h_default = int(round(_ar_ltmr))   # aspect ratio 1.0
+
             active_height = st.slider(
                 'Active Height (cm)',
-                min_value=50,
-                max_value=180,
-                value=80,
-                step=5,
-                key='ltmr_active_height',
-                help='Active fuel height in cm. Affects fuel inventory and fuel lifetime.',
+                min_value=_h_min,
+                max_value=_h_max,
+                value=_h_default,
+                step=1,
+                key=f'ltmr_active_height_{n_rings_per_assembly}',
+                help=(f'Active fuel height in cm. Bounds correspond to aspect ratio '
+                      f'(H / active core radius) between {ASPECT_RATIO_MIN} and '
+                      f'{ASPECT_RATIO_MAX}. For this diameter the active core radius '
+                      f'is {_ar_ltmr:.1f} cm.'),
+            )
+
+        elif reactor_type == 'GCMR':
+            # Default to (N_A=6, N_C=5), the reference GCMR design
+            _default_label = next(
+                lbl for lbl in GCMR_DIAMETER_LABELS
+                if GCMR_DIAMETER_LABEL_TO_PAIR[lbl] == (6, 5)
+            )
+            _diameter_label = st.select_slider(
+                'Total Core Diameter',
+                options=GCMR_DIAMETER_LABELS,
+                value=_default_label,
+                key='gcmr_diameter',
+                help=('Total core diameter (including reflector). Discrete values '
+                      'mapped to (Assembly Rings, Core Rings). Values marked with * '
+                      'are interpolated between trained geometries.'),
+            )
+            n_assembly_rings, n_core_rings = GCMR_DIAMETER_LABEL_TO_PAIR[_diameter_label]
+
+            _ar_gcmr = _gcmr_active_radius(n_assembly_rings, n_core_rings)
+            _h_min = max(1, int(round(ASPECT_RATIO_MIN * _ar_gcmr)))
+            _h_max = int(round(ASPECT_RATIO_MAX * _ar_gcmr))
+            _h_default = int(round(_ar_gcmr))   # aspect ratio 1.0
+
+            active_height = st.slider(
+                'Active Height (cm)',
+                min_value=_h_min,
+                max_value=_h_max,
+                value=_h_default,
+                step=1,
+                key=f'gcmr_active_height_{n_assembly_rings}_{n_core_rings}',
+                help=(f'Active fuel height in cm. Bounds correspond to aspect ratio '
+                      f'(H / active core radius) between {ASPECT_RATIO_MIN} and '
+                      f'{ASPECT_RATIO_MAX}. For this diameter the active core radius '
+                      f'is {_ar_gcmr:.1f} cm.'),
             )
 
         st.divider()
@@ -1087,6 +1195,8 @@ with streamlit_analytics.track():
                 tax_credit_type, tax_credit_value, plant_lifetime,
                 n_rings_per_assembly=n_rings_per_assembly,
                 active_height=active_height,
+                n_assembly_rings=n_assembly_rings,
+                n_core_rings=n_core_rings,
             )
         except SubcriticalError as exc:
             st.error('### ⚠ Reactor is Subcritical')
@@ -1290,6 +1400,14 @@ with streamlit_analytics.track():
                     'the trained design space, and may be larger for combinations '
                     'with non-trained ring counts (marked * in the diameter slider) '
                     'or near the criticality boundary.'
+                )
+            elif reactor_type == 'GCMR':
+                st.caption(
+                    'Fuel Lifetime is estimated by KNN local regression on the GCMR '
+                    'parametric study. Typical error is **5–15%** for cases close to '
+                    'the trained design space, and may be larger for combinations '
+                    'with non-trained (Assembly Rings, Core Rings) pairs (marked * in '
+                    'the diameter slider) or near the criticality boundary.'
                 )
 
             st.markdown('<div style="height:1rem"></div>', unsafe_allow_html=True)
