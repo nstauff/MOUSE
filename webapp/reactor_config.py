@@ -192,11 +192,13 @@ def _build_ltmr(params):
     params['Moderator Pin Count'] = calculate_pins_in_assembly(params, 'MODERATOR')
     params['Moderator Mass']      = calculate_moderator_mass(params)
 
-    # Sec 3: Control drums — count fixed at 18 (matches parametric study).
+    # Sec 3: Control drums — count fixed at 12 (matches watts_exec_LTMR.py).
+    # Drum count is not a feature of the KNN fuel-lifetime estimator, so
+    # this can be changed without invalidating the lifetime model.
     # Drum Radius is auto-maximised; reflector thickness then auto-set to
     # cover the drums (LTMR rule: max_outer_radius - hex_apothem).
     params.update({
-        'Number of Drums': 18,
+        'Number of Drums': 12,
         'Drum Absorber Thickness': 1,
         'Drum Absorber Arc Degrees': 120,
     })
@@ -366,15 +368,21 @@ def _build_ltmr(params):
 
     # Sec 9: Operation
     params.update({
+        'Operation Mode': 'Autonomous',
         'Number of Operators': 2,
         'Levelization Period': 60,
         'Refueling Period': 7,
+        'Emergency Shutdowns Per Year': 0.2,
         'Startup Duration after Refueling': 2,
+        'Startup Duration after Emergency Shutdown': 14,
         'Reactors Monitored Per Operator': 10,
         'Security Staff Per Shift': 1,
     })
-    params['Onsite Coolant Inventory'] = 1 * 855 * 8.2402
-    params['Replacement Coolant Inventory'] = 0
+    # Onsite coolant inventory: 1833 kg/MWt (rough estimate from
+    # Creys-Malville: 5,500 t Na for a 3,000 MWt plant -> 1833 kg/MWt).
+    # Reference: https://www.edf.fr/sites/default/files/mediatheque/dp_creys_2017.pdf
+    params['Onsite Coolant Inventory'] = 1833 * params['Power MWt']
+    params['Replacement Coolant Inventory'] = 0  # NaK is assumed not to require replacement
 
     total_refueling_period = (params['Fuel Lifetime'] + params['Refueling Period']
                               + params['Startup Duration after Refueling'])
