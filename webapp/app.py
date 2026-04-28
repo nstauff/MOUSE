@@ -93,6 +93,7 @@ import numpy as np
 import pandas as pd
 import matplotlib
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 import streamlit as st
 import streamlit_analytics2 as streamlit_analytics
 from st_cookies_manager import EncryptedCookieManager
@@ -226,26 +227,27 @@ _REACTOR_IMAGES = {
 # Cached cost estimate (module-level so cache persists across reruns)
 # ---------------------------------------------------------------------------
 # Aspect-ratio bounds for the Active Height slider:
-#     0.5 ≤ H / active_radius ≤ 2.0
-# where active_radius = Core Radius − Radial Reflector Thickness.
+#     0.5 ≤ H / D ≤ 2.0
+# where D is the active core diameter (= 2 × active_radius, no reflector).
+# H is the active fuel height. Reflectors are excluded from both.
 ASPECT_RATIO_MIN = 0.5
 ASPECT_RATIO_MAX = 2.0
 
 # LTMR per-N geometry:
-#  - DIAMETER  = 2 × Core Radius (total, including reflector)
-#  - ACTIVE_R  = Core Radius − Reflector Thickness  (≈ 2.836·N − 1.136 cm)
-# Trained N values come directly from the parametric study Excel;
-# intermediate N values are linearly interpolated from the trained table —
-# adequate for slider display, but flagged in the UI as interpolated.
+#  - ACTIVE_R    = Core Radius − Reflector Thickness  (≈ 2.836·N − 1.136 cm)
+#  - DIAMETER_CM = 2 × ACTIVE_R   (active core diameter, NO reflector)
+# Trained N values come directly from the parametric study Excel; intermediate
+# N values are linearly interpolated from the trained table — adequate for
+# slider display, but flagged in the UI as interpolated.
 LTMR_TRAINED_N = {10, 12, 14, 18, 24}
-LTMR_N_TO_DIAMETER_CM = {
-                                          10:  79,
-    11: 87,  12:  95,  13: 103,  14: 112,  15: 120,
-    16: 128, 17: 136,  18: 144,  19: 153,  20: 161,
-    21: 169, 22: 177,  23: 185,  24: 194,
+LTMR_N_TO_ACTIVE_RADIUS_CM = {
+    n: round(2.836 * n - 1.136, 1)
+    for n in [10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24]
 }
-LTMR_N_TO_ACTIVE_RADIUS_CM = {n: round(2.836 * n - 1.136, 1)
-                              for n in LTMR_N_TO_DIAMETER_CM.keys()}
+LTMR_N_TO_DIAMETER_CM = {
+    n: int(round(2 * ar))
+    for n, ar in LTMR_N_TO_ACTIVE_RADIUS_CM.items()
+}
 
 
 def _ltmr_diameter_label(n, d):
@@ -284,11 +286,12 @@ def _gcmr_diameter_cm(n_a, n_c):
     return 2.0 * (ftf * n_c + ftf / 2.0)
 
 
-# Build the 12-pair lookup, sorted by total diameter
+# Build the 12-pair lookup of ACTIVE core diameter (no reflector),
+# sorted ascending so the slider goes small → large left-to-right.
 GCMR_PAIR_TO_DIAMETER_CM = {}
 for _na in GCMR_NA_VALUES:
     for _nc in GCMR_NC_VALUES:
-        GCMR_PAIR_TO_DIAMETER_CM[(_na, _nc)] = round(_gcmr_diameter_cm(_na, _nc))
+        GCMR_PAIR_TO_DIAMETER_CM[(_na, _nc)] = int(round(2 * _gcmr_active_radius(_na, _nc)))
 GCMR_PAIR_TO_DIAMETER_CM = dict(sorted(GCMR_PAIR_TO_DIAMETER_CM.items(),
                                        key=lambda kv: kv[1]))
 
@@ -654,6 +657,96 @@ def _kpi_card(col, title, foak_val, noak_val, color='#1B4F8C'):
     )
 
 
+def _make_side_view_figure(diameter_cm, active_height_cm,
+                           axial_reflector_cm, radial_reflector_cm):
+    """Return a matplotlib figure showing a to-scale side view of the
+    reactor cylinder.
+
+    Layout matches the cross-section image directly above it: the plot
+    box is placed in the LEFT ~55% of the figure (the right ~35% is left
+    empty to mirror where the cross-section's material legend sits), and
+    its xlim spans the same range the cross-section uses (= ±ceil(D/2)).
+    The axis box dimensions are picked so 1 cm in x equals 1 cm in y,
+    without invoking aspect='equal' — that way the rectangle width
+    (= D) renders at exactly the same horizontal pixel range as the
+    circle in the cross-section above.
+    """
+    total_h = active_height_cm + 2 * axial_reflector_cm
+    active_d = diameter_cm - 2 * radial_reflector_cm
+
+    # Match the cross-section's xlim/ylim convention (ceil to integer)
+    half_d_int = max(1, int(np.ceil(diameter_cm / 2.0)))
+    half_h_int = max(1, int(np.ceil(total_h / 2.0)))
+
+    # Axis box dimensions in inches, sized so cm/inch is the same in x and y.
+    box_w = 4.0
+    box_h = box_w * (half_h_int / half_d_int)   # H/D aspect, preserved exactly
+    # Cap very tall/short reactors so the figure stays a reasonable size.
+    box_h = max(0.6, min(8.0, box_h))
+
+    # The plot occupies the same x-range as the cross-section's plot
+    # box (≈ 13%–62% of the column width — between the leftmost and
+    # rightmost x-tick of the cross-section image). The right ~38% is
+    # empty (mirroring the cross-section legend area), and the left
+    # ~13% is empty (matching the cross-section's y-axis label margin).
+    ax_left_frac, ax_width_frac  = 0.13, 0.49
+    ax_bot_frac,  ax_height_frac = 0.13, 0.72
+    fig_w = box_w / ax_width_frac
+    fig_h = box_h / ax_height_frac + 0.4   # +0.4 inches for title/labels
+
+    fig = plt.figure(figsize=(fig_w, fig_h))
+    ax = fig.add_axes([ax_left_frac, ax_bot_frac, ax_width_frac, ax_height_frac])
+
+    # Outer envelope (radial reflector) — full diameter × full height
+    outer = mpatches.Rectangle((-diameter_cm / 2.0, -total_h / 2.0),
+                               diameter_cm, total_h,
+                               facecolor='#fde68a', edgecolor='#92400e', lw=1.0)
+    ax.add_patch(outer)
+
+    # Active core — active diameter × active height, centred
+    core = mpatches.Rectangle((-active_d / 2.0, -active_height_cm / 2.0),
+                              active_d, active_height_cm,
+                              facecolor='#fca5a5', edgecolor='#7f1d1d', lw=1.0)
+    ax.add_patch(core)
+
+    # Dimension labels — active labels are placed close to the inner
+    # (red) core rectangle; total labels are placed next to the outer
+    # (yellow) envelope. annotation_clip=False so labels can spill
+    # outside the axis box.
+    #
+    # H_active: just to the RIGHT of the inner core, in the radial
+    # reflector gap. H_total: outside the outer envelope on the right.
+    ax.annotate(f'H_active = {active_height_cm:.0f} cm',
+                xy=(active_d / 2.0 + 0.01 * half_d_int, 0),
+                ha='left', va='center', fontsize=7, fontweight='bold',
+                color='#7f1d1d', annotation_clip=False)
+    ax.annotate(f'H_total = {total_h:.0f} cm',
+                xy=(half_d_int * 1.04, 0),
+                ha='left', va='center', fontsize=8, fontweight='bold',
+                color='#92400e', annotation_clip=False)
+    #
+    # D_active: just BELOW the inner core, in the axial reflector gap.
+    # D_total: outside the outer envelope at the bottom.
+    ax.annotate(f'D_active = {active_d:.0f} cm',
+                xy=(0, -active_height_cm / 2.0 - 0.01 * half_h_int),
+                ha='center', va='top', fontsize=7, fontweight='bold',
+                color='#7f1d1d', annotation_clip=False)
+    ax.annotate(f'D_total = {diameter_cm:.0f} cm',
+                xy=(0, -half_h_int * 1.08),
+                ha='center', va='top', fontsize=8, fontweight='bold',
+                color='#92400e', annotation_clip=False)
+
+    ax.set_xlim(-half_d_int, half_d_int)
+    ax.set_ylim(-half_h_int, half_h_int)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+    ax.set_title('Side View (to scale)', fontsize=10, fontweight='bold')
+
+    return fig
+
+
 def _info_card(col, title, value, subtitle='', accent='#16a34a', bg='#f0fdf4', border='#bbf7d0'):
     sub_html = f'<div style="font-size:0.7rem;color:#6b7280;margin-top:0.2rem;">{subtitle}</div>' if subtitle else ''
     col.markdown(
@@ -891,20 +984,22 @@ with streamlit_analytics.track():
                 if LTMR_DIAMETER_LABEL_TO_N[lbl] == 12
             )
             _diameter_label = st.select_slider(
-                'Total Core Diameter',
+                'Active Core Diameter',
                 options=LTMR_DIAMETER_LABELS,
                 value=_default_diameter_label,
                 key='ltmr_diameter',
-                help=('Total core diameter (including reflector). Discrete values '
-                      'mapped to the number of fuel rings per assembly. Values '
-                      'marked with * are interpolated between trained geometries.'),
+                help=('Active core diameter (does NOT include the radial reflector). '
+                      'Discrete values mapped to the number of fuel rings per '
+                      'assembly. Values marked with * are interpolated between '
+                      'trained geometries.'),
             )
             n_rings_per_assembly = LTMR_DIAMETER_LABEL_TO_N[_diameter_label]
 
-            _ar_ltmr = LTMR_N_TO_ACTIVE_RADIUS_CM[n_rings_per_assembly]
-            _h_min = max(1, int(round(ASPECT_RATIO_MIN * _ar_ltmr)))
-            _h_max = int(round(ASPECT_RATIO_MAX * _ar_ltmr))
-            _h_default = int(round(_ar_ltmr))   # aspect ratio 1.0
+            _ar_ltmr   = LTMR_N_TO_ACTIVE_RADIUS_CM[n_rings_per_assembly]
+            _ad_ltmr   = LTMR_N_TO_DIAMETER_CM[n_rings_per_assembly]   # active diameter
+            _h_min     = max(1, int(round(ASPECT_RATIO_MIN * _ad_ltmr)))
+            _h_max     = int(round(ASPECT_RATIO_MAX * _ad_ltmr))
+            _h_default = int(round(_ad_ltmr))   # H/D = 1.0
 
             active_height = st.slider(
                 'Active Height (cm)',
@@ -914,9 +1009,9 @@ with streamlit_analytics.track():
                 step=1,
                 key=f'ltmr_active_height_{n_rings_per_assembly}',
                 help=(f'Active fuel height in cm. Bounds correspond to aspect ratio '
-                      f'(H / active core radius) between {ASPECT_RATIO_MIN} and '
-                      f'{ASPECT_RATIO_MAX}. For this diameter the active core radius '
-                      f'is {_ar_ltmr:.1f} cm.'),
+                      f'(H / D, where D is the active core diameter) between '
+                      f'{ASPECT_RATIO_MIN} and {ASPECT_RATIO_MAX}. For this geometry '
+                      f'the active core diameter is {_ad_ltmr} cm.'),
             )
 
         elif reactor_type == 'GCMR':
@@ -926,20 +1021,21 @@ with streamlit_analytics.track():
                 if GCMR_DIAMETER_LABEL_TO_PAIR[lbl] == (6, 5)
             )
             _diameter_label = st.select_slider(
-                'Total Core Diameter',
+                'Active Core Diameter',
                 options=GCMR_DIAMETER_LABELS,
                 value=_default_label,
                 key='gcmr_diameter',
-                help=('Total core diameter (including reflector). Discrete values '
-                      'mapped to (Assembly Rings, Core Rings). Values marked with * '
-                      'are interpolated between trained geometries.'),
+                help=('Active core diameter (does NOT include the radial reflector). '
+                      'Discrete values mapped to (Assembly Rings, Core Rings). Values '
+                      'marked with * are interpolated between trained geometries.'),
             )
             n_assembly_rings, n_core_rings = GCMR_DIAMETER_LABEL_TO_PAIR[_diameter_label]
 
-            _ar_gcmr = _gcmr_active_radius(n_assembly_rings, n_core_rings)
-            _h_min = max(1, int(round(ASPECT_RATIO_MIN * _ar_gcmr)))
-            _h_max = int(round(ASPECT_RATIO_MAX * _ar_gcmr))
-            _h_default = int(round(_ar_gcmr))   # aspect ratio 1.0
+            _ar_gcmr   = _gcmr_active_radius(n_assembly_rings, n_core_rings)
+            _ad_gcmr   = 2.0 * _ar_gcmr                                 # active diameter
+            _h_min     = max(1, int(round(ASPECT_RATIO_MIN * _ad_gcmr)))
+            _h_max     = int(round(ASPECT_RATIO_MAX * _ad_gcmr))
+            _h_default = int(round(_ad_gcmr))   # H/D = 1.0
 
             active_height = st.slider(
                 'Active Height (cm)',
@@ -949,9 +1045,9 @@ with streamlit_analytics.track():
                 step=1,
                 key=f'gcmr_active_height_{n_assembly_rings}_{n_core_rings}',
                 help=(f'Active fuel height in cm. Bounds correspond to aspect ratio '
-                      f'(H / active core radius) between {ASPECT_RATIO_MIN} and '
-                      f'{ASPECT_RATIO_MAX}. For this diameter the active core radius '
-                      f'is {_ar_gcmr:.1f} cm.'),
+                      f'(H / D, where D is the active core diameter) between '
+                      f'{ASPECT_RATIO_MIN} and {ASPECT_RATIO_MAX}. For this geometry '
+                      f'the active core diameter is {_ad_gcmr:.0f} cm.'),
             )
 
         st.divider()
@@ -973,17 +1069,17 @@ with streamlit_analytics.track():
         operation_mode = _OPERATION_MODE_LABELS[operation_mode_label]
         emergency_shutdowns = st.number_input(
             'Emergency Shutdowns per Year',
-            min_value=0.0, max_value=10.0, value=0.2, step=0.1, format='%.1f',
+            min_value=0.0, max_value=10.0, value=2.0, step=0.1, format='%.1f',
             help='Expected number of unplanned emergency shutdowns per year.',
         )
         startup_duration = st.number_input(
             'Startup Duration after Emergency Shutdown (days)',
-            min_value=1, max_value=365, value=14, step=1,
+            min_value=1, max_value=365, value=21, step=1,
             help='Days required to restart the reactor after an emergency shutdown.',
         )
         startup_duration_refueling = st.number_input(
             'Startup Duration after Refueling (days)',
-            min_value=1, max_value=365, value=2, step=1,
+            min_value=1, max_value=365, value=14, step=1,
             help='Days required to restart the reactor after a scheduled refueling outage.',
         )
 
@@ -1378,8 +1474,50 @@ with streamlit_analytics.track():
 
         with img_col:
             main_img, main_caption = _REACTOR_IMAGES[reactor_type]['main']
+
+            # For LTMR, pick the per-N core cross-section that matches
+            # the user's chosen diameter (Number of Rings per Assembly).
+            if reactor_type == 'LTMR':
+                _n = int(params.get('Number of Rings per Assembly', 12))
+                _per_n_path = os.path.join(_ASSETS, f'LTMR_core_N{_n}.png')
+                if os.path.exists(_per_n_path):
+                    main_img = _per_n_path
+                    main_caption = (
+                        f"LTMR core cross-section for N = {_n} rings per assembly "
+                        f"(active core radius {LTMR_N_TO_ACTIVE_RADIUS_CM[_n]:.1f} cm, "
+                        f"active core diameter {LTMR_N_TO_DIAMETER_CM[_n]} cm). "
+                        f"Hexagonal arrangement of TRIGA-type U-ZrH fuel pins and ZrH "
+                        f"moderator pins cooled by NaK liquid metal, surrounded by a "
+                        f"graphite radial reflector with 18 control drums."
+                    )
+
+            # Cross-section on top, side-view directly below (LTMR/GCMR
+            # only — both have geometry-driven height inputs). Both render
+            # at the column width, so the side view's vertical extent
+            # relative to the cross-section's diameter makes H/D visually
+            # obvious.
             st.image(main_img, use_container_width=True)
             st.caption(main_caption)
+
+            if reactor_type in ('LTMR', 'GCMR'):
+                # The figure has built-in right padding to mirror the
+                # cross-section's legend area, so the side-view rectangle
+                # aligns horizontally with the cross-section circle above.
+                # Save with bbox_inches=None (st.pyplot's default 'tight'
+                # would crop the right-side empty space, defeating the
+                # alignment).
+                _diam = float(2.0 * params['Core Radius'])
+                _h    = float(params['Active Height'])
+                _ax_r = float(params.get('Axial Reflector Thickness', 0.0))
+                _rad_r = float(params.get('Radial Reflector Thickness', 0.0))
+                _fig = _make_side_view_figure(_diam, _h, _ax_r, _rad_r)
+                _buf = io.BytesIO()
+                _fig.savefig(_buf, format='png', bbox_inches=None,
+                             facecolor='white', dpi=120)
+                _buf.seek(0)
+                st.image(_buf, use_container_width=True)
+                plt.close(_fig)
+
             with st.expander('View detailed cross-sections'):
                 for img_path, img_caption in _REACTOR_IMAGES[reactor_type]['details']:
                     st.image(img_path, use_container_width=True)

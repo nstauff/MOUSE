@@ -222,13 +222,17 @@ def create_universe_plot(materials_database, universe, plot_width, num_pixels, f
     universe_plot.set_ylabel('y [cm]', fontsize=label_font)
     universe_plot.set_title(title, fontsize=label_font)
 
-    # Show 5 ticks per axis: -half, -quarter, 0, +quarter, +half
-    half = plot_width / 2.0
-    ticks = [-half, -half / 2.0, 0.0, half / 2.0, half]
+    # Show 5 integer-valued ticks per axis: -half, -quarter, 0, +quarter, +half
+    # half_int is rounded UP from the true half-width so the actual plot
+    # content is always fully enclosed by the tick range.
+    half       = plot_width / 2.0
+    half_int   = max(1, int(np.ceil(half)))
+    quarter_int = max(0, int(round(half_int / 2.0)))
+    ticks = [-half_int, -quarter_int, 0, quarter_int, half_int]
     universe_plot.set_xticks(ticks)
     universe_plot.set_yticks(ticks)
-    universe_plot.set_xlim(-half, half)
-    universe_plot.set_ylim(-half, half)
+    universe_plot.set_xlim(-half_int, half_int)
+    universe_plot.set_ylim(-half_int, half_int)
     universe_plot.tick_params(axis='x', labelsize=tick_font)
     universe_plot.tick_params(axis='y', labelsize=tick_font)
 
