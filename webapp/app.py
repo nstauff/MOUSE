@@ -99,6 +99,15 @@ import streamlit_analytics2 as streamlit_analytics
 from st_cookies_manager import EncryptedCookieManager
 
 from reactor_config import build_params, SubcriticalError, ShortLifetimeError, ESCALATION_YEAR
+from webapp.fuel_lifetime_estimator import (
+    get_ltmr_keff_curve,
+    get_ltmr_peaking_factor,
+    get_ltmr_leakage,
+)
+from webapp.gcmr_fuel_lifetime_estimator import (
+    get_gcmr_peaking_factor,
+    get_gcmr_leakage,
+)
 from cost.cost_estimation import bottom_up_cost_estimate, transform_dataframe
 from cost.cost_drivers import cost_drivers_estimate, is_double_digit_excluding_multiples_of_10, get_detailed_driver_rows
 
@@ -747,6 +756,73 @@ def _make_side_view_figure(diameter_cm, active_height_cm,
     ax.set_title('Side View (to scale)', fontsize=10, fontweight='bold')
 
     return fig
+
+
+def _materials_section(reactor_type, params):
+    """Render a 'Materials & Components' panel that lists the basic
+    materials of the reactor (fuel, moderator, reflector, drums, …)
+    plus, for LTMR, the per-assembly fuel and moderator pin counts.
+    All values are read directly from `params` — no interpolation."""
+    def _pretty(name):
+        """Replace underscores with spaces so material names like
+        'UZrH_alloy' read as 'UZrH alloy' in the displayed table."""
+        if not isinstance(name, str):
+            return name
+        return name.replace('_', ' ')
+
+    rows = []
+    # Fuel — for LTMR (UZrH alloy) we know the U weight fraction, so
+    # show it next to the material name.
+    _fuel_str = _pretty(params.get('Fuel', '—'))
+    if reactor_type == 'LTMR' and 'U_met_wo' in params:
+        _u_wo = float(params['U_met_wo']) * 100.0
+        _fuel_str = f"{_fuel_str}  ({_u_wo:.0f} wt% U)"
+    rows.append(('Fuel', _fuel_str))
+
+    rows.append(('Moderator', _pretty(params.get('Moderator', '—'))))
+    if params.get('Moderator Booster Materials'):
+        rows.append(('Moderator booster',
+                     ', '.join(_pretty(m) for m in params['Moderator Booster Materials'])))
+    if reactor_type == 'HPMR':
+        rows.append(('Cooling device', _pretty(params.get('Cooling Device', 'Heat pipes'))))
+    else:
+        rows.append(('Coolant', _pretty(params.get('Coolant', '—'))))
+    rows.append(('Radial reflector', _pretty(params.get('Radial Reflector', '—'))))
+    rows.append(('Axial reflector',  _pretty(params.get('Axial Reflector',  '—'))))
+    rows.append(('Control drum absorber',  _pretty(params.get('Control Drum Absorber',  '—'))))
+    rows.append(('Control drum reflector', _pretty(params.get('Control Drum Reflector', '—'))))
+
+    # LTMR is a single-assembly core — no per-assembly distinction needed.
+    if reactor_type == 'LTMR':
+        if 'Fuel Pin Count' in params:
+            rows.append(('Number of fuel pins',
+                         f"{int(params['Fuel Pin Count']):,}"))
+        if 'Moderator Pin Count' in params:
+            rows.append(('Number of moderator pins',
+                         f"{int(params['Moderator Pin Count']):,}"))
+
+    body = ''.join(
+        f'<tr>'
+        f'<td style="padding:0.32rem 1rem 0.32rem 0;color:#475569;font-weight:600;'
+        f'white-space:nowrap;">{k}</td>'
+        f'<td style="padding:0.32rem 0;color:#0f172a;font-weight:500;">{v}</td>'
+        f'</tr>'
+        for k, v in rows
+    )
+    st.markdown(
+        '<div style="font-size:0.7rem;font-weight:700;color:#64748b;text-transform:uppercase;'
+        'letter-spacing:0.09em;margin-bottom:0.45rem;">Materials &amp; Components</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        f'''<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:14px;
+                        padding:0.9rem 1.15rem;margin-bottom:0.85rem;">
+              <table style="width:100%;font-size:0.86rem;border-collapse:collapse;">
+                <tbody>{body}</tbody>
+              </table>
+            </div>''',
+        unsafe_allow_html=True,
+    )
 
 
 def _info_card(col, title, value, subtitle='', accent='#16a34a', bg='#f0fdf4', border='#bbf7d0'):
@@ -1582,6 +1658,411 @@ with streamlit_analytics.track():
                 )
 
             st.markdown('<div style="height:1rem"></div>', unsafe_allow_html=True)
+
+            # ── Reactivity vs Time (LTMR only) ──────────────────────────────
+            _reactivity_swing_pct = None     # filled in for LTMR if curve available
+            if reactor_type == 'LTMR':
+                _times, _keffs = get_ltmr_keff_curve(
+                    n_rings_per_assembly = params['Number of Rings per Assembly'],
+                    active_height        = params['Active Height'],
+                    enrichment           = params['Enrichment'],
+                    power_mwt            = params['Power MWt'],
+                    anchor_lifetime_days = params.get('Fuel Lifetime', None),
+                )
+                if _times.size >= 2:
+                    _k_bol = float(_keffs[0])
+                    if _k_bol > 1.0:
+                        _reactivity_swing_pct = (_k_bol - 1.0) / _k_bol * 100.0
+                if _times.size >= 2:
+                    st.markdown(
+                        '<div style="font-size:0.7rem;font-weight:700;color:#64748b;'
+                        'text-transform:uppercase;letter-spacing:0.09em;'
+                        'margin-bottom:0.6rem;">k_eff vs Time</div>',
+                        unsafe_allow_html=True,
+                    )
+                    _kfig, _kax = plt.subplots(figsize=(5.5, 2.8))
+                    # Show discrete interpolated points (markers) connected
+                    # by straight segments — so the user can see we only
+                    # have data at specific depletion timesteps, not a
+                    # continuous curve.
+                    _kax.plot(_times, _keffs, color='#1d4ed8', lw=1.5,
+                              marker='o', markersize=5, markerfacecolor='#1d4ed8',
+                              markeredgecolor='white', markeredgewidth=0.8)
+                    _kax.fill_between(_times, _keffs, 1.0,
+                                      where=(_keffs >= 1.0),
+                                      color='#1d4ed8', alpha=0.10)
+                    _kax.axhline(1.0, color='#7f1d1d', lw=1.0, ls='--')
+                    _kax.set_xlabel('Time (days)', fontsize=9)
+                    _kax.set_ylabel(r'$k_{\rm eff}$', fontsize=10)
+                    _kax.tick_params(axis='both', labelsize=8)
+                    _kax.set_xlim(left=0)
+                    # Pad the y-axis a hair above the highest value for readability
+                    _kax.set_ylim(0.98, max(1.005, _keffs.max() + 0.005))
+                    _kax.grid(True, alpha=0.3)
+                    for _spine in ('top', 'right'):
+                        _kax.spines[_spine].set_visible(False)
+                    _kfig.tight_layout()
+                    st.pyplot(_kfig, use_container_width=True)
+                    plt.close(_kfig)
+                    st.caption(
+                        'k_eff vs depletion time, interpolated from the 4 nearest '
+                        'cases in the LTMR parametric study (distance-weighted '
+                        'average of time and k_eff at each timestep). The time '
+                        'axis is anchored so the k_eff = 1 crossing matches the '
+                        'estimated fuel lifetime above; the subcritical tail is '
+                        'omitted.'
+                    )
+                    st.markdown('<div style="height:1rem"></div>', unsafe_allow_html=True)
+
+            # ── Materials & Components (read directly from params) ──
+            _materials_section(reactor_type, params)
+
+            # ── Fuel Inventory (uses st.metric so we get the built-in help icon) ──
+            _u235_g = float(params.get('Mass U235', 0.0))
+            _u238_g = float(params.get('Mass U238', 0.0))
+            _hm_g   = _u235_g + _u238_g
+            _mwe    = float(params.get('Power MWe', 0.0)) or float('nan')
+            _hm_kg          = _hm_g / 1.0e3                            # g → kg
+            _hm_kg_per_mwe  = _hm_kg / _mwe                            # kg / MWe
+            _fis_kg         = _u235_g / 1.0e3                          # g → kg
+            _fis_kg_per_mwe = _fis_kg / _mwe                           # kg / MWe
+
+            st.markdown(
+                '<div style="font-size:0.7rem;font-weight:700;color:#64748b;text-transform:uppercase;'
+                'letter-spacing:0.09em;margin-bottom:0.6rem;">Fuel Inventory</div>',
+                unsafe_allow_html=True,
+            )
+
+            def _fuel_card(title, value_str, help_text,
+                           accent='#0e7490', bg='#ecfeff', border='#a5f3fc'):
+                # `title=` HTML attribute → native browser tooltip on hover.
+                # Replace any " (which would close the attribute) with “ to be safe.
+                _help_safe = help_text.replace('"', '“')
+                st.markdown(
+                    f'''<div style="background:{bg};border:1px solid {border};border-radius:14px;
+                                    padding:1.0rem 1.25rem;box-shadow:0 2px 8px rgba(0,0,0,0.04);
+                                    margin-bottom:0.6rem;">
+                          <div style="font-size:0.68rem;font-weight:700;color:{accent};
+                                      text-transform:uppercase;letter-spacing:0.09em;margin-bottom:0.35rem;
+                                      display:flex;align-items:center;gap:0.4rem;">
+                              <span>{title}</span>
+                              <span title="{_help_safe}" style="cursor:help;color:#fff;
+                                          background:{accent};border-radius:50%;
+                                          width:16px;height:16px;display:inline-flex;
+                                          align-items:center;justify-content:center;
+                                          font-size:0.75rem;font-weight:800;line-height:1;">?</span>
+                          </div>
+                          <div style="font-size:1.05rem;font-weight:800;color:#111827;line-height:1.3;">
+                              {value_str}
+                          </div>
+                        </div>''',
+                    unsafe_allow_html=True,
+                )
+
+            _fuel_card(
+                'Fuel loading',
+                f'{_hm_kg:,.1f} kgHM  |  {_hm_kg_per_mwe:,.1f} kgHM/MWe',
+                ('Total mass of heavy metal (uranium) in the core. '
+                 'HM = Heavy Metal = Mass U-235 + Mass U-238. '
+                 'kgHM/MWe normalises by net electric output — a specific fuel '
+                 'inventory metric useful for comparing fuel-cycle requirements '
+                 'across reactor types. Microreactors typically run '
+                 '100-1,000 kgHM/MWe depending on technology.'),
+            )
+            _fuel_card(
+                'Fissile loading',
+                f'{_fis_kg:,.1f} kg  |  {_fis_kg_per_mwe:,.1f} kg/MWe',
+                ('Mass of fissile material only (U-235 for LEU/HALEU fuel). '
+                 'Drives enrichment cost (HALEU is expensive at ~$3k-$15k/kg) and '
+                 'safeguards requirements. kg/MWe is one of the main metrics used '
+                 'when comparing the economics of microreactors against larger '
+                 'reactors — microreactor values are typically much higher than '
+                 'commercial LWRs (~5 kg/MWe).'),
+            )
+
+            # Peaking factor + discharge burnup — only meaningful for
+            # critical cases. Skip if HM mass or lifetime aren't available.
+            _lifetime_days = float(params.get('Fuel Lifetime', 0.0))
+            if _hm_kg > 0 and _lifetime_days > 0:
+                _pf = 0.0
+                if reactor_type == 'LTMR':
+                    _pf = get_ltmr_peaking_factor(
+                        n_rings_per_assembly = params['Number of Rings per Assembly'],
+                        active_height        = params['Active Height'],
+                        enrichment           = params['Enrichment'],
+                        power_mwt            = params['Power MWt'],
+                    )
+                elif reactor_type == 'GCMR':
+                    _pf = get_gcmr_peaking_factor(
+                        assembly_rings = params['Assembly Rings'],
+                        core_rings     = params['Core Rings'],
+                        active_height  = params['Active Height'],
+                        enrichment     = params['Enrichment'],
+                        power_mwt      = params['Power MWt'],
+                    )
+
+                # Average discharge burnup: total energy / total HM mass.
+                # MWt × days = MW·d, divided by kg → MWd/kg.
+                _bu_avg = (float(params['Power MWt']) * _lifetime_days) / _hm_kg
+                _bu_max = _bu_avg * _pf if _pf > 0 else 0.0
+
+                _fuel_card(
+                    'Peaking factor',
+                    f'{_pf:,.2f}' if _pf > 0 else 'N/A',
+                    ('Power Peaking Factor (PPF) — ratio of the maximum local '
+                     'fission rate to the core-average fission rate. Drives the '
+                     'difference between average and peak fuel pin temperatures, '
+                     'and between average and peak burnup. Lower is better; '
+                     'typical microreactor values are 1.5–3.0 depending on '
+                     'reflector design and fuel arrangement. Interpolated from '
+                     'the parametric study.'),
+                    accent='#9333ea', bg='#faf5ff', border='#e9d5ff',
+                )
+
+                # Axial + total leakage (BOL, %).  Inside the trained
+                # H range we use the KNN-interpolated value; outside we
+                # fall back to a one-group migration-area physics
+                # formula (which actually responds to the user's H).
+                _ax_lk, _tot_lk, _lk_src = 0.0, 0.0, None
+                _active_radius_cm = float(2.0 * params['Core Radius']) / 2.0
+                # active_radius excludes the reflector — recompute from active diameter
+                _active_radius_cm = (float(2.0 * params['Core Radius'])
+                                     - 2.0 * float(params.get('Radial Reflector Thickness', 0.0))
+                                     ) / 2.0
+                _r_refl = float(params.get('Radial Reflector Thickness', 0.0))
+                _z_refl = float(params.get('Axial Reflector Thickness', 0.0))
+                if reactor_type == 'LTMR':
+                    _ax_lk, _tot_lk, _lk_src = get_ltmr_leakage(
+                        n_rings_per_assembly = params['Number of Rings per Assembly'],
+                        active_height        = params['Active Height'],
+                        enrichment           = params['Enrichment'],
+                        power_mwt            = params['Power MWt'],
+                        active_radius_cm     = _active_radius_cm,
+                        radial_reflector_cm  = _r_refl,
+                        axial_reflector_cm   = _z_refl,
+                    )
+                elif reactor_type == 'GCMR':
+                    _ax_lk, _tot_lk, _lk_src = get_gcmr_leakage(
+                        assembly_rings  = params['Assembly Rings'],
+                        core_rings      = params['Core Rings'],
+                        active_height   = params['Active Height'],
+                        enrichment      = params['Enrichment'],
+                        power_mwt       = params['Power MWt'],
+                        active_radius_cm    = _active_radius_cm,
+                        radial_reflector_cm = _r_refl,
+                        axial_reflector_cm  = _z_refl,
+                    )
+
+                _src_note = (
+                    'This value is INTERPOLATED from nearby cases in the '
+                    'parametric study (KNN, K=4, distance-weighted average) — '
+                    'the geometry sits inside the trained design space.'
+                    if _lk_src == 'interpolated' else
+                    'This value is COMPUTED from a one-group migration-area '
+                    'physics formula because the requested geometry sits '
+                    'outside the trained H range for this diameter — KNN '
+                    'would just saturate at the training boundary. The '
+                    'formula uses '
+                    'B² = (2.405/R_eff)² + (π/H_eff)², '
+                    'P_NL = 1/(1 + M²·B²), where R_eff and H_eff include '
+                    'reflector savings (~0.6 × reflector thickness). M² '
+                    'is calibrated against the parametric study data.'
+                )
+
+                if _ax_lk > 0:
+                    _fuel_card(
+                        'Axial leakage (BOL)',
+                        f'{_ax_lk:,.2f} %',
+                        ('Fraction of neutrons that leak out of the active core '
+                         'through the top or bottom faces at beginning of life. '
+                         'Driven primarily by Active Height (shorter cores leak '
+                         'more axially) and the axial reflector thickness. The '
+                         'reflector and the control drums are accounted for: '
+                         'the parametric-study OpenMC runs include both, and '
+                         'the physics fallback uses the auto-resolved '
+                         'reflector thickness which already covers the drums. '
+                         + _src_note),
+                        accent='#0891b2', bg='#ecfeff', border='#a5f3fc',
+                    )
+                if _tot_lk > 0:
+                    _fuel_card(
+                        'Total leakage (BOL)',
+                        f'{_tot_lk:,.2f} %',
+                        ('Total fraction of neutrons that escape the active '
+                         'core (axial + radial) at beginning of life. Driven '
+                         'by core dimensions — both Active Height and active '
+                         'radius. The reflector and the control drums are '
+                         'accounted for the same way as above. Microreactors '
+                         'typically have higher total leakage (~5–35 %) than '
+                         'commercial LWRs (~3 %) because of their small size. '
+                         + _src_note),
+                        accent='#0891b2', bg='#ecfeff', border='#a5f3fc',
+                    )
+                _fuel_card(
+                    'Discharge burnup (avg)',
+                    f'{_bu_avg:,.1f} MWd/kgHM',
+                    ('Average burnup of the fuel at end-of-life (when the reactor '
+                     'first becomes subcritical). Computed as Power [MWt] × Fuel '
+                     'Lifetime [days] / Heavy Metal mass [kg]. This is the '
+                     'headline economic metric — higher discharge burnup means '
+                     'more energy extracted per kg of fuel, lowering fuel cost '
+                     'per MWh.'),
+                    accent='#9333ea', bg='#faf5ff', border='#e9d5ff',
+                )
+                if _bu_max > 0:
+                    _fuel_card(
+                        'Discharge burnup (max)',
+                        f'{_bu_max:,.1f} MWd/kgHM',
+                        ('Peak burnup at end-of-life — the burnup of the most '
+                         'heavily depleted region (= average × peaking factor). '
+                         'This is the design-limiting value: cladding integrity, '
+                         'fission gas release, and dimensional change all depend '
+                         'on the peak. Commercial LWRs are licensed to ~62 '
+                         'MWd/kgU peak. For TRISO-fuelled designs the peak burnup '
+                         'limit is typically much higher.'),
+                        accent='#9333ea', bg='#faf5ff', border='#e9d5ff',
+                    )
+
+                # Mining intensity uses MOUSE's existing 'Natural Uranium Mass'
+                # (computed in fuel_calculations using T=0.25% tails and natural
+                # U feed F=0.71%, the standard mass-balance formula).
+                _nat_u_kg = float(params.get('Natural Uranium Mass', 0.0))
+                _mwh_total = _mwe * _lifetime_days * 24.0
+                if _nat_u_kg > 0 and _mwh_total > 0:
+                    _mining = (_nat_u_kg * 1000.0) / _mwh_total   # kg→g, /MWh
+                    _fuel_card(
+                        'Mining intensity',
+                        f'{_mining:,.1f} gU/MWh',
+                        ('Mass of natural uranium that must be mined and milled '
+                         'per MWh of electric energy produced. Computed from '
+                         'MOUSE\'s natural-uranium consumption '
+                         '(tails enrichment 0.25 %, feed enrichment 0.71 %), '
+                         'then divided by the total lifetime electrical energy '
+                         'produced. Typical values: commercial LWRs ~17–25 '
+                         'gU/MWh, HALEU microreactors ~30–80, natural-U reactors '
+                         '(CANDU) ~150–200. Lower means less front-end fuel-'
+                         'cycle resource demand.'),
+                        accent='#15803d', bg='#f0fdf4', border='#bbf7d0',
+                    )
+
+                if _reactivity_swing_pct is not None:
+                    _fuel_card(
+                        'Reactivity swing',
+                        f'{_reactivity_swing_pct:,.1f} %Δk/k',
+                        ('Total reactivity consumed by burnup over the fuel '
+                         'cycle, in %Δk/k = (k_BOL − 1) / k_BOL × 100. k_BOL is '
+                         'the interpolated beginning-of-life k_eff (fresh fuel, '
+                         'before depletion). Drives control-drum sizing — drum '
+                         'worth must exceed the swing to keep cold-clean k_eff '
+                         '< 1 with all drums in. Typical: commercial LWRs ~10–'
+                         '15 %, HALEU microreactors ~15–40 % (large because '
+                         'long cycles + high enrichment).'),
+                        accent='#9333ea', bg='#faf5ff', border='#e9d5ff',
+                    )
+
+                # Heat flux at the fuel-pin surface (MW/m²) — already in
+                # params from calculate_heat_flux: Power / total pin
+                # cylindrical surface area.
+                _hflux = float(params.get('Heat Flux', 0.0))
+                if _hflux > 0:
+                    _fuel_card(
+                        'Heat flux (avg)',
+                        f'{_hflux * 100.0:,.1f} W/cm² ({_hflux:,.3f} MW/m²)',
+                        ('Average heat flux at the outer surface of the fuel '
+                         'pins = Power / (π × pin_diameter × H × pin_count). '
+                         'Sets the convective heat-transfer requirement — the '
+                         'coolant has to pull this much heat per unit area off '
+                         'each pin. Typical microreactor values are 0.1–1 '
+                         'MW/m² (10–100 W/cm²). Watch for departure-from-'
+                         'nucleate-boiling (DNB) limits in liquid-cooled '
+                         'designs and burnout limits in gas-cooled designs.'),
+                        accent='#dc2626', bg='#fef2f2', border='#fecaca',
+                    )
+
+                # Separative Work Units (SWU): kg-SWU total and per MWh.
+                _swu = float(params.get('SWU', 0.0))
+                if _swu > 0 and _mwh_total > 0:
+                    _swu_per_mwh = _swu * 1000.0 / _mwh_total       # kg → g, /MWh
+                    _fuel_card(
+                        'Enrichment SWU',
+                        f'{_swu:,.0f} kg-SWU  |  {_swu_per_mwh:,.2f} g-SWU/MWh',
+                        ('Separative Work Units consumed to produce the fuel '
+                         'in this core — the standard metric for enrichment '
+                         'effort. Computed in MOUSE\'s fuel_calculations using '
+                         'the standard value-function method (tails 0.25 %, '
+                         'feed 0.71 %). g-SWU/MWh normalises by total '
+                         'electrical energy delivered. SWU directly drives '
+                         'enrichment cost ($/kg-SWU varies, typically $50–'
+                         '$200/kg-SWU). Higher enrichment products require '
+                         'disproportionately more SWU per kg.'),
+                        accent='#15803d', bg='#f0fdf4', border='#bbf7d0',
+                    )
+
+                # Coolant mass flow rate — only meaningful for LTMR (NaK).
+                # GCMR uses helium gas; HPMR uses heat pipes (no flow).
+                if reactor_type == 'LTMR':
+                    _mdot = float(params.get('Coolant Mass Flow Rate', 0.0))
+                    if _mdot > 0:
+                        _fuel_card(
+                            'Coolant mass flow rate',
+                            f'{_mdot:,.1f} kg/s',
+                            ('Primary-coolant mass flow rate computed from '
+                             'm_dot = Power_MWt × 10⁶ / (ΔT × c_p) with the '
+                             'LTMR\'s fixed ΔT = 90 °C across the core (Tin '
+                             '430 → Tout 520 °C) and the heat capacity of '
+                             'NaK eutectic. Sets the primary-pump and heat-'
+                             'exchanger sizing. Liquid-metal microreactor '
+                             'flow rates are typically 5–100 kg/s for the '
+                             '1–20 MWt range; higher powers scale linearly.'),
+                            accent='#0e7490', bg='#ecfeff', border='#a5f3fc',
+                        )
+
+                    _pump_kW = float(params.get('Primary Pump Mechanical Power', 0.0))
+                    if _pump_kW > 0 and _mwe > 0:
+                        _pump_pct = 100.0 * _pump_kW / (_mwe * 1000.0)
+                        _fuel_card(
+                            'Primary pump fraction',
+                            f'{_pump_pct:,.2f} %  ({_pump_kW:,.0f} kW)',
+                            ('Primary-loop pump mechanical power as a fraction '
+                             'of the gross electric output. Computed from a '
+                             'lumped pressure-drop model: P = m_dot × Δp / (ρ '
+                             '× η), with default Δp = 250 kPa, ρ = 750 kg/m³ '
+                             '(NaK at ~500 °C), η = 0.75. Typical liquid-metal '
+                             'primary-loop pump fractions are 1–3 %; higher '
+                             'values indicate an aggressively-loaded loop or '
+                             'oversized core, lower values suggest natural-'
+                             'circulation-dominated cooling.'),
+                            accent='#0e7490', bg='#ecfeff', border='#a5f3fc',
+                        )
+
+                # Power density = Power_MWt / Active Core Volume.
+                # Active core is a hex prism with apothem = active_radius
+                # and height = Active Height. _active_radius_cm was already
+                # computed earlier in this block (Core Radius − reflector).
+                _vol_cm3 = (2.0 * _math.sqrt(3.0)
+                            * (_active_radius_cm ** 2)
+                            * float(params['Active Height']))
+                _vol_m3 = _vol_cm3 * 1.0e-6
+                if _vol_m3 > 0:
+                    _pd = float(params['Power MWt']) / _vol_m3
+                    _fuel_card(
+                        'Power density',
+                        f'{_pd:,.1f} MW/m³',
+                        ('Thermal power per unit active core volume = '
+                         'Power_MWt / (2√3 · R² · H), where R is the active '
+                         'core hex apothem (no reflector) and H is the active '
+                         'height. Tells you how aggressively the fuel is '
+                         'loaded relative to the core size. Typical ranges: '
+                         'eVinci/HPMR-class ~10–15 MW/m³, TRIGA/LTMR ~10–30, '
+                         'metal-fuel microreactors (Oklo, BANR) ~50–100, '
+                         'commercial LWRs ~100. Below ~5 MW/m³ means the core '
+                         'is over-fuelled (long lifetime, low utilization); '
+                         'above ~80 means the design is thermal-hydraulically '
+                         'aggressive — also check the heat-flux card.'),
+                        accent='#dc2626', bg='#fef2f2', border='#fecaca',
+                    )
+
+            st.markdown('<div style="height:0.75rem"></div>', unsafe_allow_html=True)
 
             st.markdown(
                 '<div style="font-size:0.7rem;font-weight:700;color:#64748b;text-transform:uppercase;'

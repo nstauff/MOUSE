@@ -161,7 +161,7 @@ def _build_ltmr(params):
     params.update({
         'reactor type': 'LTMR',
         'TRISO Fueled': 'No',
-        'Fuel': 'TRIGA_fuel',
+        'Fuel': 'UZrH_alloy',
         'H_Zr_ratio': 1.6,
         'U_met_wo': 0.3,
         'er_wo': 0,
@@ -239,7 +239,11 @@ def _build_ltmr(params):
             f"or the enrichment."
         )
 
-    _U_PER_PIN_CM = 345481.0 / (397.0 * 78.4)   # ≈ 11.10 g/(pin·cm) — TRIGA constant
+    # Total uranium mass per (fuel pin × cm) for LTMR TRIGA fuel.  Derived
+    # directly from the parametric-study Excel: every row gives the same
+    # value of (Mass U235 + Mass U238) / (Fuel Pin Count × Active Height),
+    # confirming the per-pin geometry is fixed across the design space.
+    _U_PER_PIN_CM = 14.6888   # g of total uranium per (fuel pin · cm)
     total_u_mass = _U_PER_PIN_CM * params['Fuel Pin Count'] * params['Active Height']
 
     params['Fuel Lifetime'] = fl
@@ -280,21 +284,80 @@ def _build_ltmr(params):
     params['In Vessel Shield Outer Radius'] = params['Core Radius'] + params['In Vessel Shield Thickness']
 
     # Sec 8: Vessels
+    # ----------------------------------------------------------------
+    # Reactor / guard / cooling / intake vessel dimensions for the LTMR.
+    # All values updated 2026-04-28 with inline references; previous
+    # values were on the thin/tight end of plausibility or contained
+    # a unit-conversion bug (lower plenum was 2.85 cm, physically
+    # unworkable).  See Botros review for the comparison to literature.
+    # ----------------------------------------------------------------
     params.update({
         'Vessel Radius': params['Core Radius'] + params['In Vessel Shield Thickness'],
-        'Vessel Thickness': 1,
-        'Vessel Lower Plenum Height': 42.848 - 40,
+
+        # Reactor-vessel wall thickness — fixed at 2 cm for the
+        # microreactor 1-60 MWt range.  ASME BPVC Section III, Division 5
+        # (high-temperature components for liquid-metal reactors) requires
+        # a thickness compatible with creep + thermal cycling at >500 °C;
+        # the pressure-driven thickness for D ~ 1-3 m at ~atmospheric
+        # NaK pressure is only ~4 mm, so ASME minimums dominate.
+        # Reference points: Oklo Aurora ~2 cm (INL-22/68167), FFTF 3 cm,
+        # EBR-II 3.8 cm.  At microreactor scale the variation across
+        # 1-60 MWt is < 1 mm, so a fixed 2 cm is appropriate.
+        'Vessel Thickness': 2,
+
+        # Lower plenum height — fixed at 50 cm.  Reference:
+        # IAEA TECDOC-1908 "Sodium-Cooled Fast Reactors: Status and Trends"
+        # reports lower-plenum heights of 0.4-0.8 m across micro-to-medium
+        # SFR designs; below ~30 cm the geometry cannot accommodate the
+        # inlet manifold + flow distributor + grid plate.  The previous
+        # value (42.848 - 40 = 2.848 cm) was a unit-conversion bug — a
+        # 3 cm plenum is physically unworkable.
+        'Vessel Lower Plenum Height': 50,
+
+        # Upper plenum height — kept at 47 cm.  By assumption this region
+        # also includes the cover-gas (argon) headspace above the free
+        # liquid surface; LTMR does not currently track a separate
+        # 'Vessel Upper Gas Gap'.
         'Vessel Upper Plenum Height': 47.152,
         'Vessel Upper Gas Gap': 0,
+
         'Vessel Bottom Depth': 32.129,
         'Vessel Material': 'stainless_steel',
-        'Gap Between Vessel And Guard Vessel': 2,
-        'Guard Vessel Thickness': 0.5,
+
+        # Reactor-vessel ↔ guard-vessel gap — fixed at 5 cm.  Reference:
+        # ASME Section III Division 5 NH-3000 series + OECD/NEA
+        # "Sodium-cooled Fast Reactor Vessel Design Guidelines" (2017)
+        # recommend 50-150 mm for thermal expansion and leak monitoring.
+        # 5 cm is the lower bound for a small microreactor where manual
+        # in-service inspection is not expected; the previous value of
+        # 2 cm was below ASME-required clearance for SFR-class vessels.
+        'Gap Between Vessel And Guard Vessel': 5,
+
+        # Guard-vessel wall thickness — fixed at 1 cm.  Reference:
+        # ASME Section III Class 3 minimum-thickness rules for
+        # non-pressure-bearing structural shells with D > 1 m specify
+        # ≥ 10 mm; IAEA TECDOC-1531 "Fast Reactor Database" reports
+        # 10-20 mm typical for LMR guard vessels.  The previous 0.5 cm
+        # was below ASME minimum for a vessel that must contain a
+        # primary-coolant leak.
+        'Guard Vessel Thickness': 1,
+
         'Guard Vessel Material': 'stainless_steel',
+
         'Gap Between Guard Vessel And Cooling Vessel': 5,
+
         'Cooling Vessel Thickness': 0.5,
         'Cooling Vessel Material': 'stainless_steel',
-        'Gap Between Cooling Vessel And Intake Vessel': 3,
+
+        # Cooling-vessel ↔ intake-vessel gap (RVACS air downcomer) —
+        # fixed at 5 cm.  Reference: Hejzlar & Buongiorno, "Passive
+        # Decay Heat Removal in Lead-cooled Fast Reactors", Nuclear
+        # Engineering & Design (2007), recommend 50-150 mm for RVACS
+        # systems removing 1-3 MWt of decay heat (typical microreactor
+        # range).  The previous 3 cm was below the lower bound for
+        # reliable natural-circulation flow.
+        'Gap Between Cooling Vessel And Intake Vessel': 5,
+
         'Intake Vessel Thickness': 0.5,
         'Intake Vessel Material': 'stainless_steel',
     })

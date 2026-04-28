@@ -167,6 +167,128 @@ def estimate_gcmr_fuel_lifetime(assembly_rings, core_rings, active_height,
     return int(round(lifetime))
 
 
+def _gcmr_knn_scalar(column_name, assembly_rings, core_rings, active_height,
+                     enrichment, power_mwt):
+    """Generic distance-weighted KNN interpolator for any scalar GCMR
+    parametric-study column. Uses the K=4 nearest neighbours in the same
+    (E, NA, NC, H, P) feature space as the lifetime estimator. Rows with
+    NaN in the requested column are skipped."""
+    _load()
+
+    df = _train_df.copy()
+    if column_name not in df.columns:
+        full = pd.read_excel(_XLSX_PATH, sheet_name='Merged Data',
+                             engine='openpyxl')
+        df[column_name] = full[column_name].values
+        _train_df[column_name] = df[column_name]
+
+    df = df[df[column_name].notna()].reset_index(drop=True)
+    if len(df) == 0:
+        return 0.0
+
+    feat_range = np.where(_feat_max != _feat_min, _feat_max - _feat_min, 1.0)
+    q_norm = (np.array([enrichment, assembly_rings, core_rings,
+                        active_height, power_mwt], dtype=float)
+              - _feat_min) / feat_range
+    train_norm = (df[['E', 'NA', 'NC', 'H', 'P']].values.astype(float)
+                  - _feat_min) / feat_range
+    dists = np.sqrt(((train_norm - q_norm) ** 2).sum(axis=1))
+    k_idx = np.argsort(dists)[: _K]
+    nb = df.iloc[k_idx]
+    nb_dists = dists[k_idx]
+    weights = 1.0 / (nb_dists + 1e-9)
+    weights = weights / weights.sum()
+    return float(np.sum(weights * nb[column_name].values))
+
+
+def get_gcmr_peaking_factor(assembly_rings, core_rings, active_height,
+                            enrichment, power_mwt):
+    """Interpolated Max Peaking Factor for a GCMR design point."""
+    return _gcmr_knn_scalar('Max Peaking Factor',
+                            assembly_rings, core_rings, active_height,
+                            enrichment, power_mwt)
+
+
+def get_gcmr_axial_leakage_pct(assembly_rings, core_rings, active_height,
+                               enrichment, power_mwt):
+    """Interpolated BOL axial leakage (%) for a GCMR design point."""
+    return _gcmr_knn_scalar('Estimated Axial Leakage (%)',
+                            assembly_rings, core_rings, active_height,
+                            enrichment, power_mwt)
+
+
+def get_gcmr_total_leakage_pct(assembly_rings, core_rings, active_height,
+                               enrichment, power_mwt):
+    """Interpolated BOL total leakage (%) for a GCMR design point."""
+    return _gcmr_knn_scalar('Estimated Total Leakage (%)',
+                            assembly_rings, core_rings, active_height,
+                            enrichment, power_mwt)
+
+
+# ---------------------------------------------------------------------------
+# Physics-based leakage with KNN/physics dispatch
+# ---------------------------------------------------------------------------
+# Migration area calibrated against (6,5), H=215 GCMR training case
+# (total leakage 13.3 %).  Graphite-moderated, hence much larger M²
+# than a ZrH-moderated LTMR.
+_GCMR_M_SQUARED_CM2     = 220.0
+_GCMR_REFLECTOR_SAVINGS = 0.65
+
+
+def _gcmr_physics_leakage(active_radius_cm, active_height_cm,
+                          radial_reflector_cm, axial_reflector_cm):
+    """Physics-based (axial%, total%) leakage for GCMR — same formula
+    as LTMR but with graphite-calibrated M² and reflector savings."""
+    delta_r = _GCMR_REFLECTOR_SAVINGS * radial_reflector_cm
+    delta_z = _GCMR_REFLECTOR_SAVINGS * axial_reflector_cm
+    R_eff = active_radius_cm + delta_r
+    H_eff = active_height_cm + 2.0 * delta_z
+    B2_radial = (2.405 / R_eff) ** 2
+    B2_axial  = (np.pi / H_eff) ** 2
+    B2_total  = B2_radial + B2_axial
+    P_NL = 1.0 / (1.0 + _GCMR_M_SQUARED_CM2 * B2_total)
+    total_lk = (1.0 - P_NL) * 100.0
+    axial_lk = total_lk * (B2_axial / B2_total)
+    return axial_lk, total_lk
+
+
+def _gcmr_h_within_trained_range(assembly_rings, core_rings, active_height):
+    """True if the user's H falls inside the per-(N_A, N_C) trained
+    H range (5 % tolerance)."""
+    _load()
+    df = _train_df.dropna(subset=['H'])
+    df = df[df['LT'] > 0]
+    pair_df = df[(df['NA'] == assembly_rings) & (df['NC'] == core_rings)]
+    if len(pair_df) == 0:
+        # Fall back to the closest trained (NA, NC) pair
+        pairs = df.groupby(['NA', 'NC']).size().index.tolist()
+        if not pairs:
+            return False
+        nearest = min(pairs,
+                      key=lambda p: abs(p[0] - assembly_rings) +
+                                    abs(p[1] - core_rings))
+        pair_df = df[(df['NA'] == nearest[0]) & (df['NC'] == nearest[1])]
+    h_min, h_max = pair_df['H'].min(), pair_df['H'].max()
+    return (h_min * 0.95) <= active_height <= (h_max * 1.05)
+
+
+def get_gcmr_leakage(assembly_rings, core_rings, active_height,
+                     enrichment, power_mwt,
+                     active_radius_cm, radial_reflector_cm, axial_reflector_cm):
+    """Return (axial_pct, total_pct, source) for GCMR. source is
+    'interpolated' for in-range queries, 'physics' for out-of-range."""
+    if _gcmr_h_within_trained_range(assembly_rings, core_rings, active_height):
+        ax = get_gcmr_axial_leakage_pct(assembly_rings, core_rings,
+                                        active_height, enrichment, power_mwt)
+        tot = get_gcmr_total_leakage_pct(assembly_rings, core_rings,
+                                         active_height, enrichment, power_mwt)
+        return ax, tot, 'interpolated'
+
+    ax, tot = _gcmr_physics_leakage(active_radius_cm, active_height,
+                                    radial_reflector_cm, axial_reflector_cm)
+    return ax, tot, 'physics'
+
+
 def estimate_gcmr_fuel_lifetime_from_params(params):
     """
     Convenience wrapper that reads inputs from a MOUSE params dict and

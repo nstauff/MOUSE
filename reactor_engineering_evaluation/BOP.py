@@ -48,15 +48,34 @@ def calculate_heat_exchanger_mass(params):
 
 
 def calculate_primary_pump_mechanical_power(params):
+    """Estimate primary-loop pump mechanical power for liquid-metal
+    microreactors using a lumped pressure-drop model:
+
+        P_mech [W] = m_dot × Δp_total / (ρ × η_pump)
+
+    where:
+      - m_dot   = primary-loop mass flow rate [kg/s]
+      - Δp_total = total primary-loop pressure drop (core friction +
+                   primary-side HX + piping + valves + bends) [Pa]
+      - ρ       = coolant density at the average primary temperature [kg/m³]
+      - η_pump  = pump hydraulic efficiency
+
+    The previous version used only the core static head (m·g·h) which
+    grossly under-predicted real pump power by ~30–100×.
+
+    Defaults are typical for liquid-metal microreactor primary loops:
+      Δp_total = 250 kPa
+      ρ        = 750 kg/m³  (NaK eutectic at ~500 °C)
+      η_pump   = 0.75
+
+    Either Δp or ρ or η can be overridden via params keys.
     """
-      Pump electric power [kW] = mdot*g*h / 1000 
-    """
-    core_mass_flow_rate = params['Primary Loop Mass Flow Rate']
-    core_active_height  = params['Active Height'] 
-    g    = 9.81                               # [m/s^2]
-    h    = core_active_height/100                 # [cm to m conversion]
-    mdot = core_mass_flow_rate                # [kg/s]
-    params['Primary Pump Mechanical Power'] =  mdot* g* h / 1000 # kWe
+    mdot = params['Primary Loop Mass Flow Rate']                 # kg/s
+    dp_pa = params.get('Primary Loop Pressure Drop', 250000.0)   # Pa
+    rho   = params.get('Coolant Density',           750.0)       # kg/m³
+    eta   = params.get('Pump Isentropic Efficiency', 0.75)
+    P_mech_W = mdot * dp_pa / (rho * eta)
+    params['Primary Pump Mechanical Power'] = P_mech_W / 1000.0  # kW
 
 
   
