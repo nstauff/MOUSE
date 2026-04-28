@@ -110,8 +110,11 @@ def _build_minimal_ltmr_params(n_rings, active_height_cm=80.0):
 def _move(src, dst):
     """Move a file, overwriting any existing destination."""
     if not os.path.exists(src):
-        warnings.warn(f"Expected output {src!r} not produced — skipping rename.")
-        return
+        raise FileNotFoundError(
+            f"Expected plot output {src!r} was not produced. "
+            f"The build_openmc_model_LTMR function may have changed its "
+            f"output filenames — check core_design/openmc_template_LTMR.py."
+        )
     if os.path.exists(dst):
         os.remove(dst)
     shutil.move(src, dst)
@@ -139,9 +142,11 @@ def main():
         finally:
             os.chdir(cwd_before)
 
-        # Move the core plot to the per-N reference name
+        # Move the core plot to the per-N reference name.
+        # The template names it core_operation.png (or core_shutdown.png
+        # when Shutdown Margin Calc is True — we keep that off here).
         _move(
-            os.path.join(work_dir, 'core.png'),
+            os.path.join(work_dir, 'core_operation.png'),
             os.path.join(_OUTPUT_DIR, f'LTMR_core_N{n}.png'),
         )
 
