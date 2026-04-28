@@ -237,9 +237,9 @@ ASPECT_RATIO_MAX = 2.0
 # Trained N values come directly from the parametric study Excel;
 # intermediate N values are linearly interpolated from the trained table —
 # adequate for slider display, but flagged in the UI as interpolated.
-LTMR_TRAINED_N = {6, 8, 10, 12, 14, 18, 24}
+LTMR_TRAINED_N = {10, 12, 14, 18, 24}
 LTMR_N_TO_DIAMETER_CM = {
-    6:  46,   7:  54,   8:  62,   9:  71,  10:  79,
+                                          10:  79,
     11: 87,  12:  95,  13: 103,  14: 112,  15: 120,
     16: 128, 17: 136,  18: 144,  19: 153,  20: 161,
     21: 169, 22: 177,  23: 185,  24: 194,
