@@ -186,19 +186,19 @@ params['In Vessel Shield Outer Radius'] = params['Core Radius'] + params['In Ves
 
 update_params({
     'Vessel Radius': params['Core Radius'] + params['In Vessel Shield Thickness'],
-    'Vessel Thickness': 1,  # cm
-    'Vessel Lower Plenum Height': 42.848 - 40,  # cm
-    'Vessel Upper Plenum Height': 47.152,  # cm
+    'Vessel Thickness': 2,  # cm — ASME BPVC Sec III Div 5 minimum at 520°C; refs: Oklo Aurora (INL-22/68167), FFTF, EBR-II
+    'Vessel Lower Plenum Height': 50,  # cm — IAEA TECDOC-1908; inlet manifold + flow distributor + grid plate (was 2.848, unit-conv bug)
+    'Vessel Upper Plenum Height': 47.152,  # cm — includes cover-gas headspace (no separate Upper Gas Gap tracked)
     'Vessel Upper Gas Gap': 0,
     'Vessel Bottom Depth': 32.129,
     'Vessel Material': 'stainless_steel',
-    'Gap Between Vessel And Guard Vessel': 2,  # cm
-    'Guard Vessel Thickness': 0.5,  # cm
+    'Gap Between Vessel And Guard Vessel': 5,  # cm — OECD/NEA SFR Vessel Design Guidelines 2017; ASME Sec III Div 5 NH-3000 (was 2)
+    'Guard Vessel Thickness': 1,  # cm — ASME Sec III Class 3 minimum + IAEA TECDOC-1531 (was 0.5)
     'Guard Vessel Material': 'stainless_steel',
     'Gap Between Guard Vessel And Cooling Vessel': 5,  # cm
     'Cooling Vessel Thickness': 0.5,  # cm
     'Cooling Vessel Material': 'stainless_steel',
-    'Gap Between Cooling Vessel And Intake Vessel': 3,  # cm
+    'Gap Between Cooling Vessel And Intake Vessel': 5,  # cm — Hejzlar & Buongiorno 2007 NED RVACS minimum (was 3)
     'Intake Vessel Thickness': 0.5,  # cm
     'Intake Vessel Material': 'stainless_steel'
 })

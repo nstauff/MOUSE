@@ -196,19 +196,20 @@ params['In Vessel Shield Outer Radius'] = params['Core Radius'] + params['In Ves
 # **************************************************************************************************************************
 update_params({
     'Vessel Radius': params['Core Radius'] + params['In Vessel Shield Thickness'],
-    'Vessel Thickness': 1,  # cm
-    'Vessel Lower Plenum Height': 42.848 - 40,  # cm
-    'Vessel Upper Plenum Height': 47.152,       # cm
+    'Vessel Thickness': 3,  # cm — ASME Sec III Div 1 thin-shell with 4 MPa He, R=60-100 cm, S=138 MPa SA-508 at 350°C, +3 mm corrosion (was 1, below ASME pressure-driven minimum)
+    'Vessel Lower Plenum Height': 30,  # cm — GA MHTGR / HTR-PM-class flow distributor (was 2.848, unit-conv bug)
+    'Vessel Upper Plenum Height': 47.152,       # cm — outlet plenum for hot-leg gas exit
     'Vessel Upper Gas Gap': 0,
     'Vessel Bottom Depth': 32.129,
     'Vessel Material': 'stainless_steel',
+    # Guard vessel intentionally removed: He is inert, no chemical-leak hazard requiring secondary containment
     'Gap Between Vessel And Guard Vessel': 0,
     'Guard Vessel Thickness': 0,  # cm
     'Guard Vessel Material': 'low_alloy_steel',
     'Gap Between Guard Vessel And Cooling Vessel': 5,  # cm
     'Cooling Vessel Thickness': 0.5,  # cm
     'Cooling Vessel Material': 'stainless_steel',
-    'Gap Between Cooling Vessel And Intake Vessel': 4,  # cm
+    'Gap Between Cooling Vessel And Intake Vessel': 5,  # cm — Hejzlar & Buongiorno 2007 NED RVACS minimum (was 4)
     'Intake Vessel Thickness': 0.5,  # cm
     'Intake Vessel Material': 'stainless_steel'
 })

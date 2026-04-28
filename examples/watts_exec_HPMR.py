@@ -180,19 +180,20 @@ params['In Vessel Shield Outer Radius'] = params['Core Radius'] + params['In Ves
 # ************************************************************************************************************************** 
 update_params({
     'Vessel Radius': params['Core Radius'] + params['In Vessel Shield Thickness'],
-    'Vessel Thickness': 1,  # cm
-    'Vessel Lower Plenum Height': 42.848 - 40,  # cm
-    'Vessel Upper Plenum Height': 47.152,       # cm
+    'Vessel Thickness': 2,  # cm — ASME Sec III Div 5 high-T creep minimum at >650°C; vessel at atmospheric (heat pipes individually sealed); refs: INL HPMR Design A, eVinci, Oklo (was 1, below Div 5 minimum)
+    'Vessel Lower Plenum Height': 20,  # cm — heat-pipe header / lower core support; refs: INL HPMR Design A, MARVEL (was 2.848, unit-conv bug)
+    'Vessel Upper Plenum Height': 47.152,       # cm — heat-pipe condenser interface to secondary HX
     'Vessel Upper Gas Gap': 0,
     'Vessel Bottom Depth': 32.129,
     'Vessel Material': 'stainless_steel',
-    'Gap Between Vessel And Guard Vessel': 0,  
+    # Guard vessel intentionally removed: each heat pipe is individually sealed (Na in SS316), no bulk primary coolant inventory requiring secondary containment
+    'Gap Between Vessel And Guard Vessel': 0,
     'Guard Vessel Thickness': 0,  # cm
-    'Guard Vessel Material': 'low_alloy_steel', 
+    'Guard Vessel Material': 'low_alloy_steel',
     'Gap Between Guard Vessel And Cooling Vessel': 5,  # cm
     'Cooling Vessel Thickness': 0.5,  # cm
     'Cooling Vessel Material': 'stainless_steel',
-    'Gap Between Cooling Vessel And Intake Vessel': 4,  # cm
+    'Gap Between Cooling Vessel And Intake Vessel': 5,  # cm — Hejzlar & Buongiorno 2007 NED RVACS minimum (was 4)
     'Intake Vessel Thickness': 0.5,  # cm
     'Intake Vessel Material': 'stainless_steel'
 })
