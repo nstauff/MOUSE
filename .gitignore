@@ -9,3 +9,5 @@ output*.xlsx
 *.png
 .DS_Store
 webapp/.venv/
+webapp/.streamlit/
+webapp/analytics.db
