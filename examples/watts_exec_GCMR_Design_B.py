@@ -148,7 +148,7 @@ params.update({
     'Primary Loop per loop load fraction': 0.5,
     'Primary Loop Inlet Temperature': 300 + 273.15, # K
     'Primary Loop Outlet Temperature': 550 + 273.15, # K
-    'Secondary Loop Inlet Temperature': 290 + 273.15, # K
+    'Secondary Loop Inlet Temperature': 270 + 273.15, # K — cold-end PCHE pinch 30°C with 300°C primary inlet (was 290 -> 10°C pinch, below realistic PCHE design)
     'Secondary Loop Outlet Temperature': 500 + 273.15, # K,
     'Primary Loop Pressure Drop': 50e3, # Pa
 })
