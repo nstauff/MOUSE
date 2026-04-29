@@ -236,3 +236,143 @@ def populate_hpmr_lifetime(params):
     )
     params['Fuel Lifetime'] = lifetime
     return lifetime
+
+
+# ---------------------------------------------------------------------------
+# k_eff(time) curve — same interpolation pattern as the LTMR / GCMR versions
+# ---------------------------------------------------------------------------
+
+_curve_df = None  # cached subset of training rows that carry a k_eff curve
+
+
+def _parse_curve(raw):
+    """Parse a string-formatted list (e.g. '[1.0, 0.99, 0.97, ...]') from a
+    cell into a numpy array of floats.  Returns None for missing / bad cells."""
+    import ast
+    if raw is None:
+        return None
+    if isinstance(raw, float) and np.isnan(raw):
+        return None
+    try:
+        vals = ast.literal_eval(str(raw).strip())
+    except (ValueError, SyntaxError):
+        return None
+    arr = np.asarray(vals, dtype=float)
+    if arr.size == 0 or np.all(np.isnan(arr)):
+        return None
+    return arr
+
+
+def _load_curves():
+    """Lazy-load the depletion-curve dataframe (one row per training case
+    that has a non-trivial k_eff(time) curve)."""
+    global _curve_df
+    if _curve_df is not None:
+        return _curve_df
+
+    df = pd.read_excel(_XLSX_PATH, sheet_name=_SHEET, engine='openpyxl')
+    df = df[['Assembly Rings', 'Core Rings', 'Height',
+             'Enrichment', 'Power MWt', 'Fuel Lifetime',
+             'Depletion Time Steps', 'keff 3D (2D corrected)']].copy()
+    df.columns = ['NA', 'NC', 'H', 'E', 'P', 'LT', 'time_raw', 'keff_raw']
+
+    df['time'] = df['time_raw'].apply(_parse_curve)
+    df['keff'] = df['keff_raw'].apply(_parse_curve)
+    df = df.drop(columns=['time_raw', 'keff_raw'])
+
+    valid = df.apply(lambda r: r['time'] is not None
+                               and r['keff'] is not None
+                               and len(r['time']) == len(r['keff'])
+                               and len(r['time']) >= 2,
+                     axis=1)
+    df = df[valid].reset_index(drop=True)
+
+    _curve_df = df
+    return _curve_df
+
+
+def get_hpmr_keff_curve(n_rings_per_assembly, n_rings_per_core, active_height,
+                        enrichment, power_mwt,
+                        anchor_lifetime_days=None):
+    """Build an interpolated k_eff vs time curve for a given HPMR design point.
+
+    Mirrors the LTMR / GCMR versions: distance-weighted average of the K=4
+    nearest training neighbours in normalised feature space.  KNN distance
+    only uses features that vary in the training data — N_A is constant
+    (=6) in the current parametric study, so it's excluded from the metric
+    and only re-enters via the physics scaling on the lifetime axis.
+
+    The curve is truncated at the first crossing of k_eff = 1.  Optional
+    `anchor_lifetime_days` rescales the time axis so that crossing matches
+    the externally-estimated fuel lifetime.
+
+    Returns
+    -------
+    times_days : np.ndarray
+    keffs : np.ndarray
+        Empty arrays if no usable training data is available.
+    """
+    df = _load_curves()
+    if len(df) == 0:
+        return np.array([]), np.array([])
+
+    _load()  # populate _feat_min / _feat_max
+    feat_idx_active = [i for i in range(5) if _feat_max[i] > _feat_min[i]]
+    if not feat_idx_active:
+        return np.array([]), np.array([])
+    feat_range_active = (_feat_max - _feat_min)[feat_idx_active]
+
+    q_full = np.array([float(enrichment),
+                       float(n_rings_per_assembly),
+                       float(n_rings_per_core),
+                       float(active_height),
+                       float(power_mwt)], dtype=float)
+    q_norm = (q_full[feat_idx_active]
+              - _feat_min[feat_idx_active]) / feat_range_active
+    train_full = df[['E', 'NA', 'NC', 'H', 'P']].values.astype(float)
+    train_norm = ((train_full[:, feat_idx_active]
+                   - _feat_min[feat_idx_active]) / feat_range_active)
+    dists = np.sqrt(((train_norm - q_norm) ** 2).sum(axis=1))
+    k_idx = np.argsort(dists)[: _K]
+    nb = df.iloc[k_idx]
+    nb_dists = dists[k_idx]
+
+    weights = 1.0 / (nb_dists + 1e-9)
+    weights = weights / weights.sum()
+
+    nsteps = min(len(t) for t in nb['time'].values)
+    times = np.zeros(nsteps)
+    keffs = np.zeros(nsteps)
+    for w, t_arr, k_arr in zip(weights, nb['time'].values, nb['keff'].values):
+        times += w * t_arr[:nsteps]
+        keffs += w * k_arr[:nsteps]
+
+    # Truncate at k_eff = 1 crossing (linear-interpolate exact crossing)
+    times_out = [times[0]]
+    keffs_out = [keffs[0]]
+    for i in range(1, nsteps):
+        t_prev, k_prev = times_out[-1], keffs_out[-1]
+        t_cur,  k_cur  = times[i],     keffs[i]
+        if k_cur >= 1.0:
+            times_out.append(t_cur)
+            keffs_out.append(k_cur)
+        else:
+            if k_prev > k_cur:
+                frac = (k_prev - 1.0) / (k_prev - k_cur)
+                t_cross = t_prev + frac * (t_cur - t_prev)
+                times_out.append(t_cross)
+                keffs_out.append(1.0)
+            break
+
+    times_arr = np.asarray(times_out)
+    keffs_arr = np.asarray(keffs_out)
+
+    if (anchor_lifetime_days is not None
+            and anchor_lifetime_days > 0
+            and times_arr.size >= 2
+            and keffs_arr[-1] <= 1.0 + 1e-9
+            and times_arr[-1] > 0):
+        scale = float(anchor_lifetime_days) / float(times_arr[-1])
+        times_arr = times_arr * scale
+
+    return times_arr, keffs_arr
