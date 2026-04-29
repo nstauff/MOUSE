@@ -2707,7 +2707,14 @@ with streamlit_analytics.track():
                              _m_smooth - _s_smooth,
                              _m_smooth + _s_smooth,
                              color=_fill_color, alpha=0.45, label=_legend_label,
-                             edgecolor=_edge_color, linewidth=1.5)
+                             edgecolor=_edge_color, linewidth=1.5, zorder=2)
+            # Mean line + scatter markers at the actual computed
+            # sweep points so the LCOE curve is always visible even if
+            # the spline interpolation produces something degenerate.
+            _ax.plot(_x_smooth, _m_smooth, color=_edge_color,
+                     linewidth=2.0, linestyle='-', zorder=3)
+            _ax.scatter(_u_arr, _m_arr, s=42, color=_edge_color,
+                        edgecolor='white', linewidth=1.2, zorder=4)
 
             # Market benchmark arrows (same coords as the reference figure)
             _markets = {
@@ -2769,11 +2776,19 @@ with streamlit_analytics.track():
                          zorder=6)
 
             _ax.set_xlim(0, 100)
-            _ax.set_ylim(0, 410)
+            # Y-axis adapts to whichever is taller: the static market-
+            # benchmark band (0-410) or the actual LCOE band for this
+            # reactor.  Without this, a high-LCOE configuration (e.g.
+            # 1 MWt LTMR) renders entirely off the top of the chart.
+            _band_top = float(np.nanmax(_m_arr + _s_arr)) if _m_arr.size else 0.0
+            _ymax = max(410.0, _band_top * 1.10)
+            _ax.set_ylim(0, _ymax)
             _ax.set_xlabel('Number of Units Deployed', fontsize=12, fontweight='bold')
             _ax.set_ylabel('LCOE ($/MWh)', fontsize=12, fontweight='bold')
             _ax.set_xticks([0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100])
-            _ax.set_yticks([0, 50, 100, 150, 200, 250, 300, 350, 400])
+            # Y-ticks at sensible round values up to _ymax
+            _tick_step = 50.0 if _ymax <= 600 else (100.0 if _ymax <= 1200 else 200.0)
+            _ax.set_yticks(np.arange(0, _ymax + _tick_step, _tick_step))
             _ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
             _ax.set_axisbelow(True)
             _ax.set_facecolor('white')
@@ -2787,6 +2802,19 @@ with streamlit_analytics.track():
             _fig.tight_layout()
             st.pyplot(_fig)
             plt.close(_fig)
+
+            # Tiny caption with the raw sweep points — lets the user
+            # sanity-check the curve and confirm the LCOE values.
+            _pts_str = '  ·  '.join(
+                f'N={int(u)}: ${m:.0f}±{s:.0f}'
+                for u, m, s in zip(_u_arr, _m_arr, _s_arr)
+            )
+            st.markdown(
+                f'<div style="font-size:0.72rem;color:#64748b;margin-top:-0.4rem;'
+                f'margin-bottom:0.6rem;">NOAK LCOE at sweep points '
+                f'($/MWh): {_pts_str}</div>',
+                unsafe_allow_html=True,
+            )
 
             # Market definitions panel (matches the user-provided spec)
             st.markdown(
