@@ -460,6 +460,12 @@ def _lcoe_at_noak_unit(reactor_type, power_mwt, enrichment, interest_rate, disco
                        n_rings_per_assembly=None, active_height=None,
                        n_assembly_rings=None, n_core_rings=None,
                        noak_unit_number=10):
+    """Returns (mean, std, per_account_df) for one NOAK Unit Number.
+
+    The per_account_df includes Account, Account Title, FOAK and NOAK
+    columns for all rows — useful for diagnosing which account drives
+    a wild LCOE value.
+    """
     overrides = {
         'Interest Rate': interest_rate,
         'Discount Rate': discount_rate,
@@ -492,7 +498,19 @@ def _lcoe_at_noak_unit(reactor_type, power_mwt, enrichment, interest_rate, disco
     enriched_df, _ = cost_drivers_estimate(raw_df, p)
     display_df = transform_dataframe(enriched_df)
     m, s = _get_mean_std(display_df, lcoe_account, 'NOAK')
-    return float(m) if m == m else float('nan'), float(s) if s == s else 0.0
+
+    # Build a tidy per-account diagnostic frame.  Pulls 'Account',
+    # 'Account Title', and any column starting with 'FOAK Estimated
+    # Cost (' / 'NOAK Estimated Cost ('.
+    _foak_cols = [c for c in display_df.columns if c.startswith('FOAK Estimated Cost (')]
+    _noak_cols = [c for c in display_df.columns if c.startswith('NOAK Estimated Cost (')]
+    _keep = [c for c in (['Account', 'Account Title']
+                         + _foak_cols + _noak_cols) if c in display_df.columns]
+    diag_df = display_df[_keep].copy() if _keep else None
+
+    return (float(m) if m == m else float('nan'),
+            float(s) if s == s else 0.0,
+            diag_df)
 
 
 # ---------------------------------------------------------------------------
@@ -2744,9 +2762,10 @@ with streamlit_analytics.track():
         # Compute the intermediate anchor at N=10 (one cost-engine
         # call, cached on inputs).
         _N_mid = 10
+        _mid_diag_df = None
         with st.spinner('Computing intermediate LCOE anchor (N=10)…'):
             try:
-                _mid_m, _mid_s = _lcoe_at_noak_unit(
+                _mid_m, _mid_s, _mid_diag_df = _lcoe_at_noak_unit(
                     reactor_type, power_mwt, enrichment,
                     interest_rate, discount_rate, construction_duration,
                     debt_to_equity, operation_mode, emergency_shutdowns,
@@ -2761,6 +2780,16 @@ with streamlit_analytics.track():
             except Exception as _e:
                 _mid_m, _mid_s = float('nan'), 0.0
                 st.warning(f'Could not compute N=10 anchor: {_e}')
+
+        # Show a per-account diagnostic for the N=10 call so we can
+        # see which account is producing the absurd LCOE value.
+        if _mid_diag_df is not None and not _mid_diag_df.empty:
+            with st.expander(
+                f'Per-account costs at NOAK Unit Number = {_N_mid} '
+                f'(diagnostic — close once verified)',
+                expanded=False,
+            ):
+                st.dataframe(_mid_diag_df, use_container_width=True)
 
         try:
             _foak_m = float(lcoe_f)
