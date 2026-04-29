@@ -2114,6 +2114,283 @@ with streamlit_analytics.track():
 
             st.markdown('<div style="height:0.75rem"></div>', unsafe_allow_html=True)
 
+            # ─────────────────────────────────────────────────────────────
+            # Transportability Considerations
+            # ─────────────────────────────────────────────────────────────
+            # Per-component dimensions (height, diameter) and dry mass for
+            # the four nested envelopes that make up a microreactor module.
+            # Per-mode badges compare the outermost (RVACS) envelope to
+            # three transport-mode dimensional limits.  No total mass is
+            # computed (per design choice — each component is shown alone).
+            #
+            # Rounding rules (match the coolant-inventory card):
+            #   weights ≥ 1 ton  -> integer tons
+            #   weights <  1 ton -> 1 significant figure
+            #   dimensions       -> meters with 1 decimal
+            st.markdown(
+                '<div style="font-size:0.7rem;font-weight:700;color:#64748b;text-transform:uppercase;'
+                'letter-spacing:0.09em;margin-bottom:0.6rem;">Transportability Considerations</div>',
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;'
+                'padding:0.85rem 1.1rem;margin-bottom:0.9rem;font-size:0.82rem;line-height:1.45;color:#334155;">'
+                'Transportability is one of the headline features of microreactors — the option to '
+                'ship the reactor module in one piece on a truck, rail car, or sea container differentiates '
+                'them from large NPPs. The values below check the current MOUSE configuration against the '
+                'most relevant US transport-mode envelopes. Per-component masses are listed individually; '
+                'no rolled-up total mass is reported.'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+
+            # ── Build per-component rows (height_m, diameter_m, mass_kg) ──
+            def _ton_str(kg):
+                """Match the coolant-inventory rounding convention."""
+                if kg is None:
+                    return '—'
+                try:
+                    kg = float(kg)
+                except (TypeError, ValueError):
+                    return '—'
+                if kg <= 0:
+                    return '—'
+                t = kg / 1000.0
+                if t >= 1:
+                    return f'{round(t):,d} ton'
+                return f'{t:.1g} ton'
+
+            def _m1(cm):
+                if cm is None or cm <= 0:
+                    return '—'
+                return f'{cm/100.0:.1f} m'
+
+            # MOUSE label disambiguation:
+            #   - LTMR: 'Vessel' = reactor vessel, 'Guard Vessel' = guard vessel
+            #   - GCMR: 'Vessel' = core barrel (internal),
+            #           'Guard Vessel' = the actual RPV (He pressure boundary)
+            #   - HPMR: 'Vessel' = reactor vessel, no guard vessel
+            _vessel_height_cm = float(params.get('Vessel Height', 0.0))
+            _bottom_depth_cm  = float(params.get('Vessel Bottom Depth', 0.0))
+            _vessel_thk_cm    = float(params.get('Vessel Thickness', 0.0))
+            _guard_thk_cm     = float(params.get('Guard Vessel Thickness', 0.0))
+            _gap_v_g_cm       = float(params.get('Gap Between Vessel And Guard Vessel', 0.0))
+
+            # Reactor (core + reflectors + drums).  All component masses
+            # are in kg.  Note: 'Uranium Mass' is already in kg in MOUSE;
+            # cladding mass is not separately tracked (small relative to
+            # the other terms).
+            _reactor_dia_cm  = 2.0 * float(params.get('Core Radius', 0.0))
+            _reactor_h_cm    = (float(params.get('Active Height', 0.0))
+                                + 2.0 * float(params.get('Axial Reflector Thickness', 0.0)))
+            _reactor_mass_kg = (
+                float(params.get('Uranium Mass', 0.0))
+                + float(params.get('Moderator Mass', 0.0))
+                + float(params.get('Moderator Booster Mass', 0.0))
+                + float(params.get('Radial Reflector Mass', 0.0))
+                + float(params.get('Axial Reflector Mass', 0.0))
+                + float(params.get('Control Drums Mass', 0.0))
+            )
+
+            # Reactor vessel (the pressure boundary)
+            if reactor_type == 'GCMR':
+                # MOUSE 'Guard Vessel' is the RPV for GCMR
+                _rv_outer_r_cm = (float(params.get('Guard Vessel Radius', 0.0))
+                                  + _guard_thk_cm)
+                _rv_height_cm  = (_vessel_height_cm
+                                  + _bottom_depth_cm + _vessel_thk_cm + _gap_v_g_cm
+                                  + _guard_thk_cm)
+                _rv_mass_kg    = float(params.get('Guard Vessel Mass', 0.0))
+            else:
+                _rv_outer_r_cm = (float(params.get('Vessel Radius', 0.0)) + _vessel_thk_cm)
+                _rv_height_cm  = _vessel_height_cm + _bottom_depth_cm
+                _rv_mass_kg    = float(params.get('Vessel Mass', 0.0))
+            _rv_dia_cm = 2.0 * _rv_outer_r_cm
+
+            # Guard vessel — only for LTMR
+            _has_guard = (reactor_type == 'LTMR'
+                          and float(params.get('Guard Vessel Thickness', 0.0)) > 0)
+            if _has_guard:
+                _gv_outer_r_cm = (float(params.get('Guard Vessel Radius', 0.0)) + _guard_thk_cm)
+                _gv_dia_cm     = 2.0 * _gv_outer_r_cm
+                _gv_height_cm  = (_vessel_height_cm
+                                  + _bottom_depth_cm + _vessel_thk_cm + _gap_v_g_cm
+                                  + _guard_thk_cm)
+                _gv_mass_kg    = float(params.get('Guard Vessel Mass', 0.0))
+            else:
+                _gv_dia_cm = _gv_height_cm = _gv_mass_kg = 0.0
+
+            # RVACS (cooling vessel + intake vessel combined)
+            _rvacs_outer_r_cm = float(params.get('Vessels Total Radius', 0.0))
+            _rvacs_dia_cm     = 2.0 * _rvacs_outer_r_cm
+            _rvacs_height_cm  = float(params.get('Vessels Total Height', 0.0))
+            _rvacs_mass_kg    = (float(params.get('Cooling Vessel Mass', 0.0))
+                                 + float(params.get('Intake Vessel Mass', 0.0)))
+
+            # ── Render component table ──
+            _rows_html = []
+            _rows_html.append(
+                '<tr>'
+                '<td style="padding:0.55rem 0.8rem;font-weight:600;">Reactor (core + reflectors + drums)</td>'
+                f'<td style="padding:0.55rem 0.8rem;text-align:center;">{_m1(_reactor_h_cm)}</td>'
+                f'<td style="padding:0.55rem 0.8rem;text-align:center;">{_m1(_reactor_dia_cm)}</td>'
+                f'<td style="padding:0.55rem 0.8rem;text-align:center;">{_ton_str(_reactor_mass_kg)}'
+                + (f'  <span title="HPMR heat-pipe steel cladding and Na working fluid not modeled in MOUSE — TODO add later." style="color:#b45309;font-size:0.72rem;background:#fef3c7;padding:0.05rem 0.4rem;border-radius:4px;margin-left:0.35rem;">HP cladding/Na missing</span>'
+                   if reactor_type == 'HPMR' else '')
+                + '</td>'
+                '</tr>'
+            )
+            _rows_html.append(
+                '<tr style="background:#fafafa;">'
+                '<td style="padding:0.55rem 0.8rem;font-weight:600;">Reactor vessel</td>'
+                f'<td style="padding:0.55rem 0.8rem;text-align:center;">{_m1(_rv_height_cm)}'
+                + f'  <span title="Top closure dome not currently modeled in MOUSE — TODO add later. Bottom dish currently uses placeholder Vessel Bottom Depth = {_bottom_depth_cm:.1f} cm; flag for review." style="color:#b45309;font-size:0.72rem;background:#fef3c7;padding:0.05rem 0.4rem;border-radius:4px;margin-left:0.35rem;">top dome / bottom dish missing</span>'
+                + '</td>'
+                f'<td style="padding:0.55rem 0.8rem;text-align:center;">{_m1(_rv_dia_cm)}</td>'
+                f'<td style="padding:0.55rem 0.8rem;text-align:center;">{_ton_str(_rv_mass_kg)}</td>'
+                '</tr>'
+            )
+            if _has_guard:
+                _rows_html.append(
+                    '<tr>'
+                    '<td style="padding:0.55rem 0.8rem;font-weight:600;">Guard vessel</td>'
+                    f'<td style="padding:0.55rem 0.8rem;text-align:center;">{_m1(_gv_height_cm)}</td>'
+                    f'<td style="padding:0.55rem 0.8rem;text-align:center;">{_m1(_gv_dia_cm)}</td>'
+                    f'<td style="padding:0.55rem 0.8rem;text-align:center;">{_ton_str(_gv_mass_kg)}</td>'
+                    '</tr>'
+                )
+            else:
+                _rows_html.append(
+                    '<tr>'
+                    '<td style="padding:0.55rem 0.8rem;font-weight:600;color:#94a3b8;">Guard vessel</td>'
+                    '<td style="padding:0.55rem 0.8rem;text-align:center;color:#94a3b8;" colspan="3">N/A — not used for this reactor type</td>'
+                    '</tr>'
+                )
+            _rows_html.append(
+                '<tr style="background:#fafafa;">'
+                '<td style="padding:0.55rem 0.8rem;font-weight:600;">RVACS (cooling + intake vessels)</td>'
+                f'<td style="padding:0.55rem 0.8rem;text-align:center;">{_m1(_rvacs_height_cm)}</td>'
+                f'<td style="padding:0.55rem 0.8rem;text-align:center;">{_m1(_rvacs_dia_cm)}</td>'
+                f'<td style="padding:0.55rem 0.8rem;text-align:center;">{_ton_str(_rvacs_mass_kg)}</td>'
+                '</tr>'
+            )
+
+            st.markdown(
+                '<div style="margin-bottom:0.9rem;">'
+                '<table style="width:100%;border-collapse:collapse;font-size:0.83rem;'
+                'border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">'
+                '<thead style="background:#f1f5f9;">'
+                '<tr>'
+                '<th style="padding:0.6rem 0.8rem;text-align:left;font-size:0.72rem;'
+                'text-transform:uppercase;letter-spacing:0.06em;color:#475569;">Component</th>'
+                '<th style="padding:0.6rem 0.8rem;text-align:center;font-size:0.72rem;'
+                'text-transform:uppercase;letter-spacing:0.06em;color:#475569;">Height</th>'
+                '<th style="padding:0.6rem 0.8rem;text-align:center;font-size:0.72rem;'
+                'text-transform:uppercase;letter-spacing:0.06em;color:#475569;">Diameter</th>'
+                '<th style="padding:0.6rem 0.8rem;text-align:center;font-size:0.72rem;'
+                'text-transform:uppercase;letter-spacing:0.06em;color:#475569;">Mass (dry, no coolant)</th>'
+                '</tr></thead><tbody>'
+                + ''.join(_rows_html) +
+                '</tbody></table>'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+
+            # ── Transport-mode dimensional limits + badges ──
+            # Limits & references
+            _modes = [
+                {
+                    'name': 'US road, no permit',
+                    'width_m':  2.59,   # 8.5 ft
+                    'height_m': 4.11,   # 13.5 ft (state-varying)
+                    'length_m': None,   # length rarely binding for a vessel module
+                    'weight_t': 36.3,   # 80,000 lb GVW
+                    'cite_html': (
+                        'Federal Bridge Formula — '
+                        '<a href="https://www.law.cornell.edu/uscode/text/23/127" '
+                        'target="_blank" style="color:#2563eb;">23 U.S.C. § 127</a>; '
+                        'FHWA "Federal Size Regulations for Commercial Motor Vehicles". '
+                        'State-by-state variations may permit larger envelopes on '
+                        'non-Interstate routes.'
+                    ),
+                },
+                {
+                    'name': 'US rail, AAR Plate F',
+                    'width_m':  5.18,
+                    'height_m': 5.18,
+                    'length_m': None,
+                    'weight_t': 130.0,  # 286,000 lb gross car weight
+                    'cite_html': (
+                        'AAR Manual of Standards & Recommended Practices §C-II '
+                        '"Plate Drawings"; AAR Open Top Loading Rules. '
+                        'Plate F is the standard high-clearance envelope for '
+                        'oversized industrial cargo.'
+                    ),
+                },
+                {
+                    'name': '40 ft ISO HC sea container',
+                    'width_m':  2.352,  # internal
+                    'height_m': 2.700,  # internal
+                    'length_m': 12.032, # internal
+                    'weight_t': 30.5,
+                    'cite_html': (
+                        'ISO 668:2020 "Series 1 freight containers — Classification, '
+                        'dimensions and ratings"; ISO 1496-1:2013 "Specification '
+                        'and testing — Part 1: General-cargo containers".'
+                    ),
+                },
+            ]
+
+            # Compare RVACS envelope to each mode's dimensional limits.
+            # Weight is not compared because no total mass is rolled up here.
+            _rvacs_dia_m = _rvacs_dia_cm / 100.0
+            _rvacs_h_m   = _rvacs_height_cm / 100.0
+
+            _mode_cards_html = []
+            for _mode in _modes:
+                _w_ok = _rvacs_dia_m <= _mode['width_m']
+                _h_ok = _rvacs_h_m   <= _mode['height_m']
+                _len_ok = (_mode['length_m'] is None) or (_rvacs_h_m <= _mode['length_m'])
+                _fits = _w_ok and _h_ok and _len_ok
+                _badge_color = ('#15803d', '#dcfce7', '#bbf7d0') if _fits else ('#b91c1c', '#fee2e2', '#fecaca')
+                _badge_text  = '✓ fits envelope' if _fits else '✗ exceeds envelope'
+                _len_str = (f' &nbsp;|&nbsp; length ≤ {_mode["length_m"]:.2f} m'
+                            if _mode['length_m'] is not None else '')
+                _mode_cards_html.append(
+                    '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;'
+                    'padding:0.85rem 1.1rem;margin-bottom:0.6rem;">'
+                    '<div style="display:flex;justify-content:space-between;align-items:center;'
+                    'margin-bottom:0.35rem;">'
+                    f'<div style="font-weight:700;font-size:0.86rem;color:#1e293b;">{_mode["name"]}</div>'
+                    f'<div style="background:{_badge_color[1]};border:1px solid {_badge_color[2]};'
+                    f'color:{_badge_color[0]};font-size:0.72rem;font-weight:700;'
+                    f'padding:0.15rem 0.6rem;border-radius:6px;">{_badge_text}</div>'
+                    '</div>'
+                    f'<div style="font-size:0.78rem;color:#475569;margin-bottom:0.3rem;">'
+                    f'width ≤ {_mode["width_m"]:.2f} m &nbsp;|&nbsp; '
+                    f'height ≤ {_mode["height_m"]:.2f} m &nbsp;|&nbsp; '
+                    f'weight ≤ {_mode["weight_t"]:.1f} ton{_len_str}'
+                    f'</div>'
+                    f'<div style="font-size:0.72rem;color:#64748b;line-height:1.4;">{_mode["cite_html"]}</div>'
+                    '</div>'
+                )
+
+            st.markdown(''.join(_mode_cards_html), unsafe_allow_html=True)
+
+            # Footnote — what each badge does and doesn't check
+            st.markdown(
+                '<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;'
+                'padding:0.65rem 1rem;margin-bottom:1rem;font-size:0.74rem;line-height:1.45;color:#7c2d12;">'
+                '<strong>Note:</strong> Each badge compares the outermost RVACS envelope '
+                '(diameter and height) against the mode\'s dimensional limit. Weight is not '
+                'rolled up across components in this section, so a weight check is not part '
+                'of the badge logic — see the per-component mass column for the dry-mass '
+                'breakdown. Top closure dome and bottom dish are not currently modeled in '
+                'MOUSE, so the height values are slight underestimates.'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+
             st.markdown(
                 '<div style="font-size:0.7rem;font-weight:700;color:#64748b;text-transform:uppercase;'
                 'letter-spacing:0.09em;margin-bottom:0.6rem;">Capital Costs</div>',
