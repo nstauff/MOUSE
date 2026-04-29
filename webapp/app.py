@@ -2889,7 +2889,6 @@ with streamlit_analytics.track():
             _s_arr = np.nan_to_num(_s_arr, nan=0.0)
 
         if _u_arr.size >= 2:
-            from scipy.interpolate import make_interp_spline
             from matplotlib.patches import Patch as _Patch
 
             # Reactor-type-specific palette (matches the existing
@@ -2908,13 +2907,14 @@ with streamlit_analytics.track():
 
             _fig, _ax = plt.subplots(figsize=(11, 5.8))
 
-            # Smooth interpolation over the sweep points
+            # Plain linear interpolation between the anchor points —
+            # no spline, no overshoot.  np.interp gives straight line
+            # segments between consecutive anchors, which is the
+            # honest representation when we only have 2-3 anchors.
             try:
                 _x_smooth = np.linspace(_u_arr.min(), _u_arr.max(), 300)
-                _spl_m = make_interp_spline(_u_arr, _m_arr, k=min(3, len(_u_arr) - 1))
-                _spl_s = make_interp_spline(_u_arr, _s_arr, k=min(3, len(_u_arr) - 1))
-                _m_smooth = _spl_m(_x_smooth)
-                _s_smooth = _spl_s(_x_smooth)
+                _m_smooth = np.interp(_x_smooth, _u_arr, _m_arr)
+                _s_smooth = np.interp(_x_smooth, _u_arr, _s_arr)
             except Exception:
                 _x_smooth = _u_arr
                 _m_smooth = _m_arr
