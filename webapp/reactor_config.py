@@ -770,22 +770,32 @@ def _build_hpmr(params):
                                + 1.4 * params['Fuel Pin Radii'][-1]) * np.sqrt(3))
     params['hexagonal Core Edge Length'] = ((params['Assembly FTF'] * (params['Number of Rings per Core'] - 1))
                                             + (params['Assembly FTF'] / 2) + 6.6)
-    params['Radial Reflector Thickness'] = 50
-    params['Core Radius'] = (0.5 * np.sqrt(3) * params['hexagonal Core Edge Length']
-                             + params['Radial Reflector Thickness'])
-    params['Axial Reflector Thickness'] = params['Radial Reflector Thickness']
+    # NOTE: Radial Reflector Thickness, Core Radius, and Axial
+    # Reflector Thickness are NOT set here.  They are auto-resolved
+    # in calculate_drums_volumes_and_masses (Sec 3) so the reflector
+    # grows just enough to fully enclose the drums for any N_C.
+    # Hardcoding the reflector at 50 cm caused drums to stick out of
+    # the core for N_C ≥ 5 — the HPMR DRUM RADIUS ERROR.
     params['Fuel Pin Count per Assembly'] = calculate_number_fuel_elements_hpmr(params['Number of Rings per Assembly'])
     params['Fuel Assemblies Count'] = ((3 * params['Number of Rings per Core'] ** 2)
                                        - (3 * params['Number of Rings per Core']))
     params['Fuel Pin Count'] = params['Fuel Assemblies Count'] * params['Fuel Pin Count per Assembly']
     number_of_heatpipes_hmpr(params)
 
-    # Sec 3: Control drums
+    # Sec 3: Control drums.  Drum Radius fixed at 20 cm (matches the
+    # value the example file produces from 0.4 × 50 cm reflector).
+    # Radial Reflector Thickness, Core Radius, Axial Reflector
+    # Thickness, and Drum Height are all auto-resolved inside
+    # calculate_drums_volumes_and_masses (HPMR auto-resolve block):
+    #   reflector = cd_distance + drum_radius − hex_apothem
+    #   core_R    = hex_apothem + reflector
+    #   axial_R   = reflector
+    #   drum_H    = active_H + 2 × axial_R
+    # so drums always fit by construction.
     params.update({
-        'Drum Count': 12,   # allowed: 6, 12, 18, 24
-        'Drum Radius': 0.4 * params['Radial Reflector Thickness'],
+        'Drum Count': 12,         # allowed: 6, 12, 18, 24
+        'Drum Radius': 20.0,      # cm
         'Drum Absorber Thickness': 1,
-        'Drum Height': params['Active Height'],
     })
     calculate_drums_volumes_and_masses(params)
     calculate_reflector_and_moderator_mass_HPMR(params)
