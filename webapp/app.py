@@ -1898,7 +1898,7 @@ with streamlit_analytics.track():
     # compute block in tab_design (via _fuel_card with a section= tag),
     # then dispatched to the right tab when rendered.
     # 3 = "How much fuel and how long does it last?" → Tab A
-    # 4 = "How does the neutronics look?" → Tab B
+    # 4 = "Core neutronics at glance" → Tab B
     # 5 = "What are the thermal-hydraulic conditions?" → Tab B
     _section_cards = {3: [], 4: [], 5: []}
 
@@ -3856,7 +3856,7 @@ with streamlit_analytics.track():
 
     # ═══════════════════════════════════════════════════════════════
     # TAB 2 PHYSICS & THERMAL
-    # Sections 4-5: How does the neutronics look? · What are the
+    # Sections 4-5: Core neutronics at glance · What are the
     # thermal-hydraulic conditions? (Section 6 Transportability 
     # is rendered in the Design & Economics tab.)
     # ═══════════════════════════════════════════════════════════════
@@ -3866,7 +3866,7 @@ with streamlit_analytics.track():
             '<div style="font-size:1.05rem;font-weight:800;color:#1B4F8C;'
             'border-left:4px solid #1B4F8C;padding:0.4rem 0 0.4rem 0.75rem;'
             'margin:0.5rem 0 0.85rem 0;">'
-            'How does the neutronics look?</div>',
+            'Core neutronics at glance</div>',
             unsafe_allow_html=True,
         )
         st.markdown(
