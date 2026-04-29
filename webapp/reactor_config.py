@@ -26,6 +26,7 @@ from core_design.utils import (
     calculate_heat_flux_TRISO,
     calculate_number_fuel_elements_hpmr,
     number_of_heatpipes_hmpr,
+    calculate_total_number_of_TRISO_particles,
 )
 from core_design.drums import (
     calculate_drums_volumes_and_masses,
@@ -479,6 +480,12 @@ def _build_gcmr(params):
         'Lattice Pitch': 2.25,
     })
     params['Assembly FTF'] = params['Lattice Pitch'] * (params['Assembly Rings'] - 1) * np.sqrt(3)
+
+    # Compute the per-compact and total TRISO particle counts so the
+    # webapp's materials section can show them.  Uses Compact Fuel
+    # Radius, Active Height, Fuel Pin Radii (TRISO outer), Packing
+    # Fraction, Assembly Rings, Core Rings — all set above.
+    calculate_total_number_of_TRISO_particles(params)
 
     # Sec 3: Control drums — GCMR auto-resolution sets Drum Radius,
     # Radial Reflector Thickness, Core Radius, Drum Height inside

@@ -972,6 +972,15 @@ def _materials_section(reactor_type, params):
             rows.append(('Number of moderator pins',
                          f"{int(params['Moderator Pin Count']):,}"))
 
+    # GCMR-specific TRISO details
+    if reactor_type == 'GCMR':
+        if 'Packing Fraction' in params:
+            _pf = float(params['Packing Fraction']) * 100.0
+            rows.append(('TRISO packing fraction', f"{_pf:.1f} %"))
+        if 'Total Number of TRISO Particles' in params:
+            _ntot = int(params['Total Number of TRISO Particles'])
+            rows.append(('Total TRISO particles', f"{_ntot:,}"))
+
     body = ''.join(
         f'<tr>'
         f'<td style="padding:0.32rem 1rem 0.32rem 0;color:#475569;font-weight:600;'
@@ -2269,8 +2278,9 @@ with streamlit_analytics.track():
                             accent='#0e7490', bg='#ecfeff', border='#a5f3fc',
                         )
 
-                # Coolant mass flow rate — only meaningful for LTMR (NaK).
-                # GCMR uses helium gas; HPMR uses heat pipes (no flow).
+                # Coolant mass flow rate + primary-loop power fraction.
+                # LTMR: NaK pump.  GCMR: He compressor.  HPMR: heat
+                # pipes (no flow, no card).
                 if reactor_type == 'LTMR':
                     _mdot = float(params.get('Coolant Mass Flow Rate', 0.0))
                     if _mdot > 0:
@@ -2303,6 +2313,59 @@ with streamlit_analytics.track():
                              'values indicate an aggressively-loaded loop or '
                              'oversized core, lower values suggest natural-'
                              'circulation-dominated cooling.'),
+                            accent='#0e7490', bg='#ecfeff', border='#a5f3fc',
+                        )
+
+                elif reactor_type == 'GCMR':
+                    # Coolant Mass Flow Rate is set by mass_flow_rate()
+                    # in tools.py and represents the TOTAL helium flow
+                    # across all primary loops (loop_factor adjustment
+                    # already applied).  ΔT is 250 °C for the GCMR
+                    # configuration (300 → 550 °C).
+                    _mdot_gcmr = float(params.get('Coolant Mass Flow Rate', 0.0))
+                    if _mdot_gcmr > 0:
+                        _fuel_card(
+                            'Coolant mass flow rate',
+                            f'{_mdot_gcmr:,.2f} kg/s',
+                            ('Primary-coolant (helium) mass flow rate, total '
+                             'across all primary loops. Computed by '
+                             'tools.mass_flow_rate as '
+                             'm_dot = Power_MWt × 10⁶ / (ΔT × c_p) per loop, '
+                             'then ÷ loop_factor to get the reactor total. '
+                             'GCMR uses a fixed ΔT = 250 °C across the core '
+                             '(T_in 300 → T_out 550 °C) and the c_p of He '
+                             '(~5193 J/(kg·K)). Helium\'s low density makes '
+                             'these values much smaller than liquid-metal '
+                             'flows — typically 1–10 kg/s for a 1–20 MWt '
+                             'GCMR. Sets compressor and PCHE sizing.'),
+                            accent='#0e7490', bg='#ecfeff', border='#a5f3fc',
+                        )
+
+                    # Primary Loop Compressor Power is the per-loop
+                    # power in W (compressor_power in tools.py uses
+                    # Primary Loop Mass Flow Rate, which is per-loop).
+                    # Multiply by Primary Loop Count (2 for GCMR) to
+                    # get the total compressor power, then express as
+                    # a fraction of gross electric output.
+                    _comp_w_per_loop = float(params.get('Primary Loop Compressor Power', 0.0))
+                    _n_loops = float(params.get('Primary Loop Count', 1))
+                    _comp_kW_total = (_comp_w_per_loop * _n_loops) / 1000.0
+                    if _comp_kW_total > 0 and _mwe > 0:
+                        _comp_pct = 100.0 * _comp_kW_total / (_mwe * 1000.0)
+                        _fuel_card(
+                            'Primary compressor fraction',
+                            f'{_comp_pct:,.2f} %  ({_comp_kW_total:,.0f} kW total)',
+                            ('Primary-loop helium-compressor mechanical power '
+                             'as a fraction of gross electric output. '
+                             'Computed from P_per_loop = Δp · m_dot_per_loop '
+                             '/ (η · ρ_He) using ρ_He = 3.33 kg/m³ '
+                             '(He at 4 MPa, 300 °C), Δp = 50 kPa, η_isentropic '
+                             '= 0.8, then multiplied by Primary Loop Count '
+                             '(=2 for GCMR) to get the total. Typical GCMR '
+                             'compressor fractions are 2–6 % — higher than '
+                             'liquid-metal pumps because helium\'s low '
+                             'density needs more volumetric flow per unit '
+                             'thermal power.'),
                             accent='#0e7490', bg='#ecfeff', border='#a5f3fc',
                         )
 
