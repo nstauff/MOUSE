@@ -1243,19 +1243,33 @@ with streamlit_analytics.track():
 
         _log_visit_once_per_session(analytics_conn, anonymous_id, reactor_type=reactor_type, page_name='main')
 
+        # Per-reactor enrichment floor.  HPMR parametric study covers
+        # E in [0.10, 0.1975], so 10% is the lowest data-validated
+        # value.  We expose 8% as the floor — the 8 → 10% strip lets
+        # users explicitly see the subcritical region (extrapolated
+        # from training, which has subcritical rows at 10% for the
+        # smaller cores).  LTMR / GCMR keep their data-validated 5%.
+        _enrichment_min = {'LTMR': 0.05, 'GCMR': 0.05, 'HPMR': 0.08}
+        _e_min = _enrichment_min.get(reactor_type, 0.05)
+        # Clamp the default to the per-reactor min in case a previous
+        # session left a lower value cached.
+        _e_default = max(_e_min, 0.1975)
         enrichment = st.slider(
             'Enrichment (U-235 fraction)',
-            min_value=0.05,
+            min_value=_e_min,
             max_value=0.1975,
-            value=0.1975,
+            value=_e_default,
             step=0.0025,
             format='%.4f',
-            help='U-235 enrichment fraction. Affects uranium masses and fuel lifetime via interpolation.',
+            key=f'enrichment_{reactor_type}',
+            help=('U-235 enrichment fraction. Affects uranium masses and '
+                  'fuel lifetime via interpolation.  Range tied to each '
+                  'reactor\'s parametric study coverage.'),
         )
         st.caption(f'{enrichment * 100:.2f}% enriched')
 
-        _power_defaults = {'LTMR': 20, 'GCMR': 15, 'HPMR': 7}
-        _power_max = {'LTMR': 64, 'GCMR': 50, 'HPMR': 7}
+        _power_defaults = {'LTMR': 20, 'GCMR': 15, 'HPMR': 5}
+        _power_max = {'LTMR': 64, 'GCMR': 50, 'HPMR': 60}
 
         power_mwt = st.slider(
             'Thermal Power (MWt)',
