@@ -45,10 +45,27 @@ import pandas as pd
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _XLSX_PATH = _REPO_ROOT / 'assets' / 'Ref_Results' / 'GCMR_parametric_size_power_enrichment.xlsx'
 _CSV_PATH  = _REPO_ROOT / 'assets' / 'Ref_Results' / '_gcmr_subcritical_cases.csv'
-_SHEET     = 'Merged Data'
+# Try the new sheet name first ('Merged'), then fall back to the old
+# one ('Merged Data') used in the pre-update file.
+_SHEET_CANDIDATES = ('Merged', 'Merged Data')
 
 _KEY_COLS = ['Assembly Rings', 'Core Rings', 'Active Height',
              'Enrichment', 'Power MWt']
+
+
+def _resolve_sheet_name(xlsx_path):
+    """Return the first matching sheet name from _SHEET_CANDIDATES."""
+    import openpyxl
+    wb = openpyxl.load_workbook(xlsx_path, read_only=True)
+    sheets = wb.sheetnames
+    wb.close()
+    for cand in _SHEET_CANDIDATES:
+        if cand in sheets:
+            return cand
+    sys.exit(
+        f'ERROR: none of {_SHEET_CANDIDATES} found in {xlsx_path}. '
+        f'Sheets present: {sheets}'
+    )
 
 
 def extract(src_path=None):
@@ -63,7 +80,9 @@ def extract(src_path=None):
         sys.exit(f'ERROR: {src} not found.')
 
     print(f'Reading: {src}')
-    df = pd.read_excel(src, sheet_name=_SHEET, engine='openpyxl')
+    sheet = _resolve_sheet_name(src)
+    df = pd.read_excel(src, sheet_name=sheet, engine='openpyxl')
+    print(f'Sheet: {sheet}')
     if 'Fuel Lifetime' not in df.columns:
         sys.exit("ERROR: 'Fuel Lifetime' column not found in the sheet.")
 
@@ -90,7 +109,9 @@ def merge():
         sys.exit(f'ERROR: {_XLSX_PATH} not found.')
 
     saved = pd.read_csv(_CSV_PATH)
-    df = pd.read_excel(_XLSX_PATH, sheet_name=_SHEET, engine='openpyxl')
+    sheet = _resolve_sheet_name(_XLSX_PATH)
+    df = pd.read_excel(_XLSX_PATH, sheet_name=sheet, engine='openpyxl')
+    print(f'Target sheet: {sheet}')
 
     # Find which (NA, NC, H, E, P) configurations the new file is
     # missing — those are the ones we need to re-inject.
@@ -124,9 +145,9 @@ def merge():
     # Write back, preserving any other sheets in the workbook.
     with pd.ExcelWriter(_XLSX_PATH, engine='openpyxl', mode='a',
                         if_sheet_exists='replace') as writer:
-        merged.to_excel(writer, sheet_name=_SHEET, index=False)
+        merged.to_excel(writer, sheet_name=sheet, index=False)
 
-    print(f'\nWrote {len(merged)} total rows to {_SHEET} in:')
+    print(f'\nWrote {len(merged)} total rows to {sheet!r} in:')
     print(f'  {_XLSX_PATH}')
     print(f'  ({len(df)} from updated file + {len(new_rows)} re-injected)')
 

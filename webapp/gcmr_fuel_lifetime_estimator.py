@@ -43,6 +43,25 @@ _XLSX_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     'assets', 'Ref_Results', 'GCMR_parametric_size_power_enrichment.xlsx',
 )
+# Sheet name candidates — pre-update files used 'Merged Data', the
+# k_eff-update version (April 2026) uses 'Merged'.
+_SHEET_CANDIDATES = ('Merged', 'Merged Data')
+
+
+def _resolve_sheet_name():
+    """Return the first sheet name in _SHEET_CANDIDATES that exists."""
+    import openpyxl
+    wb = openpyxl.load_workbook(_XLSX_PATH, read_only=True)
+    sheets = wb.sheetnames
+    wb.close()
+    for cand in _SHEET_CANDIDATES:
+        if cand in sheets:
+            return cand
+    raise RuntimeError(
+        f'GCMR parametric study: none of {_SHEET_CANDIDATES} found in '
+        f'{_XLSX_PATH} (sheets present: {sheets})'
+    )
+
 
 _K = 4          # nearest neighbours to use for local fit
 
@@ -73,7 +92,7 @@ def _load():
     if _train_df is not None:
         return
 
-    df = pd.read_excel(_XLSX_PATH, sheet_name='Merged Data', engine='openpyxl')
+    df = pd.read_excel(_XLSX_PATH, sheet_name=_resolve_sheet_name(), engine='openpyxl')
     df = df[['Assembly Rings', 'Core Rings', 'Active Height',
              'Enrichment', 'Power MWt', 'Fuel Lifetime']].copy()
     df.columns = ['NA', 'NC', 'H', 'E', 'P', 'LT']
@@ -177,7 +196,7 @@ def _gcmr_knn_scalar(column_name, assembly_rings, core_rings, active_height,
 
     df = _train_df.copy()
     if column_name not in df.columns:
-        full = pd.read_excel(_XLSX_PATH, sheet_name='Merged Data',
+        full = pd.read_excel(_XLSX_PATH, sheet_name=_resolve_sheet_name(),
                              engine='openpyxl')
         df[column_name] = full[column_name].values
         _train_df[column_name] = df[column_name]
