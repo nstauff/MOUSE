@@ -2757,9 +2757,9 @@ with streamlit_analytics.track():
         st.markdown(
             '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;'
             'padding:0.85rem 1.1rem;margin-bottom:0.9rem;font-size:0.82rem;line-height:1.45;color:#334155;">'
-            'The curve is anchored at five deployment scales: N=1 (FOAK from the headline '
-            'card), N=2, N=10, N=30 (three extra cost-engine calls, cached), and N=user-set '
-            'NOAK Unit Number (default 100, NOAK from the headline card). The shaded band '
+            'The curve is anchored at four deployment scales: N=1 (FOAK from the headline '
+            'card), N=2, N=10 (two extra cost-engine calls, cached), and N=user-set NOAK '
+            'Unit Number (default 100, NOAK from the headline card). The shaded band '
             'reflects the one-sigma uncertainty around each anchor and is connected '
             'piecewise-linearly between them. Overlaid against seven US-relevant '
             'electricity-market price ranges to indicate where the reactor would be '
@@ -2781,7 +2781,7 @@ with streamlit_analytics.track():
         # Compute intermediate anchors at N = 2, 10, 30 (each is one
         # cost-engine call, cached on inputs).  Each call uses the
         # same extraction path as the headline.
-        _N_mids = [2, 10, 30]
+        _N_mids = [2, 10]
         _mid_results = {}  # N -> (mean, std)
 
         # Big, unmissable loading banner shown ONLY during the
@@ -3168,10 +3168,17 @@ with streamlit_analytics.track():
             _state_codes = [s for s, _ in _sorted]
             _state_vals  = [v for _, v in _sorted]
 
-            # Competitiveness thresholds (use upper edge of std bands
-            # for the conservative "wins" call).
-            _foak_top = _foak_m_btm + _foak_s_btm
-            _noak_top = _noak_m_btm + _noak_s_btm
+            # Competitiveness thresholds: use the LOWER edge of each
+            # uncertainty band so any state whose retail price falls
+            # inside the FOAK or NOAK band counts as competitive.
+            #   - State price >= FOAK_low -> green (potentially wins
+            #     even at FOAK; price intersects or exceeds the FOAK
+            #     band)
+            #   - State price >= NOAK_low -> yellow (potentially wins
+            #     at NOAK; price intersects or exceeds the NOAK band)
+            #   - State price <  NOAK_low -> gray (clearly loses)
+            _foak_low = _foak_m_btm - _foak_s_btm
+            _noak_low = _noak_m_btm - _noak_s_btm
 
             # Per-state classification + bar colors
             _GREEN  = '#16a34a'
@@ -3180,11 +3187,11 @@ with streamlit_analytics.track():
             _bar_colors = []
             _foak_winners, _noak_winners = [], []
             for s, v in _sorted:
-                if v >= _foak_top:
+                if v >= _foak_low:
                     _bar_colors.append(_GREEN)
                     _foak_winners.append(s)
                     _noak_winners.append(s)
-                elif v >= _noak_top:
+                elif v >= _noak_low:
                     _bar_colors.append(_YELLOW)
                     _noak_winners.append(s)
                 else:
@@ -3213,8 +3220,6 @@ with streamlit_analytics.track():
                             linewidth=1.8, linestyle='--', zorder=2,
                             label=f'NOAK LCOE ${_noak_m_btm:.0f}/MWh')
 
-            import matplotlib.patheffects as _pe
-
             # Y-axis must accommodate the FOAK and NOAK reference
             # bands even when they exceed the highest state retail
             # price (e.g. high-power FOAK at $800+/MWh against a
@@ -3228,27 +3233,33 @@ with streamlit_analytics.track():
             _ymax_chart = _band_top_btm * 1.18
 
             # Place full state name vertically OVERLAPPING each
-            # column.  Anchor the text just above the x-axis (small
-            # positive y offset so it doesn't collide with the
-            # baseline) and extend UPWARD into the column body
-            # (rotation=90, va='bottom') so the name reads
-            # bottom-to-top.  For long names ("Massachusetts",
-            # "North Carolina"), the text extends above the column
-            # top into the white plot background — still legible
-            # thanks to the white-halo path_effect.
+            # column.  Anchor just above the x-axis (small positive
+            # offset so the label doesn't collide with the baseline)
+            # and extend UPWARD with rotation=90 / va='bottom' so the
+            # name reads bottom-to-top.  Each label gets a dark-blue
+            # rounded-rectangle bbox with WHITE bold text — much
+            # higher contrast than the previous dark-on-light-with-
+            # halo approach.  Long names ("Massachusetts", "North
+            # Carolina") that exceed the column top extend into the
+            # white plot background; the blue pill keeps them
+            # crisply legible there too.
             _baseline_offset = _ymax_chart * 0.015
+            _label_bbox = dict(
+                facecolor='#1e3a8a',   # deep navy blue
+                edgecolor='none',
+                pad=2.2,
+                boxstyle='round,pad=0.18',
+            )
             for _i, (_code, _val) in enumerate(zip(_state_codes, _state_vals)):
                 _full_name = _STATE_FULL_NAMES.get(_code, _code)
-                _t = _ax_btm.text(
+                _ax_btm.text(
                     _i, _baseline_offset, _full_name,
                     rotation=90, ha='center', va='bottom',
-                    fontsize=9, fontweight='bold',
-                    color='#0f172a',  # near-black slate
+                    fontsize=10.5, fontweight='bold',
+                    color='white',
+                    bbox=_label_bbox,
                     zorder=4,
                 )
-                _t.set_path_effects([
-                    _pe.withStroke(linewidth=2.6, foreground='white'),
-                ])
 
             _ax_btm.set_xticks([])  # state names are on the columns themselves
             _ax_btm.set_xlim(-0.7, len(_state_codes) - 0.3)
