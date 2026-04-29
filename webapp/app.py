@@ -2681,22 +2681,51 @@ with streamlit_analytics.track():
             unsafe_allow_html=True,
         )
 
-        with st.spinner('Computing LCOE across deployment scales…'):
-            try:
-                _units, _means, _stds = _run_lcoe_sweep(
-                    reactor_type, power_mwt, enrichment,
-                    interest_rate, discount_rate, construction_duration,
-                    debt_to_equity, operation_mode, emergency_shutdowns,
-                    startup_duration, startup_duration_refueling,
-                    tax_credit_type, tax_credit_value, plant_lifetime,
-                    n_rings_per_assembly=n_rings_per_assembly,
-                    active_height=active_height,
-                    n_assembly_rings=n_assembly_rings,
-                    n_core_rings=n_core_rings,
-                )
-            except Exception as _e:
-                _units, _means, _stds = [], [], []
-                st.warning(f'Could not compute LCOE sweep: {_e}')
+        # Use the already-computed headline FOAK and NOAK LCOE values
+        # (from _run_estimate, cached) and analytically interpolate
+        # along the learning curve.  MOUSE's learning curve is
+        #     LCOE(N) = LCOE_FOAK · (1 − r)^log2(N)
+        # which is log-linear in log2(N).  Given two anchor points —
+        # FOAK at N=1 and NOAK at N=N_user — every intermediate point
+        # is determined by exact interpolation, with no extra cost-
+        # engine calls:
+        #     LCOE(N) = LCOE_FOAK · (LCOE_NOAK / LCOE_FOAK) ^
+        #               (log2(N) / log2(N_user))
+        # std deviations interpolated identically (geometric form).
+        _units = list((1, 5, 20, 50, 100))
+        _N_user = float(params.get('NOAK Unit Number', 100))
+        try:
+            _foak_lcoe = float(lcoe_f)
+            _noak_lcoe = float(lcoe_n)
+            _foak_std  = float(lcoe_f_std) if lcoe_f_std == lcoe_f_std else 0.0
+            _noak_std  = float(lcoe_n_std) if lcoe_n_std == lcoe_n_std else 0.0
+        except (TypeError, ValueError):
+            _foak_lcoe = _noak_lcoe = float('nan')
+            _foak_std  = _noak_std  = 0.0
+
+        _means, _stds = [], []
+        if (_foak_lcoe == _foak_lcoe and _noak_lcoe == _noak_lcoe
+                and _foak_lcoe > 0 and _noak_lcoe > 0 and _N_user > 1):
+            import math as _mm
+            _denom = _mm.log2(_N_user)
+            for _N in _units:
+                _N = float(_N)
+                if _N <= 1:
+                    _means.append(_foak_lcoe)
+                    _stds.append(_foak_std)
+                    continue
+                _alpha = _mm.log2(_N) / _denom
+                _m = _foak_lcoe * ((_noak_lcoe / _foak_lcoe) ** _alpha)
+                # std interpolated geometrically the same way
+                if _foak_std > 0 and _noak_std > 0:
+                    _s = _foak_std * ((_noak_std / _foak_std) ** _alpha)
+                else:
+                    _s = (1.0 - _alpha) * _foak_std + _alpha * _noak_std
+                _means.append(_m)
+                _stds.append(_s)
+        else:
+            _means = [float('nan')] * len(_units)
+            _stds  = [float('nan')] * len(_units)
 
         # ── Diagnostic dump (always visible) so we can debug ──────────
         # Print the raw sweep results in a fixed-width panel.  This
