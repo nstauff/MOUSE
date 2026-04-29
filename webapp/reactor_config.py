@@ -367,14 +367,14 @@ def _build_ltmr(params):
     calculate_shielding_masses(params)
 
     # Sec 9: Operation
+    # Note: Operation Mode, Emergency Shutdowns Per Year, Startup Duration
+    # after Refueling, and Startup Duration after Emergency Shutdown are
+    # all controlled by the user via the webapp UI (see _run_estimate in
+    # app.py) — they are intentionally not set here.
     params.update({
-        'Operation Mode': 'Autonomous',
         'Number of Operators': 2,
         'Levelization Period': 60,
         'Refueling Period': 7,
-        'Emergency Shutdowns Per Year': 0.2,
-        'Startup Duration after Refueling': 2,
-        'Startup Duration after Emergency Shutdown': 14,
         'Reactors Monitored Per Operator': 10,
         'Security Staff Per Shift': 1,
     })
@@ -449,7 +449,7 @@ def _build_gcmr(params):
     params.update({
         'reactor type': 'GCMR',
         'TRISO Fueled': 'Yes',
-        'Fuel': 'UN',
+        'Fuel': 'UCO',
         'UO2 atom fraction': 0.7,
         'Radial Reflector': 'Graphite',
         'Axial Reflector': 'Graphite',
@@ -466,8 +466,8 @@ def _build_gcmr(params):
     # Sec 2: Geometry
     # 'Assembly Rings', 'Core Rings', 'Active Height' come from build_params.
     params.update({
-        'Fuel Pin Materials': ['UN', 'buffer_graphite', 'PyC', 'SiC', 'PyC'],
-        'Fuel Pin Radii': [0.025, 0.035, 0.039, 0.0425, 0.047],
+        'Fuel Pin Materials': ['UCO', 'buffer_graphite', 'PyC', 'SiC', 'PyC'],
+        'Fuel Pin Radii': [0.0250, 0.0350, 0.0390, 0.0425, 0.0465],  # cm — INL ART TRISO Fuel training (2019)
         'Compact Fuel Radius': 0.6225,
         'Packing Fraction': 0.3,
         'Coolant Channel Radius': 0.35,
@@ -640,16 +640,22 @@ def _build_gcmr(params):
     calculate_shielding_masses(params)
 
     # Sec 9: Operation
+    # Note: Operation Mode, Emergency Shutdowns Per Year, Startup Duration
+    # after Refueling, and Startup Duration after Emergency Shutdown are
+    # all controlled by the user via the webapp UI (see _run_estimate in
+    # app.py) — they are intentionally not set here.
     params.update({
         'Number of Operators': 2,
         'Levelization Period': 60,
         'Refueling Period': 7,
-        'Startup Duration after Refueling': 2,
         'Reactors Monitored Per Operator': 10,
         'Security Staff Per Shift': 1,
     })
-    params['Onsite Coolant Inventory'] = 10 * 24.417 * 8.2402
-    params['Replacement Coolant Inventory'] = params['Onsite Coolant Inventory'] / 4
+    # Onsite He inventory: 3.3 kg/MWt (UNT 919556 tables 17 & 18).
+    # Replacement: He loss rate ~10%/year (National Academies 12844),
+    # so ~1/10 of initial inventory is replaced annually.
+    params['Onsite Coolant Inventory'] = 3.3 * params['Power MWt']
+    params['Replacement Coolant Inventory'] = params['Onsite Coolant Inventory'] / 10
     params['Annual Coolant Supply Frequency'] = 1 if params['Primary Loop Purification'] else 6
 
     total_refueling_period = (params['Fuel Lifetime'] + params['Refueling Period']
