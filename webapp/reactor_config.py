@@ -367,14 +367,18 @@ def _build_ltmr(params):
     calculate_shielding_masses(params)
 
     # Sec 9: Operation
-    # Note: Operation Mode, Emergency Shutdowns Per Year, Startup Duration
-    # after Refueling, and Startup Duration after Emergency Shutdown are
-    # all controlled by the user via the webapp UI (see _run_estimate in
-    # app.py) — they are intentionally not set here.
+    # Note: Operation Mode, Emergency Shutdowns Per Year, and Startup
+    # Duration after Emergency Shutdown are all controlled by the user
+    # via the webapp UI (see _run_estimate in app.py) — they are
+    # intentionally not set here.  'Startup Duration after Refueling'
+    # is also UI-controlled, but a default must be set here because the
+    # total_refueling_period calculation below runs before user_overrides
+    # are applied; the UI value still wins for downstream consumers.
     params.update({
         'Number of Operators': 2,
         'Levelization Period': 60,
         'Refueling Period': 7,
+        'Startup Duration after Refueling': 2,
         'Reactors Monitored Per Operator': 10,
         'Security Staff Per Shift': 1,
     })
@@ -640,14 +644,18 @@ def _build_gcmr(params):
     calculate_shielding_masses(params)
 
     # Sec 9: Operation
-    # Note: Operation Mode, Emergency Shutdowns Per Year, Startup Duration
-    # after Refueling, and Startup Duration after Emergency Shutdown are
-    # all controlled by the user via the webapp UI (see _run_estimate in
-    # app.py) — they are intentionally not set here.
+    # Note: Operation Mode, Emergency Shutdowns Per Year, and Startup
+    # Duration after Emergency Shutdown are all controlled by the user
+    # via the webapp UI (see _run_estimate in app.py) — they are
+    # intentionally not set here.  'Startup Duration after Refueling'
+    # is also UI-controlled, but a default must be set here because the
+    # total_refueling_period calculation below runs before user_overrides
+    # are applied; the UI value still wins for downstream consumers.
     params.update({
         'Number of Operators': 2,
         'Levelization Period': 60,
         'Refueling Period': 7,
+        'Startup Duration after Refueling': 2,
         'Reactors Monitored Per Operator': 10,
         'Security Staff Per Shift': 1,
     })
@@ -727,7 +735,7 @@ def _build_hpmr(params):
         'Radial Reflector': 'Graphite',
         'Axial Reflector': 'Graphite',
         'Moderator': 'monolith_graphite',
-        'Secondary Coolant': 'Helium',
+        'Coolant': 'Helium',
         'Control Drum Absorber': 'B4C_natural',
         'Control Drum Reflector': 'Graphite',
         'Cooling Device': 'heatpipe',
@@ -762,6 +770,7 @@ def _build_hpmr(params):
 
     # Sec 3: Control drums
     params.update({
+        'Drum Count': 12,   # allowed: 6, 12, 18, 24
         'Drum Radius': 0.4 * params['Radial Reflector Thickness'],
         'Drum Absorber Thickness': 1,
         'Drum Height': params['Active Height'],
@@ -889,6 +898,13 @@ def _build_hpmr(params):
     calculate_shielding_masses(params)
 
     # Sec 9: Operation
+    # Note: Operation Mode, Emergency Shutdowns Per Year, and Startup
+    # Duration after Emergency Shutdown are all controlled by the user
+    # via the webapp UI (see _run_estimate in app.py) — they are
+    # intentionally not set here.  'Startup Duration after Refueling'
+    # is also UI-controlled, but a default must be set here because the
+    # total_refueling_period calculation below runs before user_overrides
+    # are applied; the UI value still wins for downstream consumers.
     params.update({
         'Number of Operators': 2,
         'Levelization Period': 60,
@@ -897,9 +913,11 @@ def _build_hpmr(params):
         'Reactors Monitored Per Operator': 10,
         'Security Staff Per Shift': 1,
     })
-    params['Onsite Coolant Inventory'] = 1 * 24.417 * 8.2402
-    params['Replacement Coolant Inventory'] = params['Onsite Coolant Inventory'] / 4
-    params['Annual Coolant Supply Frequency'] = 1 if params['Primary Loop Purification'] else 6
+    # HPMR has no bulk primary coolant inventory: each heat pipe is
+    # individually sealed (Na in SS316), and the helium gap between
+    # fuel pin and heat pipe is extremely thin and can be neglected.
+    params['Onsite Coolant Inventory'] = 0
+    params['Replacement Coolant Inventory'] = 0
 
     total_refueling_period = (params['Fuel Lifetime'] + params['Refueling Period']
                               + params['Startup Duration after Refueling'])
