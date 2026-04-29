@@ -407,8 +407,35 @@ def _run_lcoe_sweep(reactor_type, power_mwt, enrichment, interest_rate, discount
                          n_core_rings=n_core_rings)
         raw_df = bottom_up_cost_estimate('cost/Cost_Database.xlsx', p)
         enriched_df, _ = cost_drivers_estimate(raw_df, p)
-        display_df = transform_dataframe(enriched_df)
-        m, s = _get_mean_std(display_df, lcoe_account, 'NOAK')
+        # Use the per-account LCOE columns ($/MWh) added by
+        # cost_drivers_estimate.  Summing across all per-account rows
+        # gives the total NOAK LCOE in clean $/MWh units, avoiding the
+        # column-name ambiguity in transform_dataframe / _get_mean_std.
+        # Filter to per-account rows only (not totals/summary rows)
+        # using the same mask the cost-drivers code uses.
+        _mask = enriched_df['Account'].apply(
+            is_double_digit_excluding_multiples_of_10
+        ) if 'Account' in enriched_df.columns else None
+        if _mask is None or not _mask.any():
+            means.append(float('nan'))
+            stds.append(float('nan'))
+            continue
+        _foak_or_noak_lcoe_col = 'NOAK LCOE'
+        _foak_or_noak_lcoe_std_col = 'NOAK LCOE_std'
+        if _foak_or_noak_lcoe_col not in enriched_df.columns:
+            means.append(float('nan'))
+            stds.append(float('nan'))
+            continue
+        _vals = pd.to_numeric(enriched_df.loc[_mask, _foak_or_noak_lcoe_col],
+                              errors='coerce')
+        m = float(_vals.sum(skipna=True))
+        if _foak_or_noak_lcoe_std_col in enriched_df.columns:
+            _stds = pd.to_numeric(enriched_df.loc[_mask, _foak_or_noak_lcoe_std_col],
+                                  errors='coerce')
+            # Combine std deviations in quadrature (independent accounts)
+            s = float(np.sqrt((_stds.dropna() ** 2).sum()))
+        else:
+            s = 0.0
         means.append(m)
         stds.append(s)
     return list(units_tuple), means, stds
