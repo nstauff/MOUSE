@@ -2228,67 +2228,128 @@ with streamlit_analytics.track():
                                  + float(params.get('Intake Vessel Mass', 0.0)))
 
             # ── Render component table ──
+            # Help-icon tooltips per row explain what's included in each
+            # component's mass/dimensions, and flag any missing-from-MOUSE
+            # items.  Explicit text colors throughout so the table is
+            # readable regardless of Streamlit theme.
+            _CELL = ('padding:0.55rem 0.8rem;color:#1e293b;'
+                     'border-bottom:1px solid #e2e8f0;')
+            _CELL_C = _CELL + 'text-align:center;'
+            _CELL_NAME = _CELL + 'font-weight:600;'
+
+            def _help_icon(tooltip_text):
+                _safe = tooltip_text.replace('"', '“')
+                return (f'<span title="{_safe}" '
+                        'style="cursor:help;color:#fff;background:#0e7490;'
+                        'border-radius:50%;width:15px;height:15px;'
+                        'display:inline-flex;align-items:center;'
+                        'justify-content:center;font-size:0.68rem;'
+                        'font-weight:800;line-height:1;margin-left:0.4rem;'
+                        'vertical-align:middle;">?</span>')
+
+            _reactor_help = (
+                'Reactor (core + reflectors + drums) — includes uranium '
+                '(U235 + U238), moderator (ZrH for LTMR; graphite for '
+                'GCMR/HPMR; ZrH booster for GCMR), radial reflector, '
+                'axial reflector, and the control drums (drum reflector '
+                '+ drum absorber). Cladding mass is small and not '
+                'separately tracked in MOUSE.'
+                + (' HPMR-specific: heat-pipe steel cladding and the Na '
+                   'working fluid are not currently modeled in MOUSE — '
+                   'TODO add later.' if reactor_type == 'HPMR' else '')
+            )
+            _rv_help = (
+                'Reactor vessel — the primary pressure boundary. '
+                'Diameter is 2 × (vessel radius + vessel thickness); '
+                'height includes active core, axial reflector, lower '
+                'plenum, upper plenum, and bottom dish. '
+                f'Bottom dish currently uses placeholder Vessel Bottom '
+                f'Depth = {_bottom_depth_cm:.1f} cm; flag for review. '
+                'Top closure dome is not currently modeled in MOUSE — '
+                'TODO add later. Mass is the vessel wall only '
+                '(no internals).'
+                + (' GCMR note: MOUSE labels this as "Guard Vessel" '
+                   'internally because for the GCMR the outer pressure '
+                   'shell is the RPV, not the inner core barrel.'
+                   if reactor_type == 'GCMR' else '')
+            )
+            _gv_help = (
+                'Guard vessel — secondary containment shell around the '
+                'reactor vessel for primary-coolant leak containment. '
+                'Mass is the guard-vessel wall only.'
+            )
+            _gv_na_help = (
+                'Guard vessel intentionally omitted for this reactor '
+                'type. GCMR coolant (helium) is inert with no chemical-'
+                'leak hazard. HPMR has no bulk primary coolant — each '
+                'heat pipe is individually sealed.'
+            )
+            _rvacs_help = (
+                'RVACS (Reactor Vessel Auxiliary Cooling System) — '
+                'cooling vessel plus intake vessel combined, treated as '
+                'one shipping envelope. Diameter is 2 × (intake vessel '
+                'outer radius); height is the full external envelope '
+                'including bottom dish. Mass = cooling vessel wall + '
+                'intake vessel wall (no air, no insulation, no support '
+                'structure).'
+            )
+
             _rows_html = []
             _rows_html.append(
-                '<tr>'
-                '<td style="padding:0.55rem 0.8rem;font-weight:600;">Reactor (core + reflectors + drums)</td>'
-                f'<td style="padding:0.55rem 0.8rem;text-align:center;">{_m1(_reactor_h_cm)}</td>'
-                f'<td style="padding:0.55rem 0.8rem;text-align:center;">{_m1(_reactor_dia_cm)}</td>'
-                f'<td style="padding:0.55rem 0.8rem;text-align:center;">{_ton_str(_reactor_mass_kg)}'
-                + (f'  <span title="HPMR heat-pipe steel cladding and Na working fluid not modeled in MOUSE — TODO add later." style="color:#b45309;font-size:0.72rem;background:#fef3c7;padding:0.05rem 0.4rem;border-radius:4px;margin-left:0.35rem;">HP cladding/Na missing</span>'
-                   if reactor_type == 'HPMR' else '')
-                + '</td>'
+                '<tr style="background:#ffffff;">'
+                f'<td style="{_CELL_NAME}">Reactor (core + reflectors + drums){_help_icon(_reactor_help)}</td>'
+                f'<td style="{_CELL_C}">{_m1(_reactor_h_cm)}</td>'
+                f'<td style="{_CELL_C}">{_m1(_reactor_dia_cm)}</td>'
+                f'<td style="{_CELL_C}">{_ton_str(_reactor_mass_kg)}</td>'
                 '</tr>'
             )
             _rows_html.append(
                 '<tr style="background:#fafafa;">'
-                '<td style="padding:0.55rem 0.8rem;font-weight:600;">Reactor vessel</td>'
-                f'<td style="padding:0.55rem 0.8rem;text-align:center;">{_m1(_rv_height_cm)}'
-                + f'  <span title="Top closure dome not currently modeled in MOUSE — TODO add later. Bottom dish currently uses placeholder Vessel Bottom Depth = {_bottom_depth_cm:.1f} cm; flag for review." style="color:#b45309;font-size:0.72rem;background:#fef3c7;padding:0.05rem 0.4rem;border-radius:4px;margin-left:0.35rem;">top dome / bottom dish missing</span>'
-                + '</td>'
-                f'<td style="padding:0.55rem 0.8rem;text-align:center;">{_m1(_rv_dia_cm)}</td>'
-                f'<td style="padding:0.55rem 0.8rem;text-align:center;">{_ton_str(_rv_mass_kg)}</td>'
+                f'<td style="{_CELL_NAME}">Reactor vessel{_help_icon(_rv_help)}</td>'
+                f'<td style="{_CELL_C}">{_m1(_rv_height_cm)}</td>'
+                f'<td style="{_CELL_C}">{_m1(_rv_dia_cm)}</td>'
+                f'<td style="{_CELL_C}">{_ton_str(_rv_mass_kg)}</td>'
                 '</tr>'
             )
             if _has_guard:
                 _rows_html.append(
-                    '<tr>'
-                    '<td style="padding:0.55rem 0.8rem;font-weight:600;">Guard vessel</td>'
-                    f'<td style="padding:0.55rem 0.8rem;text-align:center;">{_m1(_gv_height_cm)}</td>'
-                    f'<td style="padding:0.55rem 0.8rem;text-align:center;">{_m1(_gv_dia_cm)}</td>'
-                    f'<td style="padding:0.55rem 0.8rem;text-align:center;">{_ton_str(_gv_mass_kg)}</td>'
+                    '<tr style="background:#ffffff;">'
+                    f'<td style="{_CELL_NAME}">Guard vessel{_help_icon(_gv_help)}</td>'
+                    f'<td style="{_CELL_C}">{_m1(_gv_height_cm)}</td>'
+                    f'<td style="{_CELL_C}">{_m1(_gv_dia_cm)}</td>'
+                    f'<td style="{_CELL_C}">{_ton_str(_gv_mass_kg)}</td>'
                     '</tr>'
                 )
             else:
                 _rows_html.append(
-                    '<tr>'
-                    '<td style="padding:0.55rem 0.8rem;font-weight:600;color:#94a3b8;">Guard vessel</td>'
-                    '<td style="padding:0.55rem 0.8rem;text-align:center;color:#94a3b8;" colspan="3">N/A — not used for this reactor type</td>'
+                    '<tr style="background:#ffffff;">'
+                    f'<td style="{_CELL_NAME};color:#94a3b8;">Guard vessel{_help_icon(_gv_na_help)}</td>'
+                    f'<td colspan="3" style="{_CELL_C};color:#94a3b8;">N/A — not used for this reactor type</td>'
                     '</tr>'
                 )
             _rows_html.append(
                 '<tr style="background:#fafafa;">'
-                '<td style="padding:0.55rem 0.8rem;font-weight:600;">RVACS (cooling + intake vessels)</td>'
-                f'<td style="padding:0.55rem 0.8rem;text-align:center;">{_m1(_rvacs_height_cm)}</td>'
-                f'<td style="padding:0.55rem 0.8rem;text-align:center;">{_m1(_rvacs_dia_cm)}</td>'
-                f'<td style="padding:0.55rem 0.8rem;text-align:center;">{_ton_str(_rvacs_mass_kg)}</td>'
+                f'<td style="{_CELL_NAME}">RVACS (cooling + intake vessels){_help_icon(_rvacs_help)}</td>'
+                f'<td style="{_CELL_C}">{_m1(_rvacs_height_cm)}</td>'
+                f'<td style="{_CELL_C}">{_m1(_rvacs_dia_cm)}</td>'
+                f'<td style="{_CELL_C}">{_ton_str(_rvacs_mass_kg)}</td>'
                 '</tr>'
             )
 
+            _TH = ('padding:0.6rem 0.8rem;font-size:0.72rem;'
+                   'text-transform:uppercase;letter-spacing:0.06em;'
+                   'color:#475569;font-weight:700;')
             st.markdown(
                 '<div style="margin-bottom:0.9rem;">'
-                '<table style="width:100%;border-collapse:collapse;font-size:0.83rem;'
+                '<table style="width:100%;border-collapse:collapse;'
+                'font-size:0.83rem;background:#ffffff;color:#1e293b;'
                 'border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">'
                 '<thead style="background:#f1f5f9;">'
                 '<tr>'
-                '<th style="padding:0.6rem 0.8rem;text-align:left;font-size:0.72rem;'
-                'text-transform:uppercase;letter-spacing:0.06em;color:#475569;">Component</th>'
-                '<th style="padding:0.6rem 0.8rem;text-align:center;font-size:0.72rem;'
-                'text-transform:uppercase;letter-spacing:0.06em;color:#475569;">Height</th>'
-                '<th style="padding:0.6rem 0.8rem;text-align:center;font-size:0.72rem;'
-                'text-transform:uppercase;letter-spacing:0.06em;color:#475569;">Diameter</th>'
-                '<th style="padding:0.6rem 0.8rem;text-align:center;font-size:0.72rem;'
-                'text-transform:uppercase;letter-spacing:0.06em;color:#475569;">Mass (dry, no coolant)</th>'
+                f'<th style="{_TH};text-align:left;">Component</th>'
+                f'<th style="{_TH};text-align:center;">Height</th>'
+                f'<th style="{_TH};text-align:center;">Diameter</th>'
+                f'<th style="{_TH};text-align:center;">Mass (dry, no coolant)</th>'
                 '</tr></thead><tbody>'
                 + ''.join(_rows_html) +
                 '</tbody></table>'
@@ -2341,24 +2402,31 @@ with streamlit_analytics.track():
                 },
             ]
 
-            # Compare RVACS envelope to each mode's dimensional limits.
-            # Weight is not compared because no total mass is rolled up here.
+            # Compare the outermost RVACS envelope to each mode's
+            # dimensional limits AND weight limit.  Weight comparison
+            # uses the sum of the four component masses (computed inline
+            # for badge logic only — not displayed as a "total" row in
+            # the table per design choice).
             _rvacs_dia_m = _rvacs_dia_cm / 100.0
             _rvacs_h_m   = _rvacs_height_cm / 100.0
+            _badge_total_kg = (_reactor_mass_kg + _rv_mass_kg
+                               + _gv_mass_kg + _rvacs_mass_kg)
+            _badge_total_t  = _badge_total_kg / 1000.0
 
             _mode_cards_html = []
             for _mode in _modes:
                 _w_ok = _rvacs_dia_m <= _mode['width_m']
                 _h_ok = _rvacs_h_m   <= _mode['height_m']
-                _len_ok = (_mode['length_m'] is None) or (_rvacs_h_m <= _mode['length_m'])
-                _fits = _w_ok and _h_ok and _len_ok
+                _len_ok  = (_mode['length_m'] is None) or (_rvacs_h_m <= _mode['length_m'])
+                _wt_ok   = _badge_total_t <= _mode['weight_t']
+                _fits    = _w_ok and _h_ok and _len_ok and _wt_ok
                 _badge_color = ('#15803d', '#dcfce7', '#bbf7d0') if _fits else ('#b91c1c', '#fee2e2', '#fecaca')
                 _badge_text  = '✓ fits envelope' if _fits else '✗ exceeds envelope'
                 _len_str = (f' &nbsp;|&nbsp; length ≤ {_mode["length_m"]:.2f} m'
                             if _mode['length_m'] is not None else '')
                 _mode_cards_html.append(
                     '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;'
-                    'padding:0.85rem 1.1rem;margin-bottom:0.6rem;">'
+                    'padding:0.85rem 1.1rem;margin-bottom:0.6rem;color:#1e293b;">'
                     '<div style="display:flex;justify-content:space-between;align-items:center;'
                     'margin-bottom:0.35rem;">'
                     f'<div style="font-weight:700;font-size:0.86rem;color:#1e293b;">{_mode["name"]}</div>'
@@ -2382,10 +2450,10 @@ with streamlit_analytics.track():
                 '<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;'
                 'padding:0.65rem 1rem;margin-bottom:1rem;font-size:0.74rem;line-height:1.45;color:#7c2d12;">'
                 '<strong>Note:</strong> Each badge compares the outermost RVACS envelope '
-                '(diameter and height) against the mode\'s dimensional limit. Weight is not '
-                'rolled up across components in this section, so a weight check is not part '
-                'of the badge logic — see the per-component mass column for the dry-mass '
-                'breakdown. Top closure dome and bottom dish are not currently modeled in '
+                '(diameter, height) and the sum of all component masses against the mode\'s '
+                'limits. Per-component dimensions and masses are shown above; component-level '
+                'help icons (?) explain what is and isn\'t included for each row. Top closure '
+                'dome and bottom dish are not currently modeled in '
                 'MOUSE, so the height values are slight underestimates.'
                 '</div>',
                 unsafe_allow_html=True,
