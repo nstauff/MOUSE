@@ -361,6 +361,59 @@ def _run_estimate(reactor_type, power_mwt, enrichment, interest_rate, discount_r
     return transform_dataframe(enriched_df), enriched_df, detailed_sorted_df, p
 
 
+# Sweep NOAK Unit Number across a list of deployment scales for the
+# "Costs in perspective" plot.  Each call to bottom_up_cost_estimate uses
+# the same Number of Samples (10 — set inside reactor_config.py) as the
+# headline LCOE card.  Cached on every input that influences cost.
+@st.cache_data(show_spinner=False)
+def _run_lcoe_sweep(reactor_type, power_mwt, enrichment, interest_rate, discount_rate,
+                    construction_duration, debt_to_equity, operation_mode,
+                    emergency_shutdowns, startup_duration, startup_duration_refueling,
+                    tax_credit_type, tax_credit_value, plant_lifetime,
+                    n_rings_per_assembly=None, active_height=None,
+                    n_assembly_rings=None, n_core_rings=None,
+                    units_tuple=(1, 5, 10, 20, 30, 40, 60, 80, 100)):
+    base_overrides = {
+        'Interest Rate': interest_rate,
+        'Discount Rate': discount_rate,
+        'Construction Duration': construction_duration,
+        'Debt To Equity Ratio': debt_to_equity,
+        'Escalation Year': ESCALATION_YEAR,
+        'Operation Mode': operation_mode,
+        'Emergency Shutdowns Per Year': emergency_shutdowns,
+        'Startup Duration after Emergency Shutdown': startup_duration,
+        'Startup Duration after Refueling': startup_duration_refueling,
+        'Levelization Period': plant_lifetime,
+    }
+    if tax_credit_type == 'PTC':
+        base_overrides['PTC credit value'] = tax_credit_value
+        base_overrides['PTC credit period'] = 10
+        base_overrides['Tax Rate'] = 0.21
+        lcoe_account = 'LCOE with PTC'
+    elif tax_credit_type == 'ITC':
+        base_overrides['ITC credit level'] = tax_credit_value
+        lcoe_account = 'LCOE (ITC-adjusted)'
+    else:
+        lcoe_account = 'LCOE'
+
+    means, stds = [], []
+    for N in units_tuple:
+        overrides = dict(base_overrides)
+        overrides['NOAK Unit Number'] = int(N)
+        p = build_params(reactor_type, power_mwt, enrichment, overrides,
+                         n_rings_per_assembly=n_rings_per_assembly,
+                         active_height=active_height,
+                         n_assembly_rings=n_assembly_rings,
+                         n_core_rings=n_core_rings)
+        raw_df = bottom_up_cost_estimate('cost/Cost_Database.xlsx', p)
+        enriched_df, _ = cost_drivers_estimate(raw_df, p)
+        display_df = transform_dataframe(enriched_df)
+        m, s = _get_mean_std(display_df, lcoe_account, 'NOAK')
+        means.append(m)
+        stds.append(s)
+    return list(units_tuple), means, stds
+
+
 # ---------------------------------------------------------------------------
 # Anonymous visitor analytics
 # ---------------------------------------------------------------------------
@@ -2574,6 +2627,194 @@ with streamlit_analytics.track():
             '</div>',
             unsafe_allow_html=True,
         )
+
+        # ─────────────────────────────────────────────────────────
+        # Costs in perspective: NOAK LCOE vs market benchmarks
+        # ─────────────────────────────────────────────────────────
+        st.markdown('<div style="height:1.2rem"></div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div style="font-size:0.7rem;font-weight:700;color:#64748b;text-transform:uppercase;'
+            'letter-spacing:0.09em;margin-bottom:0.6rem;">Costs in Perspective</div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;'
+            'padding:0.85rem 1.1rem;margin-bottom:0.9rem;font-size:0.82rem;line-height:1.45;color:#334155;">'
+            'NOAK LCOE for the selected reactor configuration is recomputed across deployment '
+            'scales of 1, 5, 10, 20, 30, 40, 60, 80, and 100 units (with one-sigma uncertainty '
+            'bands). The shaded band is overlaid against typical retail/wholesale electricity '
+            'price ranges for seven US-relevant markets, to indicate where the reactor would '
+            'be cost-competitive at each deployment scale.'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+
+        with st.spinner('Computing LCOE across deployment scales…'):
+            try:
+                _units, _means, _stds = _run_lcoe_sweep(
+                    reactor_type, power_mwt, enrichment,
+                    interest_rate, discount_rate, construction_duration,
+                    debt_to_equity, operation_mode, emergency_shutdowns,
+                    startup_duration, startup_duration_refueling,
+                    tax_credit_type, tax_credit_value, plant_lifetime,
+                    n_rings_per_assembly=n_rings_per_assembly,
+                    active_height=active_height,
+                    n_assembly_rings=n_assembly_rings,
+                    n_core_rings=n_core_rings,
+                )
+            except Exception as _e:
+                _units, _means, _stds = [], [], []
+                st.warning(f'Could not compute LCOE sweep: {_e}')
+
+        if _units and all(m == m for m in _means):  # m == m filters NaN
+            from scipy.interpolate import make_interp_spline
+            from matplotlib.patches import Patch as _Patch
+
+            _u_arr = np.array(_units, dtype=float)
+            _m_arr = np.array(_means, dtype=float)
+            _s_arr = np.array(_stds,  dtype=float)
+            _s_arr = np.nan_to_num(_s_arr, nan=0.0)
+
+            # Reactor-type-specific palette (matches the existing
+            # webapp accent colors for each reactor).
+            _palette = {
+                'LTMR': ('#4472C4', '#2E5090'),  # blue
+                'GCMR': ('#FF6B6B', '#D94444'),  # red
+                'HPMR': ('#7E57C2', '#4527A0'),  # purple
+            }
+            _fill_color, _edge_color = _palette.get(reactor_type, _palette['LTMR'])
+            _legend_label = {
+                'LTMR': 'Liquid-Metal Microreactor',
+                'GCMR': 'Gas-Cooled Microreactor',
+                'HPMR': 'Heat Pipe Microreactor',
+            }.get(reactor_type, reactor_type)
+
+            _fig, _ax = plt.subplots(figsize=(11, 5.8))
+
+            # Smooth interpolation over the sweep points
+            try:
+                _x_smooth = np.linspace(_u_arr.min(), _u_arr.max(), 300)
+                _spl_m = make_interp_spline(_u_arr, _m_arr, k=min(3, len(_u_arr) - 1))
+                _spl_s = make_interp_spline(_u_arr, _s_arr, k=min(3, len(_u_arr) - 1))
+                _m_smooth = _spl_m(_x_smooth)
+                _s_smooth = _spl_s(_x_smooth)
+            except Exception:
+                _x_smooth = _u_arr
+                _m_smooth = _m_arr
+                _s_smooth = _s_arr
+
+            _ax.fill_between(_x_smooth,
+                             _m_smooth - _s_smooth,
+                             _m_smooth + _s_smooth,
+                             color=_fill_color, alpha=0.45, label=_legend_label,
+                             edgecolor=_edge_color, linewidth=1.5)
+
+            # Market benchmark arrows (same coords as the reference figure)
+            _markets = {
+                'Remote communities':           {'x':  2, 'y_start': 400, 'y_end': 290, 'color': '#C00000', 'arrow_only_down': True},
+                'Defense':                      {'x':  8, 'y_start': 316, 'y_end': 296, 'color': '#FFC000', 'arrow_only_down': False},
+                'Island & Mining':              {'x': 30, 'y_start': 380, 'y_end': 190, 'color': '#ED7D31', 'arrow_only_down': False},
+                'Alaska railbelt electricity':  {'x': 48, 'y_start': 313, 'y_end': 182, 'color': '#7030A0', 'arrow_only_down': False},
+                'Alaska railbelt generation':   {'x': 60, 'y_start': 166, 'y_end':  62, 'color': '#A6A6A6', 'arrow_only_down': False},
+                'U.S. grid electricity':        {'x': 75, 'y_start': 270, 'y_end':  79, 'color': '#92D050', 'arrow_only_down': False},
+                'U.S. grid generation':         {'x': 88, 'y_start':  55, 'y_end':  29, 'color': '#00B050', 'arrow_only_down': False},
+            }
+            _bar_widths = {
+                'Remote communities':           4,
+                'Defense':                      4,
+                'Island & Mining':             12,
+                'Alaska railbelt electricity':  8,
+                'Alaska railbelt generation':   8,
+                'U.S. grid electricity':       12,
+                'U.S. grid generation':        10,
+            }
+            _label_offsets = {
+                'Remote communities':         +8,
+                'Defense':                   +25,
+                'Alaska railbelt generation': -15,
+                'U.S. grid generation':      +20,
+            }
+            for _name, _d in _markets.items():
+                _x  = _d['x']
+                _ys = min(_d['y_start'], 400)
+                _ye = _d['y_end']
+                _c  = _d['color']
+                _down = _d['arrow_only_down']
+                _w  = _bar_widths[_name]
+                _xa, _xb = _x, _x + _w
+                _xm = _x + _w / 2
+
+                if not _down:
+                    _ax.plot([_xa, _xb], [_ys, _ys], color=_c, linewidth=4,
+                             solid_capstyle='round', zorder=5)
+                _ax.plot([_xa, _xb], [_ye, _ye], color=_c, linewidth=4,
+                         solid_capstyle='round', zorder=5)
+                _astyle = '->' if _down else '<->'
+                if _down:
+                    _ax.plot([_xm, _xm], [_ys, _ye], color=_c, linewidth=2.8,
+                             solid_capstyle='round', zorder=5)
+                _ax.annotate('', xy=(_xm, _ye), xytext=(_xm, _ys),
+                             arrowprops=dict(arrowstyle=_astyle, color=_c,
+                                             lw=2.8, mutation_scale=16), zorder=5)
+
+                if _name == 'Alaska railbelt generation':
+                    _ly = _ye + _label_offsets[_name]
+                else:
+                    _ly = _ys + _label_offsets.get(_name, +15)
+                _ax.text(_xm, _ly, _name, fontsize=8.5, ha='center', color=_c,
+                         fontweight='bold',
+                         bbox=dict(facecolor='white', edgecolor=_c,
+                                   boxstyle='round,pad=0.25',
+                                   linewidth=1.0, alpha=0.9),
+                         zorder=6)
+
+            _ax.set_xlim(0, 100)
+            _ax.set_ylim(0, 410)
+            _ax.set_xlabel('Number of Units Deployed', fontsize=12, fontweight='bold')
+            _ax.set_ylabel('LCOE ($/MWh)', fontsize=12, fontweight='bold')
+            _ax.set_xticks([0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100])
+            _ax.set_yticks([0, 50, 100, 150, 200, 250, 300, 350, 400])
+            _ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
+            _ax.set_axisbelow(True)
+            _ax.set_facecolor('white')
+            _fig.patch.set_facecolor('white')
+
+            _legend_patch = _Patch(facecolor=_fill_color, edgecolor=_edge_color,
+                                   alpha=0.6, label=_legend_label)
+            _ax.legend(handles=[_legend_patch], fontsize=10, loc='upper right',
+                       framealpha=0.9, edgecolor='grey')
+
+            _fig.tight_layout()
+            st.pyplot(_fig)
+            plt.close(_fig)
+
+            # Market definitions panel (matches the user-provided spec)
+            st.markdown(
+                '<div style="background:#f0f9ff;border:1px solid #bae6fd;'
+                'border-radius:10px;padding:0.85rem 1.1rem;margin-bottom:0.9rem;'
+                'font-size:0.78rem;line-height:1.55;color:#0c4a6e;">'
+                '<div style="font-weight:700;font-size:0.72rem;'
+                'text-transform:uppercase;letter-spacing:0.06em;'
+                'color:#0369a1;margin-bottom:0.45rem;">Market definitions</div>'
+                '<ul style="margin:0;padding-left:1.2rem;">'
+                '<li><strong>U.S. Grid Generation:</strong> regional average wholesale price; '
+                'excludes transmission, distribution, and customer charges.</li>'
+                '<li><strong>U.S. Grid Electricity:</strong> state-level average retail '
+                'electricity price, all sectors; excludes Alaska and Hawaii.</li>'
+                '<li><strong>Alaska Railbelt Generation:</strong> wholesale generation cost; '
+                'excludes transmission, distribution, and customer charges.</li>'
+                '<li><strong>Alaska Railbelt Electricity:</strong> retail price including '
+                'generation, transmission, distribution, and adjustments.</li>'
+                '<li><strong>Island &amp; Mining:</strong> all-in diesel- or LNG-based '
+                'electricity cost, including fuel delivery.</li>'
+                '<li><strong>Defense:</strong> remote base electricity cost plus a premium '
+                'for reliability and security.</li>'
+                '<li><strong>Remote Communities:</strong> off-road community diesel '
+                'generation cost.</li>'
+                '</ul>'
+                '</div>',
+                unsafe_allow_html=True,
+            )
 
     # ═══════════════════════════════════════════════════════════════
     # TAB 2 — COST DRIVERS
