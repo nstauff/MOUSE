@@ -1595,7 +1595,7 @@ with streamlit_analytics.track():
                                border-radius:10px;padding:0.7rem 1.2rem;">
                      <div style="font-size:0.62rem;text-transform:uppercase;letter-spacing:0.1em;
                                  opacity:0.6;margin-bottom:0.2rem;">Power Range</div>
-                     <div style="font-weight:700;font-size:0.88rem;">1 20 MW<sub>t</sub></div>
+                     <div style="font-weight:700;font-size:0.88rem;">1 - 60 MW<sub>t</sub></div>
                    </div>
                    <div style="background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.2);
                                border-radius:10px;padding:0.7rem 1.2rem;">
