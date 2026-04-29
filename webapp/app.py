@@ -508,9 +508,27 @@ def _lcoe_at_noak_unit(reactor_type, power_mwt, enrichment, interest_rate, disco
                          + _foak_cols + _noak_cols) if c in display_df.columns]
     diag_df = display_df[_keep].copy() if _keep else None
 
+    # Also pull a snapshot of the key params actually used for this
+    # cost-engine call.  Reveals whether Construction Duration,
+    # Power MWe, Capacity Factor etc. are what we expect.
+    diag_params = {
+        'NOAK Unit Number':            p.get('NOAK Unit Number'),
+        'Power MWt':                   p.get('Power MWt'),
+        'Power MWe':                   p.get('Power MWe'),
+        'Thermal Efficiency':          p.get('Thermal Efficiency'),
+        'Capacity Factor':             p.get('Capacity Factor'),
+        'Construction Duration':       p.get('Construction Duration'),
+        'Interest Rate':               p.get('Interest Rate'),
+        'Discount Rate':               p.get('Discount Rate'),
+        'Debt To Equity Ratio':        p.get('Debt To Equity Ratio'),
+        'Levelization Period':         p.get('Levelization Period'),
+        'Annual Electricity Production': p.get('Annual Electricity Production'),
+    }
+
     return (float(m) if m == m else float('nan'),
             float(s) if s == s else 0.0,
-            diag_df)
+            diag_df,
+            diag_params)
 
 
 # ---------------------------------------------------------------------------
@@ -2763,9 +2781,10 @@ with streamlit_analytics.track():
         # call, cached on inputs).
         _N_mid = 10
         _mid_diag_df = None
+        _mid_diag_params = {}
         with st.spinner('Computing intermediate LCOE anchor (N=10)…'):
             try:
-                _mid_m, _mid_s, _mid_diag_df = _lcoe_at_noak_unit(
+                _mid_m, _mid_s, _mid_diag_df, _mid_diag_params = _lcoe_at_noak_unit(
                     reactor_type, power_mwt, enrichment,
                     interest_rate, discount_rate, construction_duration,
                     debt_to_equity, operation_mode, emergency_shutdowns,
@@ -2781,8 +2800,23 @@ with streamlit_analytics.track():
                 _mid_m, _mid_s = float('nan'), 0.0
                 st.warning(f'Could not compute N=10 anchor: {_e}')
 
-        # Show a per-account diagnostic for the N=10 call so we can
-        # see which account is producing the absurd LCOE value.
+        # Show param snapshot + per-account diagnostic for the N=10
+        # call so we can see exactly what the cost engine saw and
+        # which account drives the runaway value.
+        if _mid_diag_params:
+            _params_lines = '\n'.join(
+                f'  {k:32s} = {v}' for k, v in _mid_diag_params.items()
+            )
+            st.markdown(
+                '<div style="background:#fef3c7;border:1px solid #fcd34d;'
+                'border-radius:8px;padding:0.6rem 0.9rem;margin-bottom:0.7rem;'
+                'font-family:ui-monospace,Menlo,monospace;font-size:0.75rem;'
+                'color:#78350f;white-space:pre;">'
+                f'<strong style="font-family:inherit;">Params used in N={_N_mid} call:</strong>\n'
+                + _params_lines +
+                '</div>',
+                unsafe_allow_html=True,
+            )
         if _mid_diag_df is not None and not _mid_diag_df.empty:
             with st.expander(
                 f'Per-account costs at NOAK Unit Number = {_N_mid} '
