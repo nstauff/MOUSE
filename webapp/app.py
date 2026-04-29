@@ -1844,6 +1844,26 @@ with streamlit_analytics.track():
                         f"by helium gas, with graphite reflector and control drums."
                     )
 
+            # For HPMR, pick the per-(N_A, N_C) core cross-section
+            # (N_A is locked at 6 in the parametric study, but the
+            # filename pattern matches the GCMR convention so future
+            # N_A variation is supported).
+            if reactor_type == 'HPMR':
+                _na = int(params.get('Number of Rings per Assembly', 6))
+                _nc = int(params.get('Number of Rings per Core', 5))
+                _per_pair_path = os.path.join(
+                    _ASSETS, f'HPMR_core_NA{_na}_NC{_nc}.png'
+                )
+                if os.path.exists(_per_pair_path):
+                    main_img = _per_pair_path
+                    main_caption = (
+                        f"HPMR core cross-section for (N_A={_na} assembly rings, "
+                        f"N_C={_nc} core rings). Homogenized-TRISO fuel pins "
+                        f"interleaved with sodium heat pipes inside monolith-graphite "
+                        f"moderator blocks, surrounded by a graphite reflector with "
+                        f"12 control drums."
+                    )
+
             # Cross-section on top, side-view directly below (LTMR/GCMR
             # only — both have geometry-driven height inputs). Both render
             # at the column width, so the side view's vertical extent
@@ -1852,7 +1872,7 @@ with streamlit_analytics.track():
             st.image(main_img, use_container_width=True)
             st.caption(main_caption)
 
-            if reactor_type in ('LTMR', 'GCMR'):
+            if reactor_type in ('LTMR', 'GCMR', 'HPMR'):
                 # The figure has built-in right padding to mirror the
                 # cross-section's legend area, so the side-view rectangle
                 # aligns horizontally with the cross-section circle above.
@@ -1887,6 +1907,21 @@ with streamlit_analytics.track():
                                 f"(assembly rings). TRISO fuel compacts, helium coolant "
                                 f"channels, and ZrH moderator booster pins embedded in "
                                 f"a graphite matrix."
+                            )
+                    # HPMR: same pattern, swap to per-N_A assembly image.
+                    elif reactor_type == 'HPMR' and 'fuel_assembly' in img_path.lower() \
+                                              and 'zoomed' not in img_path.lower():
+                        _na = int(params.get('Number of Rings per Assembly', 6))
+                        _per_na_path = os.path.join(
+                            _ASSETS, f'HPMR_fuel_assembly_NA{_na}.png'
+                        )
+                        if os.path.exists(_per_na_path):
+                            img_path = _per_na_path
+                            img_caption = (
+                                f"HPMR fuel assembly cross-section for N_A={_na} "
+                                f"(assembly rings). Homogenized-TRISO fuel pins "
+                                f"and sodium heat pipes embedded in a monolith-graphite "
+                                f"moderator block."
                             )
                     st.image(img_path, use_container_width=True)
                     st.caption(img_caption)
