@@ -2776,21 +2776,21 @@ with streamlit_analytics.track():
                          zorder=6)
 
             _ax.set_xlim(0, 100)
-            # Y-axis adapts to the actual LCOE band (computed from the
-            # raw sweep points, NOT the spline — the spline can over-
-            # shoot at boundaries with steep gradients, which would
-            # blow up the y-axis).  Hard cap at $1500 as a sanity
-            # floor against pathological cost computations.
-            _band_top = float(np.nanmax(_m_arr + _s_arr)) if _m_arr.size else 0.0
-            _ymax = max(410.0, _band_top * 1.10)
-            _ymax = min(_ymax, 1500.0)
+            # Y-axis sizing — use the 90th-percentile of (mean + std)
+            # rather than max, so a single outlier point doesn't blow
+            # up the y-range and squash the rest of the data.  Hard
+            # cap at $800 so even outliers stay readable.
+            if _m_arr.size:
+                _band_vals = _m_arr + _s_arr
+                _band_p90 = float(np.nanpercentile(_band_vals, 90))
+            else:
+                _band_p90 = 0.0
+            _ymax = max(410.0, _band_p90 * 1.15)
+            _ymax = min(_ymax, 800.0)
             _ax.set_ylim(0, _ymax)
             _ax.set_xlabel('Number of Units Deployed', fontsize=12, fontweight='bold')
             _ax.set_ylabel('LCOE ($/MWh)', fontsize=12, fontweight='bold')
             _ax.set_xticks([0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100])
-            # Let matplotlib auto-pick the y-ticks (MaxNLocator with a
-            # reasonable max count).  Manual tick generation produced
-            # overlapping labels in some scenarios.
             from matplotlib.ticker import MaxNLocator
             _ax.yaxis.set_major_locator(MaxNLocator(nbins=10, integer=True))
             _ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
@@ -2807,16 +2807,21 @@ with streamlit_analytics.track():
             st.pyplot(_fig)
             plt.close(_fig)
 
-            # Tiny caption with the raw sweep points — lets the user
-            # sanity-check the curve and confirm the LCOE values.
-            _pts_str = '  ·  '.join(
+            # Prominent caption with the raw sweep points so the user
+            # can verify the curve at a glance.  Shown in a soft-blue
+            # panel with monospace font for the numbers.
+            _pts_str = ' · '.join(
                 f'N={int(u)}: ${m:.0f}±{s:.0f}'
                 for u, m, s in zip(_u_arr, _m_arr, _s_arr)
             )
             st.markdown(
-                f'<div style="font-size:0.72rem;color:#64748b;margin-top:-0.4rem;'
-                f'margin-bottom:0.6rem;">NOAK LCOE at sweep points '
-                f'($/MWh): {_pts_str}</div>',
+                f'<div style="background:#f0f9ff;border:1px solid #bae6fd;'
+                f'border-radius:8px;padding:0.55rem 0.9rem;margin-top:0.2rem;'
+                f'margin-bottom:0.9rem;font-size:0.78rem;color:#0c4a6e;">'
+                f'<strong>NOAK LCOE per sweep point ($/MWh):</strong> '
+                f'<span style="font-family:ui-monospace,Menlo,monospace;'
+                f'color:#0f172a;">{_pts_str}</span>'
+                f'</div>',
                 unsafe_allow_html=True,
             )
 
