@@ -2783,6 +2783,28 @@ with streamlit_analytics.track():
         # same extraction path as the headline.
         _N_mids = [2, 10, 30]
         _mid_results = {}  # N -> (mean, std)
+
+        # Big, unmissable loading banner shown ONLY during the
+        # cost-engine sweep — the user might otherwise scroll away
+        # before the plot finishes rendering on a fresh cache (~20s
+        # cold start).  Banner is rendered into a placeholder so we
+        # can clear it the moment computation finishes.
+        _loading_slot = st.empty()
+        _loading_slot.markdown(
+            '<div style="background:linear-gradient(90deg,#fef3c7 0%,#fde68a 100%);'
+            'border:2px solid #f59e0b;border-radius:12px;padding:1.4rem 1.6rem;'
+            'margin-bottom:1rem;color:#78350f;text-align:center;'
+            'box-shadow:0 4px 12px rgba(245,158,11,0.18);">'
+            '<div style="font-size:1.15rem;font-weight:800;margin-bottom:0.4rem;'
+            'letter-spacing:0.02em;">⏳ Computing the perspective curve…</div>'
+            '<div style="font-size:0.88rem;font-weight:500;line-height:1.5;">'
+            'Running the cost engine for three intermediate deployment scales. '
+            'This can take roughly <strong>15–25 seconds</strong> on a fresh cache. '
+            'Please don\'t change inputs or close the page until the plot appears below.'
+            '</div></div>',
+            unsafe_allow_html=True,
+        )
+
         with st.spinner('Computing intermediate LCOE anchors…'):
             for _N in _N_mids:
                 if _N <= 1 or _N >= _N_user:
@@ -2809,6 +2831,9 @@ with streamlit_analytics.track():
                 except Exception as _e:
                     st.warning(f'Could not compute N={_N} anchor: {_e}')
 
+        # Clear the loading banner now that the cost-engine sweep is done.
+        _loading_slot.empty()
+
         try:
             _foak_m = float(lcoe_f)
             _noak_m = float(lcoe_n)
@@ -2833,28 +2858,6 @@ with streamlit_analytics.track():
                 _stds.append(_mid_results[_N][1])
         _means.append(_noak_m)
         _stds.append(_noak_s)
-
-        # ── Diagnostic dump (always visible) so we can debug ──────────
-        # Print the raw sweep results in a fixed-width panel.  This
-        # lets us see exactly what the cost engine returned for each
-        # NOAK Unit Number, even if the plot rendering fails for any
-        # reason.
-        _diag_lines = []
-        for _i, _N in enumerate(_units or []):
-            _m = _means[_i] if _i < len(_means) else float('nan')
-            _s = _stds[_i]  if _i < len(_stds)  else float('nan')
-            _diag_lines.append(f'  N = {int(_N):>3d}  mean = ${_m:.1f}  std = ${_s:.1f}')
-        if _diag_lines:
-            st.markdown(
-                '<div style="background:#fff8db;border:1px solid #fde68a;'
-                'border-radius:8px;padding:0.6rem 0.9rem;margin-bottom:0.7rem;'
-                'font-family:ui-monospace,Menlo,monospace;font-size:0.78rem;'
-                'color:#78350f;white-space:pre;">'
-                '<strong style="font-family:inherit;">Sweep diagnostic (NOAK LCOE per unit count, $/MWh):</strong>\n'
-                + '\n'.join(_diag_lines) +
-                '</div>',
-                unsafe_allow_html=True,
-            )
 
         # NaN-tolerant gating: drop points where the LCOE came back
         # NaN, plot whatever valid points remain.  Scatter markers +
