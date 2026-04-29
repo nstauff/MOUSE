@@ -11,10 +11,13 @@ When the file is updated upstream (e.g. to add a k_eff column),
 the new file may not include these subcritical rows.  This script
 preserves them across the update:
 
-    1. Run BEFORE the update:
+    1. Run BEFORE the update (extracts from current file):
          python tools/preserve_gcmr_subcritical.py extract
        Saves all subcritical rows to
          assets/Ref_Results/_gcmr_subcritical_cases.csv
+
+       Or extract from a specific older Excel file:
+         python tools/preserve_gcmr_subcritical.py extract /path/old.xlsx
 
     2. Replace the Excel file with the updated version.
 
@@ -23,6 +26,13 @@ preserves them across the update:
        Re-injects the saved subcritical rows back into the updated
        Excel file, skipping any (NA, NC, H, E, P) configurations
        that are already present.
+
+If the update has already happened and the old file is in git
+history, you can recover the subcritical rows like this:
+
+    git show <old_commit>:assets/Ref_Results/GCMR_parametric_size_power_enrichment.xlsx > /tmp/old_gcmr.xlsx
+    python tools/preserve_gcmr_subcritical.py extract /tmp/old_gcmr.xlsx
+    python tools/preserve_gcmr_subcritical.py merge
 
 Run from the MOUSE repo root.
 """
@@ -41,12 +51,19 @@ _KEY_COLS = ['Assembly Rings', 'Core Rings', 'Active Height',
              'Enrichment', 'Power MWt']
 
 
-def extract():
-    """Save subcritical rows (Fuel Lifetime = 0 or NaN) to a CSV."""
-    if not _XLSX_PATH.exists():
-        sys.exit(f'ERROR: {_XLSX_PATH} not found.')
+def extract(src_path=None):
+    """Save subcritical rows (Fuel Lifetime = 0 or NaN) to a CSV.
 
-    df = pd.read_excel(_XLSX_PATH, sheet_name=_SHEET, engine='openpyxl')
+    If src_path is None, reads the current file at _XLSX_PATH.
+    Otherwise reads from the specified path (useful when extracting
+    from an older Excel file recovered via git show).
+    """
+    src = Path(src_path) if src_path else _XLSX_PATH
+    if not src.exists():
+        sys.exit(f'ERROR: {src} not found.')
+
+    print(f'Reading: {src}')
+    df = pd.read_excel(src, sheet_name=_SHEET, engine='openpyxl')
     if 'Fuel Lifetime' not in df.columns:
         sys.exit("ERROR: 'Fuel Lifetime' column not found in the sheet.")
 
@@ -115,10 +132,15 @@ def merge():
 
 
 if __name__ == '__main__':
-    if len(sys.argv) != 2 or sys.argv[1] not in ('extract', 'merge'):
-        sys.exit('Usage: python tools/preserve_gcmr_subcritical.py {extract|merge}')
+    if len(sys.argv) < 2 or sys.argv[1] not in ('extract', 'merge'):
+        sys.exit(
+            'Usage:\n'
+            '  python tools/preserve_gcmr_subcritical.py extract [optional_path.xlsx]\n'
+            '  python tools/preserve_gcmr_subcritical.py merge'
+        )
 
     if sys.argv[1] == 'extract':
-        extract()
+        src = sys.argv[2] if len(sys.argv) >= 3 else None
+        extract(src)
     else:
         merge()
