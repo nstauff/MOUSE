@@ -3009,17 +3009,27 @@ with streamlit_analytics.track():
             # If the LCOE band sits entirely above the y-axis cap
             # ($800 max), the band is invisible on the chart.  Warn
             # the user explicitly so they know why nothing is plotted
-            # for the reactor and what to do about it.
+            # for the reactor and what to do about it.  Use a custom-
+            # colored markdown box rather than st.warning, which
+            # renders white text on yellow (illegible).
             _band_min_visible = (_m_arr - _s_arr).min() if _m_arr.size else 0.0
             if _band_min_visible > _ymax:
-                st.warning(
-                    f'⚠️ The reactor LCOE band ranges roughly '
-                    f'\${(_m_arr - _s_arr).min():,.0f}–\${(_m_arr + _s_arr).max():,.0f}/MWh, '
-                    f'which is above the chart\'s \${int(_ymax)}/MWh ceiling, so the curve is '
+                _band_lo = (_m_arr - _s_arr).min()
+                _band_hi = (_m_arr + _s_arr).max()
+                st.markdown(
+                    f'<div style="background:#fef3c7;border:1px solid #f59e0b;'
+                    f'border-radius:8px;padding:0.8rem 1rem;margin-bottom:0.6rem;'
+                    f'color:#7c2d12;font-size:0.85rem;line-height:1.55;">'
+                    f'<strong style="color:#7c2d12;">⚠️ Reactor LCOE off the chart.</strong> '
+                    f'The reactor LCOE band ranges roughly '
+                    f'<strong>${_band_lo:,.0f}–${_band_hi:,.0f}/MWh</strong>, which is above '
+                    f'the chart\'s <strong>${int(_ymax)}/MWh</strong> ceiling, so the curve is '
                     f'not visible on the plot below. The market benchmarks remain visible for '
                     f'reference. To bring the curve into the chart, try a higher reactor power, '
                     f'higher enrichment, longer plant lifetime, or a larger NOAK Unit Number — '
                     f'any of those reduces the LCOE.'
+                    f'</div>',
+                    unsafe_allow_html=True,
                 )
 
             st.pyplot(_fig)
@@ -3218,21 +3228,20 @@ with streamlit_analytics.track():
             _ymax_chart = _band_top_btm * 1.18
 
             # Place full state name vertically OVERLAPPING each
-            # column.  Anchor the text at the top of the column and
-            # extend downward into it (rotation=270, va='top'), so
-            # long names like "Massachusetts" stretch into the body
-            # of the column.  Dark slate text with a white halo
-            # (path_effect) keeps it legible regardless of column
-            # color — green, yellow, gray, or the white plot
-            # background.
+            # column.  Anchor the text just above the x-axis (small
+            # positive y offset so it doesn't collide with the
+            # baseline) and extend UPWARD into the column body
+            # (rotation=90, va='bottom') so the name reads
+            # bottom-to-top.  For long names ("Massachusetts",
+            # "North Carolina"), the text extends above the column
+            # top into the white plot background — still legible
+            # thanks to the white-halo path_effect.
+            _baseline_offset = _ymax_chart * 0.015
             for _i, (_code, _val) in enumerate(zip(_state_codes, _state_vals)):
                 _full_name = _STATE_FULL_NAMES.get(_code, _code)
-                # Anchor at the top of the column, slight inset, text
-                # extends downward into the column.
-                _label_y = _val - _ymax_chart * 0.005
                 _t = _ax_btm.text(
-                    _i, _label_y, _full_name,
-                    rotation=270, ha='center', va='top',
+                    _i, _baseline_offset, _full_name,
+                    rotation=90, ha='center', va='bottom',
                     fontsize=9, fontweight='bold',
                     color='#0f172a',  # near-black slate
                     zorder=4,
