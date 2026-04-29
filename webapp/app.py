@@ -2757,12 +2757,13 @@ with streamlit_analytics.track():
         st.markdown(
             '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;'
             'padding:0.85rem 1.1rem;margin-bottom:0.9rem;font-size:0.82rem;line-height:1.45;color:#334155;">'
-            'The curve is anchored at three deployment scales: N=1 (FOAK from the headline '
-            'card), N=10 (one extra cost-engine call), and N=user-set NOAK Unit Number '
-            '(default 100, NOAK from the headline card). The shaded band reflects the '
-            'one-sigma uncertainty around each anchor and is connected piecewise between '
-            'them. Overlaid against seven US-relevant electricity-market price ranges to '
-            'indicate where the reactor would be cost-competitive at each scale.'
+            'The curve is anchored at five deployment scales: N=1 (FOAK from the headline '
+            'card), N=2, N=10, N=30 (three extra cost-engine calls, cached), and N=user-set '
+            'NOAK Unit Number (default 100, NOAK from the headline card). The shaded band '
+            'reflects the one-sigma uncertainty around each anchor and is connected '
+            'piecewise-linearly between them. Overlaid against seven US-relevant '
+            'electricity-market price ranges to indicate where the reactor would be '
+            'cost-competitive at each scale.'
             '</div>',
             unsafe_allow_html=True,
         )
@@ -2777,59 +2778,36 @@ with streamlit_analytics.track():
         if _N_user < 2:
             _N_user = 100
 
-        # Compute the intermediate anchor at N=10 (one cost-engine
-        # call, cached on inputs).
-        _N_mid = 10
-        _mid_diag_df = None
-        _mid_diag_params = {}
-        with st.spinner('Computing intermediate LCOE anchor (N=10)…'):
-            try:
-                # CRITICAL: interest_rate / 100 and discount_rate / 100
-                # to convert UI percent to fraction.  Headline call
-                # does the same conversion at line ~1537; the N=10
-                # helper has to mirror it or the cost engine treats
-                # 7 as 700% interest and explodes the IDC / TCI.
-                _mid_m, _mid_s, _mid_diag_df, _mid_diag_params = _lcoe_at_noak_unit(
-                    reactor_type, power_mwt, enrichment,
-                    interest_rate / 100.0, discount_rate / 100.0,
-                    construction_duration,
-                    debt_to_equity, operation_mode, emergency_shutdowns,
-                    startup_duration, startup_duration_refueling,
-                    tax_credit_type, tax_credit_value, plant_lifetime,
-                    n_rings_per_assembly=n_rings_per_assembly,
-                    active_height=active_height,
-                    n_assembly_rings=n_assembly_rings,
-                    n_core_rings=n_core_rings,
-                    noak_unit_number=_N_mid,
-                )
-            except Exception as _e:
-                _mid_m, _mid_s = float('nan'), 0.0
-                st.warning(f'Could not compute N=10 anchor: {_e}')
-
-        # Show param snapshot + per-account diagnostic for the N=10
-        # call so we can see exactly what the cost engine saw and
-        # which account drives the runaway value.
-        if _mid_diag_params:
-            _params_lines = '\n'.join(
-                f'  {k:32s} = {v}' for k, v in _mid_diag_params.items()
-            )
-            st.markdown(
-                '<div style="background:#fef3c7;border:1px solid #fcd34d;'
-                'border-radius:8px;padding:0.6rem 0.9rem;margin-bottom:0.7rem;'
-                'font-family:ui-monospace,Menlo,monospace;font-size:0.75rem;'
-                'color:#78350f;white-space:pre;">'
-                f'<strong style="font-family:inherit;">Params used in N={_N_mid} call:</strong>\n'
-                + _params_lines +
-                '</div>',
-                unsafe_allow_html=True,
-            )
-        if _mid_diag_df is not None and not _mid_diag_df.empty:
-            with st.expander(
-                f'Per-account costs at NOAK Unit Number = {_N_mid} '
-                f'(diagnostic — close once verified)',
-                expanded=False,
-            ):
-                st.dataframe(_mid_diag_df, use_container_width=True)
+        # Compute intermediate anchors at N = 2, 10, 30 (each is one
+        # cost-engine call, cached on inputs).  Each call uses the
+        # same extraction path as the headline.
+        _N_mids = [2, 10, 30]
+        _mid_results = {}  # N -> (mean, std)
+        with st.spinner('Computing intermediate LCOE anchors…'):
+            for _N in _N_mids:
+                if _N <= 1 or _N >= _N_user:
+                    continue
+                try:
+                    # CRITICAL: interest_rate / 100 and discount_rate / 100
+                    # to convert UI percent to fraction.  Headline does
+                    # the same at line ~1537; without it the cost engine
+                    # treats 7 as 700% interest and inflates TCI / LCOE.
+                    _m_i, _s_i, _, _ = _lcoe_at_noak_unit(
+                        reactor_type, power_mwt, enrichment,
+                        interest_rate / 100.0, discount_rate / 100.0,
+                        construction_duration,
+                        debt_to_equity, operation_mode, emergency_shutdowns,
+                        startup_duration, startup_duration_refueling,
+                        tax_credit_type, tax_credit_value, plant_lifetime,
+                        n_rings_per_assembly=n_rings_per_assembly,
+                        active_height=active_height,
+                        n_assembly_rings=n_assembly_rings,
+                        n_core_rings=n_core_rings,
+                        noak_unit_number=_N,
+                    )
+                    _mid_results[_N] = (_m_i, _s_i)
+                except Exception as _e:
+                    st.warning(f'Could not compute N={_N} anchor: {_e}')
 
         try:
             _foak_m = float(lcoe_f)
@@ -2842,16 +2820,19 @@ with streamlit_analytics.track():
         except (TypeError, ValueError):
             _foak_s = _noak_s = 0.0
 
-        # Build the anchor list — include N=10 only if it's between
-        # N=1 and N_user and the value came back valid.
-        if (_mid_m == _mid_m and _N_mid > 1 and _N_mid < _N_user):
-            _units = [1, _N_mid, _N_user]
-            _means = [_foak_m, _mid_m, _noak_m]
-            _stds  = [_foak_s, _mid_s, _noak_s]
-        else:
-            _units = [1, _N_user]
-            _means = [_foak_m, _noak_m]
-            _stds  = [_foak_s, _noak_s]
+        # Build the anchor list: FOAK + intermediates + NOAK, sorted
+        # by N ascending.  Skip any intermediate with NaN.
+        _units = [1] + [_N for _N in _N_mids
+                        if _N in _mid_results
+                        and _mid_results[_N][0] == _mid_results[_N][0]] + [_N_user]
+        _means = [_foak_m]
+        _stds  = [_foak_s]
+        for _N in _N_mids:
+            if _N in _mid_results and _mid_results[_N][0] == _mid_results[_N][0]:
+                _means.append(_mid_results[_N][0])
+                _stds.append(_mid_results[_N][1])
+        _means.append(_noak_m)
+        _stds.append(_noak_s)
 
         # ── Diagnostic dump (always visible) so we can debug ──────────
         # Print the raw sweep results in a fixed-width panel.  This
