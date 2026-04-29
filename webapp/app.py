@@ -2002,34 +2002,48 @@ with streamlit_analytics.track():
                 # LTMR: 1833 kg/MWt of NaK (Creys-Malville scaling).
                 # GCMR: 3.3 kg/MWt of helium (UNT 919556 tables 17 & 18).
                 # HPMR: 0 (heat pipes individually sealed; no bulk inventory).
+                #
+                # Display in tons with deliberately coarse rounding to signal
+                # this is a rough estimate, not a precision figure:
+                #   >= 1 ton  -> integer tons
+                #   <  1 ton  -> 1 significant figure
                 if reactor_type in ('LTMR', 'GCMR'):
                     _inv_kg = float(params.get('Onsite Coolant Inventory', 0.0))
                     if _inv_kg > 0:
                         _coolant_label = {'LTMR': 'NaK', 'GCMR': 'Helium'}[reactor_type]
+                        _tons = _inv_kg / 1000.0
+                        if _tons >= 1:
+                            _val_str = f'{round(_tons):,d} ton'
+                        else:
+                            _val_str = f'{_tons:.1g} ton'
                         _inv_help = {
                             'LTMR': (
-                                'Total mass of primary NaK coolant on site (filled '
-                                'inventory + storage). Scales linearly with thermal '
-                                'power at 1833 kg/MWt, derived from the '
-                                'Creys-Malville sodium plant (5,500 t Na for a '
-                                '3,000 MWt core). NaK does not require periodic '
-                                'replacement — the primary boundary is sealed and '
-                                'the coolant is not consumed. Drives the coolant '
-                                'procurement line in OCC.'
+                                'Rough estimate of the on-site primary NaK '
+                                'inventory (filled core + storage). Scales '
+                                'linearly with thermal power at ~1833 kg/MWt, '
+                                'derived from the Creys-Malville sodium plant '
+                                '(5,500 t Na for a 3,000 MWt core). NaK does '
+                                'not require periodic replacement — the '
+                                'primary boundary is sealed and the coolant '
+                                'is not consumed. Drives the coolant '
+                                'procurement line in OCC. Value is rounded '
+                                'coarsely to reflect estimate-level accuracy.'
                             ),
                             'GCMR': (
-                                'Total mass of helium coolant on site. Scales '
-                                'linearly with thermal power at 3.3 kg/MWt '
-                                '(UNT 919556 tables 17 & 18). He has a steady '
-                                '~10 %/year leakage rate (NAS 12844), so '
-                                'one-tenth of this inventory is replaced '
-                                'annually. Drives both the OCC coolant line and '
-                                'the OPEX make-up term.'
+                                'Rough estimate of the on-site helium '
+                                'inventory. Scales linearly with thermal '
+                                'power at ~3.3 kg/MWt (UNT 919556 tables 17 '
+                                '& 18). He has a steady ~10 %/year leakage '
+                                'rate (NAS 12844), so one-tenth of this '
+                                'inventory is replaced annually. Drives both '
+                                'the OCC coolant line and the OPEX make-up '
+                                'term. Value is rounded coarsely to reflect '
+                                'estimate-level accuracy.'
                             ),
                         }[reactor_type]
                         _fuel_card(
                             'Coolant inventory',
-                            f'{_inv_kg:,.1f} kg  ({_coolant_label})',
+                            f'{_val_str}  ({_coolant_label})',
                             _inv_help,
                             accent='#0e7490', bg='#ecfeff', border='#a5f3fc',
                         )
