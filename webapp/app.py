@@ -2357,6 +2357,81 @@ with streamlit_analytics.track():
                 unsafe_allow_html=True,
             )
 
+            # ── Always-visible notes panel ──
+            # Hover tooltips on the (?) icons are easy to miss; spell out
+            # what each component includes/excludes and the global
+            # assumptions below the table.
+            _hpmr_note = (
+                '<li><strong>HPMR-specific:</strong> heat-pipe steel '
+                'cladding and the Na working fluid are <em>not</em> '
+                'currently modeled in MOUSE — flagged for future addition.</li>'
+                if reactor_type == 'HPMR' else ''
+            )
+            _gcmr_note = (
+                '<li><strong>GCMR labeling note:</strong> what is shown '
+                'as "Reactor vessel" here maps to MOUSE\'s internal '
+                '<em>Guard Vessel</em> field, because for the GCMR the '
+                'outer pressure shell is the RPV, not the inner core barrel.</li>'
+                if reactor_type == 'GCMR' else ''
+            )
+            _gv_note = (
+                '<li><strong>Guard vessel:</strong> wall thickness and '
+                'gap; mass = wall only (no internals).</li>'
+                if _has_guard else
+                '<li><strong>Guard vessel — N/A:</strong> intentionally '
+                'omitted for this reactor type (helium is inert for GCMR; '
+                'each heat pipe is individually sealed for HPMR — neither '
+                'has a bulk primary coolant requiring secondary containment).</li>'
+            )
+            st.markdown(
+                '<div style="background:#f0f9ff;border:1px solid #bae6fd;'
+                'border-radius:10px;padding:0.85rem 1.1rem;margin-bottom:0.9rem;'
+                'font-size:0.79rem;line-height:1.55;color:#0c4a6e;">'
+                '<div style="font-weight:700;font-size:0.72rem;'
+                'text-transform:uppercase;letter-spacing:0.06em;'
+                'color:#0369a1;margin-bottom:0.45rem;">Notes &amp; assumptions</div>'
+                '<ul style="margin:0;padding-left:1.2rem;color:#0c4a6e;">'
+                '<li><strong>Reactor (core + reflectors + drums):</strong> '
+                'mass sums uranium (U235 + U238) + moderator (ZrH for LTMR; '
+                'graphite + ZrH booster for GCMR; monolith graphite for HPMR) '
+                '+ radial reflector + axial reflector + control drums. '
+                'Fuel-pin cladding is not separately tracked in MOUSE '
+                '(small relative to the other terms).</li>'
+                + _hpmr_note +
+                '<li><strong>Reactor vessel:</strong> diameter is '
+                '2 × (vessel radius + vessel thickness); height includes '
+                f'active core, axial reflector, lower plenum, upper plenum, '
+                f'and bottom dish (currently using the placeholder Vessel '
+                f'Bottom Depth = {_bottom_depth_cm:.1f} cm — flagged for '
+                'review). Top closure dome is <em>not</em> currently '
+                'modeled in MOUSE — flagged for future addition. Mass is '
+                'the vessel wall only, no internals.</li>'
+                + _gcmr_note
+                + _gv_note +
+                '<li><strong>RVACS (cooling + intake vessels):</strong> '
+                'treated as one shipping envelope. Diameter = 2 × intake '
+                'vessel outer radius; height is the full external envelope '
+                'including bottom dish. Mass = cooling-vessel wall + '
+                'intake-vessel wall only (no air, no insulation, no '
+                'support structure).</li>'
+                '<li><strong>Shielding excluded:</strong> in-vessel '
+                'shielding (B<sub>4</sub>C) and out-of-vessel shielding '
+                '(WEP / concrete biological shield) are <em>not</em> '
+                'considered in this section. Shielding adds significant '
+                'mass and outer dimension to the as-shipped or as-installed '
+                'module, depending on whether it ships with the reactor or '
+                'is built on site.</li>'
+                '<li><strong>Coolant excluded:</strong> primary coolant '
+                'inventory (NaK for LTMR, He for GCMR, heat-pipe Na for '
+                'HPMR) is <em>not</em> included in the dry-mass column.</li>'
+                '<li><strong>Other excluded items:</strong> support skirt, '
+                'lifting lugs, transport frame, control-rod drives, and '
+                'any auxiliary piping outside the four nested vessels.</li>'
+                '</ul>'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+
             # ── Transport-mode dimensional limits + badges ──
             # Limits & references
             _modes = [
