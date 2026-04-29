@@ -2666,14 +2666,44 @@ with streamlit_analytics.track():
                 _units, _means, _stds = [], [], []
                 st.warning(f'Could not compute LCOE sweep: {_e}')
 
-        if _units and all(m == m for m in _means):  # m == m filters NaN
+        # ── Diagnostic dump (always visible) so we can debug ──────────
+        # Print the raw sweep results in a fixed-width panel.  This
+        # lets us see exactly what the cost engine returned for each
+        # NOAK Unit Number, even if the plot rendering fails for any
+        # reason.
+        _diag_lines = []
+        for _i, _N in enumerate(_units or []):
+            _m = _means[_i] if _i < len(_means) else float('nan')
+            _s = _stds[_i]  if _i < len(_stds)  else float('nan')
+            _diag_lines.append(f'  N = {int(_N):>3d}  mean = ${_m:.1f}  std = ${_s:.1f}')
+        if _diag_lines:
+            st.markdown(
+                '<div style="background:#fff8db;border:1px solid #fde68a;'
+                'border-radius:8px;padding:0.6rem 0.9rem;margin-bottom:0.7rem;'
+                'font-family:ui-monospace,Menlo,monospace;font-size:0.78rem;'
+                'color:#78350f;white-space:pre;">'
+                '<strong style="font-family:inherit;">Sweep diagnostic (NOAK LCOE per unit count, $/MWh):</strong>\n'
+                + '\n'.join(_diag_lines) +
+                '</div>',
+                unsafe_allow_html=True,
+            )
+
+        # NaN-tolerant gating: drop points where the LCOE came back
+        # NaN, plot whatever valid points remain.  Scatter markers +
+        # mean line are always drawn (they don't need the spline).
+        _u_arr = np.array(_units, dtype=float) if _units else np.array([])
+        _m_arr = np.array(_means, dtype=float) if _means else np.array([])
+        _s_arr = np.array(_stds,  dtype=float) if _stds  else np.array([])
+        if _m_arr.size:
+            _valid = ~np.isnan(_m_arr)
+            _u_arr = _u_arr[_valid]
+            _m_arr = _m_arr[_valid]
+            _s_arr = _s_arr[_valid]
+            _s_arr = np.nan_to_num(_s_arr, nan=0.0)
+
+        if _u_arr.size >= 2:
             from scipy.interpolate import make_interp_spline
             from matplotlib.patches import Patch as _Patch
-
-            _u_arr = np.array(_units, dtype=float)
-            _m_arr = np.array(_means, dtype=float)
-            _s_arr = np.array(_stds,  dtype=float)
-            _s_arr = np.nan_to_num(_s_arr, nan=0.0)
 
             # Reactor-type-specific palette (matches the existing
             # webapp accent colors for each reactor).
