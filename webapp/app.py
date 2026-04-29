@@ -446,6 +446,55 @@ def _run_lcoe_sweep(reactor_type, power_mwt, enrichment, interest_rate, discount
     return list(units_tuple), means, stds
 
 
+# Single-point cost-engine call for the Costs-in-Perspective plot.
+# Used to add an intermediate anchor (e.g. NOAK Unit Number = 10)
+# between the headline FOAK (N=1) and NOAK (N=user_setting).  Same
+# extraction path as _run_estimate so the value matches the headline
+# format exactly: bottom_up_cost_estimate -> cost_drivers_estimate ->
+# transform_dataframe -> _get_mean_std.
+@st.cache_data(show_spinner=False)
+def _lcoe_at_noak_unit(reactor_type, power_mwt, enrichment, interest_rate, discount_rate,
+                       construction_duration, debt_to_equity, operation_mode,
+                       emergency_shutdowns, startup_duration, startup_duration_refueling,
+                       tax_credit_type, tax_credit_value, plant_lifetime,
+                       n_rings_per_assembly=None, active_height=None,
+                       n_assembly_rings=None, n_core_rings=None,
+                       noak_unit_number=10):
+    overrides = {
+        'Interest Rate': interest_rate,
+        'Discount Rate': discount_rate,
+        'Construction Duration': construction_duration,
+        'Debt To Equity Ratio': debt_to_equity,
+        'Escalation Year': ESCALATION_YEAR,
+        'Operation Mode': operation_mode,
+        'Emergency Shutdowns Per Year': emergency_shutdowns,
+        'Startup Duration after Emergency Shutdown': startup_duration,
+        'Startup Duration after Refueling': startup_duration_refueling,
+        'Levelization Period': plant_lifetime,
+        'NOAK Unit Number': int(noak_unit_number),
+    }
+    if tax_credit_type == 'PTC':
+        overrides['PTC credit value'] = tax_credit_value
+        overrides['PTC credit period'] = 10
+        overrides['Tax Rate'] = 0.21
+        lcoe_account = 'LCOE with PTC'
+    elif tax_credit_type == 'ITC':
+        overrides['ITC credit level'] = tax_credit_value
+        lcoe_account = 'LCOE (ITC-adjusted)'
+    else:
+        lcoe_account = 'LCOE'
+    p = build_params(reactor_type, power_mwt, enrichment, overrides,
+                     n_rings_per_assembly=n_rings_per_assembly,
+                     active_height=active_height,
+                     n_assembly_rings=n_assembly_rings,
+                     n_core_rings=n_core_rings)
+    raw_df = bottom_up_cost_estimate('cost/Cost_Database.xlsx', p)
+    enriched_df, _ = cost_drivers_estimate(raw_df, p)
+    display_df = transform_dataframe(enriched_df)
+    m, s = _get_mean_std(display_df, lcoe_account, 'NOAK')
+    return float(m) if m == m else float('nan'), float(s) if s == s else 0.0
+
+
 # ---------------------------------------------------------------------------
 # Anonymous visitor analytics
 # ---------------------------------------------------------------------------
@@ -2672,37 +2721,68 @@ with streamlit_analytics.track():
         st.markdown(
             '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;'
             'padding:0.85rem 1.1rem;margin-bottom:0.9rem;font-size:0.82rem;line-height:1.45;color:#334155;">'
-            'The two anchor points on the curve are the same FOAK and NOAK LCOE values shown in '
-            'the headline cards above — FOAK at N=1 and NOAK at the user-set NOAK Unit Number '
-            '(default 100). The shaded band reflects the one-sigma uncertainty around each '
-            'anchor and is connected linearly between them. Overlaid against seven US-relevant '
-            'electricity-market price ranges to indicate where the reactor would be '
-            'cost-competitive at FOAK vs at scale.'
+            'The curve is anchored at three deployment scales: N=1 (FOAK from the headline '
+            'card), N=10 (one extra cost-engine call), and N=user-set NOAK Unit Number '
+            '(default 100, NOAK from the headline card). The shaded band reflects the '
+            'one-sigma uncertainty around each anchor and is connected piecewise between '
+            'them. Overlaid against seven US-relevant electricity-market price ranges to '
+            'indicate where the reactor would be cost-competitive at each scale.'
             '</div>',
             unsafe_allow_html=True,
         )
 
-        # Use ONLY the FOAK and NOAK values that the headline cards
-        # already computed.  No extra cost-engine calls.  Two anchor
-        # points: FOAK at N=1, NOAK at the user's NOAK Unit Number
-        # (default 100).  Plotted as a straight line with a shaded
-        # uncertainty band — keeps the section instant and consistent
-        # with the headline cards by construction.
+        # Use the headline FOAK (N=1) and NOAK (N=user_setting) values
+        # as anchors, and add ONE extra cost-engine call at N=10 to
+        # give an intermediate point.  Same extraction path as the
+        # headline cards (bottom_up_cost_estimate ->
+        # cost_drivers_estimate -> transform_dataframe ->
+        # _get_mean_std), so values are consistent by construction.
         _N_user = int(round(float(params.get('NOAK Unit Number', 100))))
         if _N_user < 2:
             _N_user = 100
-        _units = [1, _N_user]
+
+        # Compute the intermediate anchor at N=10 (one cost-engine
+        # call, cached on inputs).
+        _N_mid = 10
+        with st.spinner('Computing intermediate LCOE anchor (N=10)…'):
+            try:
+                _mid_m, _mid_s = _lcoe_at_noak_unit(
+                    reactor_type, power_mwt, enrichment,
+                    interest_rate, discount_rate, construction_duration,
+                    debt_to_equity, operation_mode, emergency_shutdowns,
+                    startup_duration, startup_duration_refueling,
+                    tax_credit_type, tax_credit_value, plant_lifetime,
+                    n_rings_per_assembly=n_rings_per_assembly,
+                    active_height=active_height,
+                    n_assembly_rings=n_assembly_rings,
+                    n_core_rings=n_core_rings,
+                    noak_unit_number=_N_mid,
+                )
+            except Exception as _e:
+                _mid_m, _mid_s = float('nan'), 0.0
+                st.warning(f'Could not compute N=10 anchor: {_e}')
+
         try:
-            _means = [float(lcoe_f), float(lcoe_n)]
+            _foak_m = float(lcoe_f)
+            _noak_m = float(lcoe_n)
         except (TypeError, ValueError):
-            _means = [float('nan'), float('nan')]
+            _foak_m = _noak_m = float('nan')
         try:
-            _stds = [
-                float(lcoe_f_std) if lcoe_f_std == lcoe_f_std else 0.0,
-                float(lcoe_n_std) if lcoe_n_std == lcoe_n_std else 0.0,
-            ]
+            _foak_s = float(lcoe_f_std) if lcoe_f_std == lcoe_f_std else 0.0
+            _noak_s = float(lcoe_n_std) if lcoe_n_std == lcoe_n_std else 0.0
         except (TypeError, ValueError):
-            _stds = [0.0, 0.0]
+            _foak_s = _noak_s = 0.0
+
+        # Build the anchor list — include N=10 only if it's between
+        # N=1 and N_user and the value came back valid.
+        if (_mid_m == _mid_m and _N_mid > 1 and _N_mid < _N_user):
+            _units = [1, _N_mid, _N_user]
+            _means = [_foak_m, _mid_m, _noak_m]
+            _stds  = [_foak_s, _mid_s, _noak_s]
+        else:
+            _units = [1, _N_user]
+            _means = [_foak_m, _noak_m]
+            _stds  = [_foak_s, _noak_s]
 
         # ── Diagnostic dump (always visible) so we can debug ──────────
         # Print the raw sweep results in a fixed-width panel.  This
