@@ -79,6 +79,7 @@ sys.modules['watts'] = MagicMock()
 # ---------------------------------------------------------------------------
 # Standard imports (after stubs are in place)
 # ---------------------------------------------------------------------------
+import html
 import io
 import math
 import sqlite3
@@ -1168,6 +1169,26 @@ section[data-testid="stSidebar"] .stButton > button:hover {
     border-radius: 10px !important;
     background: white;
 }
+/* The summary row is the clickable label.  Streamlit defaults render
+   it in near-white text on a near-white background, which makes the
+   affordance invisible.  Force INL-blue + bold + a hover state so it's
+   obvious the user can click it. */
+[data-testid="stExpander"] summary,
+[data-testid="stExpander"] details > summary,
+[data-testid="stExpander"] details > summary p,
+[data-testid="stExpander"] [role="button"],
+[data-testid="stExpander"] [role="button"] p,
+[data-testid="stExpander"] [data-testid="stExpanderToggleIcon"] {
+    color: #1B4F8C !important;
+    font-weight: 600 !important;
+}
+[data-testid="stExpander"] summary:hover,
+[data-testid="stExpander"] details > summary:hover,
+[data-testid="stExpander"] [role="button"]:hover {
+    background: #f1f5f9 !important;
+    text-decoration: underline !important;
+    cursor: pointer !important;
+}
 
 /* ── Download button ── */
 .stDownloadButton > button {
@@ -1223,14 +1244,6 @@ with streamlit_analytics.track():
             '<div style="color:white;font-weight:800;font-size:1.1rem;letter-spacing:0.05em;margin-top:0.2rem;">MOUSE</div>'
             '<div style="color:#64748b;font-size:0.65rem;letter-spacing:0.06em;text-transform:uppercase;line-height:1.4;">'
             'Microreactor Optimization<br>Using Simulation &amp; Economics</div>'
-            '<div style="color:#94a3b8;font-size:0.72rem;font-weight:600;margin-top:0.5rem;letter-spacing:0.02em;">'
-            '🏛 Idaho National Laboratory</div>'
-            '<div style="margin-top:0.6rem;">'
-            '<a href="https://github.com/IdahoLabResearch/MOUSE" target="_blank" '
-            'style="display:inline-block;background:#24292e;color:white;font-size:0.72rem;'
-            'font-weight:600;text-decoration:none;padding:0.3rem 0.8rem;border-radius:20px;'
-            'border:1px solid #444;letter-spacing:0.02em;">&#9651; Open Source on GitHub</a>'
-            '</div>'
             '</div>',
             unsafe_allow_html=True,
         )
@@ -1524,6 +1537,29 @@ with streamlit_analytics.track():
 
     # ── Welcome banner ──────────────────────────────────────────────────────
     if not run_button:
+        # ── INL / repository credit (rendered ABOVE the welcome banner
+        # so the repo link is the first thing the user sees) ──────────
+        st.markdown(
+            '''<div style="background:#f8fafc;border:1px solid #cbd5e1;border-radius:14px;
+                           padding:2.2rem 2.4rem;margin-bottom:1.5rem;
+                           font-size:2rem;line-height:1.5;color:#0f172a;">
+                 This webapp is built on the
+                 <strong>MOUSE</strong> tool published by
+                 <strong>Idaho National Laboratory</strong> at
+                 <a href="https://github.com/IdahoLabResearch/MOUSE" target="_blank"
+                    style="color:#1B4F8C;font-weight:700;text-decoration:none;">
+                   github.com/IdahoLabResearch/MOUSE</a>.
+                 The webapp is designed for
+                 <strong>accessibility and ease of use</strong>;
+                 the underlying MOUSE repository gives full control to
+                 define custom geometries, swap materials, build new
+                 reactor types, and run more sophisticated analyses.
+                 Users who need that flexibility are encouraged to
+                 use and contribute to the repository directly.
+               </div>''',
+            unsafe_allow_html=True,
+        )
+
         st.markdown(
             f'''<div style="background:linear-gradient(135deg,#0b1f3a 0%,#1B4F8C 55%,#1e6fa8 100%);
                            border-radius:18px;padding:3rem 3rem 2.8rem;color:white;
@@ -1532,19 +1568,6 @@ with streamlit_analytics.track():
                              border-radius:50%;background:rgba(255,255,255,0.04);"></div>
                  <div style="position:absolute;right:3rem;top:50%;transform:translateY(-50%);
                              font-size:7rem;opacity:0.1;line-height:1;">⚛</div>
-                 <div style="display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap;margin-bottom:1.1rem;">
-                   <span style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.35);
-                                 border-radius:20px;padding:0.35rem 1rem;font-size:0.82rem;font-weight:700;
-                                 color:white;letter-spacing:0.02em;">
-                     🏛 Idaho National Laboratory
-                   </span>
-                   <a href="https://github.com/IdahoLabResearch/MOUSE" target="_blank"
-                      style="background:#24292e;border:1px solid rgba(255,255,255,0.25);
-                             border-radius:20px;padding:0.35rem 1rem;font-size:0.82rem;font-weight:700;
-                             color:white;text-decoration:none;letter-spacing:0.02em;">
-                     &#9651; Open Source on GitHub &rarr; IdahoLabResearch/MOUSE
-                   </a>
-                 </div>
                  <h1 style="font-size:2.4rem;font-weight:800;margin:0 0 0.3rem;color:white;line-height:1.15;">
                    MOUSE
                  </h1>
@@ -1815,16 +1838,27 @@ with streamlit_analytics.track():
         unsafe_allow_html=True,
     )
 
-    tab_summary, tab_drivers, tab_table = st.tabs([
-        '📊  Summary',
-        '📈  Cost Drivers',
-        '📋  Full Breakdown',
+    tab_design, tab_physics, tab_drivers, tab_table = st.tabs([
+        'Design & Economics',
+        'Physics & Thermal',
+        'Cost Drivers',
+        'Full Breakdown',
     ])
 
+    # Card queue shared across tabs.  Cards are appended during the
+    # compute block in tab_design (via _fuel_card with a section= tag),
+    # then dispatched to the right tab when rendered.
+    #   3 = "How much fuel and how long does it last?"  → Tab A
+    #   4 = "How does the neutronics look?"             → Tab B
+    #   5 = "What are the thermal-hydraulic conditions?" → Tab B
+    _section_cards = {3: [], 4: [], 5: []}
+
     # ═══════════════════════════════════════════════════════════════
-    # TAB 1 — SUMMARY
+    # TAB 1 — DESIGN & ECONOMICS
+    # Sections 1–3: What does it cost? · What does it look like? ·
+    # How much fuel and how long does it last?
     # ═══════════════════════════════════════════════════════════════
-    with tab_summary:
+    with tab_design:
 
         img_col, info_col = st.columns([1, 1], gap='large')
 
@@ -2142,8 +2176,29 @@ with streamlit_analytics.track():
                     )
                     st.markdown('<div style="height:1rem"></div>', unsafe_allow_html=True)
 
+            # ─── SECTION 2 — What does it look like? ───
+            # (cross-section image + side-view + reactivity-vs-time were
+            # rendered above; the Materials & Components panel completes
+            # the visual / structural picture of the design.)
+            _section_header_2 = (
+                '<div style="font-size:1.05rem;font-weight:800;color:#1B4F8C;'
+                'border-left:4px solid #1B4F8C;padding:0.4rem 0 0.4rem 0.75rem;'
+                'margin:0.5rem 0 0.85rem 0;">'
+                'What does it look like?</div>'
+            )
+            st.markdown(_section_header_2, unsafe_allow_html=True)
+
             # ── Materials & Components (read directly from params) ──
             _materials_section(reactor_type, params)
+
+            # ─── SECTION 3 — How much fuel and how long does it last? ───
+            st.markdown(
+                '<div style="font-size:1.05rem;font-weight:800;color:#1B4F8C;'
+                'border-left:4px solid #1B4F8C;padding:0.4rem 0 0.4rem 0.75rem;'
+                'margin:1.2rem 0 0.85rem 0;">'
+                'How much fuel and how long does it last?</div>',
+                unsafe_allow_html=True,
+            )
 
             # ── Fuel Inventory (uses st.metric so we get the built-in help icon) ──
             _u235_g = float(params.get('Mass U235', 0.0))
@@ -2155,37 +2210,60 @@ with streamlit_analytics.track():
             _fis_kg         = _u235_g / 1.0e3                          # g → kg
             _fis_kg_per_mwe = _fis_kg / _mwe                           # kg / MWe
 
-            st.markdown(
-                '<div style="font-size:0.7rem;font-weight:700;color:#64748b;text-transform:uppercase;'
-                'letter-spacing:0.09em;margin-bottom:0.6rem;">Fuel Inventory</div>',
-                unsafe_allow_html=True,
-            )
-
+            # _section_cards is initialized above the tab declarations
+            # so it's visible from both tab_design and tab_physics.
             def _fuel_card(title, value_str, help_text,
-                           accent='#0e7490', bg='#ecfeff', border='#a5f3fc'):
-                # `title=` HTML attribute → native browser tooltip on hover.
-                # Replace any " (which would close the attribute) with “ to be safe.
-                _help_safe = help_text.replace('"', '“')
+                           accent=None, bg=None, border=None,
+                           status=None, section=3):
+                # QUEUE-MODE: appends to _section_cards[section] instead
+                # of rendering immediately.  The actual render happens
+                # later inside the appropriate tab.  Status/style choice
+                # is computed at queue time so callers don't need to
+                # think about it.
+                if status == 'warning':
+                    _bg, _br, _tc = '#fffbeb', '#fcd34d', '#b45309'
+                elif status == 'error':
+                    _bg, _br, _tc = '#fef2f2', '#fecaca', '#b91c1c'
+                else:
+                    _bg, _br, _tc = '#ffffff', '#e2e8f0', '#1B4F8C'
+                _help_html = html.escape(help_text) if help_text else ''
+                _html = (
+                    f'<div style="background:{_bg};border:1px solid {_br};'
+                    f'border-radius:14px;padding:1.0rem 1.25rem;'
+                    f'box-shadow:0 2px 8px rgba(0,0,0,0.04);margin-bottom:0.6rem;">'
+                    f'<div style="font-size:0.68rem;font-weight:700;color:{_tc};'
+                    f'text-transform:uppercase;letter-spacing:0.09em;margin-bottom:0.35rem;">'
+                    f'{title}</div>'
+                    f'<div style="font-size:1.05rem;font-weight:800;color:#111827;'
+                    f'line-height:1.3;margin-bottom:0.45rem;">{value_str}</div>'
+                    f'<div style="font-size:0.72rem;font-weight:400;color:#64748b;'
+                    f'line-height:1.45;">{_help_html}</div>'
+                    f'</div>'
+                )
+                _section_cards.setdefault(section, []).append(_html)
+
+            def _section_header(label, accent='#1B4F8C'):
                 st.markdown(
-                    f'''<div style="background:{bg};border:1px solid {border};border-radius:14px;
-                                    padding:1.0rem 1.25rem;box-shadow:0 2px 8px rgba(0,0,0,0.04);
-                                    margin-bottom:0.6rem;">
-                          <div style="font-size:0.68rem;font-weight:700;color:{accent};
-                                      text-transform:uppercase;letter-spacing:0.09em;margin-bottom:0.35rem;
-                                      display:flex;align-items:center;gap:0.4rem;">
-                              <span>{title}</span>
-                              <span title="{_help_safe}" style="cursor:help;color:#fff;
-                                          background:{accent};border-radius:50%;
-                                          width:16px;height:16px;display:inline-flex;
-                                          align-items:center;justify-content:center;
-                                          font-size:0.75rem;font-weight:800;line-height:1;">?</span>
-                          </div>
-                          <div style="font-size:1.05rem;font-weight:800;color:#111827;line-height:1.3;">
-                              {value_str}
-                          </div>
-                        </div>''',
+                    f'<div style="font-size:0.95rem;font-weight:800;color:{accent};'
+                    f'border-left:4px solid {accent};padding:0.35rem 0 0.35rem 0.7rem;'
+                    f'margin:1.5rem 0 0.85rem 0;letter-spacing:0.01em;">'
+                    f'{label}</div>',
                     unsafe_allow_html=True,
                 )
+
+            def _scoping_callout(text):
+                st.markdown(
+                    f'<div style="background:#fffbeb;border:1.5px solid #f59e0b;'
+                    f'border-radius:10px;padding:0.95rem 1.15rem;margin-bottom:1rem;'
+                    f'font-size:0.85rem;line-height:1.55;color:#78350f;">'
+                    f'<strong style="color:#92400e;">Scoping-only note. </strong>'
+                    f'{text}</div>',
+                    unsafe_allow_html=True,
+                )
+
+            def _render_section_cards(section_num):
+                for _h in _section_cards.get(section_num, []):
+                    st.markdown(_h, unsafe_allow_html=True)
 
             _fuel_card(
                 'Fuel loading',
@@ -2196,6 +2274,7 @@ with streamlit_analytics.track():
                  'inventory metric useful for comparing fuel-cycle requirements '
                  'across reactor types. Microreactors typically run '
                  '100-1,000 kgHM/MWe depending on technology.'),
+                section=3,
             )
             _fuel_card(
                 'Fissile loading',
@@ -2206,6 +2285,7 @@ with streamlit_analytics.track():
                  'when comparing the economics of microreactors against larger '
                  'reactors — microreactor values are typically much higher than '
                  'commercial LWRs (~5 kg/MWe).'),
+                section=3,
             )
 
             # Peaking factor + discharge burnup — only meaningful for
@@ -2252,7 +2332,7 @@ with streamlit_analytics.track():
                      'typical microreactor values are 1.5–3.0 depending on '
                      'reflector design and fuel arrangement. Interpolated from '
                      'the parametric study.'),
-                    accent='#9333ea', bg='#faf5ff', border='#e9d5ff',
+                    section=4,
                 )
 
                 # Axial + total leakage (BOL, %).  Inside the trained
@@ -2329,7 +2409,7 @@ with streamlit_analytics.track():
                          'the physics fallback uses the auto-resolved '
                          'reflector thickness which already covers the drums. '
                          + _src_note),
-                        accent='#0891b2', bg='#ecfeff', border='#a5f3fc',
+                        section=4,
                     )
                 if _tot_lk > 0:
                     _fuel_card(
@@ -2343,7 +2423,7 @@ with streamlit_analytics.track():
                          'typically have higher total leakage (~5–35 %) than '
                          'commercial LWRs (~3 %) because of their small size. '
                          + _src_note),
-                        accent='#0891b2', bg='#ecfeff', border='#a5f3fc',
+                        section=4,
                     )
                 _fuel_card(
                     'Discharge burnup (avg)',
@@ -2354,7 +2434,7 @@ with streamlit_analytics.track():
                      'headline economic metric — higher discharge burnup means '
                      'more energy extracted per kg of fuel, lowering fuel cost '
                      'per MWh.'),
-                    accent='#9333ea', bg='#faf5ff', border='#e9d5ff',
+                    section=3,
                 )
                 if _bu_max > 0:
                     _fuel_card(
@@ -2367,7 +2447,7 @@ with streamlit_analytics.track():
                          'on the peak. Commercial LWRs are licensed to ~62 '
                          'MWd/kgU peak. For TRISO-fuelled designs the peak burnup '
                          'limit is typically much higher.'),
-                        accent='#9333ea', bg='#faf5ff', border='#e9d5ff',
+                        section=3,
                     )
 
                 # Mining intensity uses MOUSE's existing 'Natural Uranium Mass'
@@ -2389,7 +2469,7 @@ with streamlit_analytics.track():
                          'gU/MWh, HALEU microreactors ~30–80, natural-U reactors '
                          '(CANDU) ~150–200. Lower means less front-end fuel-'
                          'cycle resource demand.'),
-                        accent='#15803d', bg='#f0fdf4', border='#bbf7d0',
+                        section=3,
                     )
 
                 if _reactivity_swing_pct is not None:
@@ -2404,7 +2484,7 @@ with streamlit_analytics.track():
                          '< 1 with all drums in. Typical: commercial LWRs ~10–'
                          '15 %, HALEU microreactors ~15–40 % (large because '
                          'long cycles + high enrichment).'),
-                        accent='#9333ea', bg='#faf5ff', border='#e9d5ff',
+                        section=4,
                     )
 
                 # Heat flux at the fuel-pin surface (MW/m²) — already in
@@ -2423,7 +2503,7 @@ with streamlit_analytics.track():
                          'MW/m² (10–100 W/cm²). Watch for departure-from-'
                          'nucleate-boiling (DNB) limits in liquid-cooled '
                          'designs and burnout limits in gas-cooled designs.'),
-                        accent='#dc2626', bg='#fef2f2', border='#fecaca',
+                        section=5,
                     )
 
                 # Separative Work Units (SWU): kg-SWU total and per MWh.
@@ -2442,7 +2522,7 @@ with streamlit_analytics.track():
                          'enrichment cost ($/kg-SWU varies, typically $50–'
                          '$200/kg-SWU). Higher enrichment products require '
                          'disproportionately more SWU per kg.'),
-                        accent='#15803d', bg='#f0fdf4', border='#bbf7d0',
+                        section=3,
                     )
 
                 # Onsite coolant inventory — power-scaled, reactor-specific.
@@ -2492,7 +2572,7 @@ with streamlit_analytics.track():
                             'Coolant inventory',
                             f'{_val_str}  ({_coolant_label})',
                             _inv_help,
-                            accent='#0e7490', bg='#ecfeff', border='#a5f3fc',
+                            section=5,
                         )
 
                 # Coolant mass flow rate + primary-loop power fraction.
@@ -2512,7 +2592,7 @@ with streamlit_analytics.track():
                              'exchanger sizing. Liquid-metal microreactor '
                              'flow rates are typically 5–100 kg/s for the '
                              '1–20 MWt range; higher powers scale linearly.'),
-                            accent='#0e7490', bg='#ecfeff', border='#a5f3fc',
+                            section=5,
                         )
 
                     _pump_kW = float(params.get('Primary Pump Mechanical Power', 0.0))
@@ -2530,7 +2610,7 @@ with streamlit_analytics.track():
                              'values indicate an aggressively-loaded loop or '
                              'oversized core, lower values suggest natural-'
                              'circulation-dominated cooling.'),
-                            accent='#0e7490', bg='#ecfeff', border='#a5f3fc',
+                            section=5,
                         )
 
                 elif reactor_type == 'GCMR':
@@ -2555,7 +2635,7 @@ with streamlit_analytics.track():
                              'these values much smaller than liquid-metal '
                              'flows — typically 1–10 kg/s for a 1–20 MWt '
                              'GCMR. Sets compressor and PCHE sizing.'),
-                            accent='#0e7490', bg='#ecfeff', border='#a5f3fc',
+                            section=5,
                         )
 
                     # Primary Loop Compressor Power is the per-loop
@@ -2583,8 +2663,107 @@ with streamlit_analytics.track():
                              'liquid-metal pumps because helium\'s low '
                              'density needs more volumetric flow per unit '
                              'thermal power.'),
-                            accent='#0e7490', bg='#ecfeff', border='#a5f3fc',
+                            section=5,
                         )
+
+                elif reactor_type == 'HPMR':
+                    # HPMR uses sealed Na heat pipes (no flowing primary
+                    # loop), so the relevant design metrics are per-pipe
+                    # thermal duty and linear heat rate rather than mass
+                    # flow / pump power.
+                    _n_hp = int(params.get('Number of Heatpipes', 0))
+                    if _n_hp > 0:
+                        _fuel_card(
+                            'Number of heat pipes',
+                            f'{_n_hp:,}',
+                            ('Total Na heat-pipe count across the core = '
+                             '(heat pipes per assembly) × (fuel assemblies '
+                             'per core). The per-assembly count comes from '
+                             'the hex-lattice positions not occupied by '
+                             'fuel pins. Typical microreactor HPMR designs '
+                             'have ~500–5,000 heat pipes depending on '
+                             'power and assembly count (e.g. eVinci-class '
+                             '~1,000–2,000). Drives the per-pipe thermal '
+                             'duty (the next card) and the manufacturing '
+                             'cost (each Na HP with wick + cladding costs '
+                             '$1–3k). More HPs lower the per-pipe duty '
+                             'but increase the BOP and fabrication cost.'),
+                            section=5,
+                        )
+
+                        _kw_per_hp = float(params['Power MWt']) * 1000.0 / _n_hp
+                        _fuel_card(
+                            'Power per heat pipe',
+                            f'{_kw_per_hp:,.2f} kW/HP',
+                            ('Thermal duty carried by each Na heat pipe = '
+                             'Power_MWt × 1000 / N_HP. Sets the operating '
+                             'point relative to the sodium heat-pipe '
+                             'capacity envelope, which is bounded by four '
+                             'physical limits: capillary (wick can\'t '
+                             'pump enough liquid), sonic (vapor velocity '
+                             'reaches Mach 1), entrainment (vapor shear '
+                             'rips droplets off the wick), and boiling '
+                             '(nucleation in the wick). For Na HPs at '
+                             '700–900 °C the practical envelope is '
+                             '~5–15 kW/HP for 1.5–3 cm diameter pipes; '
+                             'designs above ~20 kW/HP need exotic wick '
+                             'geometries (artery, composite). Below '
+                             '~3 kW/HP usually indicates the core is '
+                             'over-heat-piped (extra cost with no benefit).'),
+                            section=5,
+                        )
+
+                        _h_cm = float(params.get('Active Height', 0.0))
+                        if _h_cm > 0:
+                            _kw_per_cm = _kw_per_hp / _h_cm
+                            _fuel_card(
+                                'Linear heat rate',
+                                f'{_kw_per_cm:,.3f} kW/cm',
+                                ('Heat-pipe linear heat rate = (kW per HP) '
+                                 '/ Active Height. This is THE key sizing '
+                                 'metric for sodium heat pipes — published '
+                                 'Na HP test data (LANL, INL) shows steady-'
+                                 'state operation up to ~0.20–0.30 kW/cm '
+                                 'for 1.5–2.5 cm diameter pipes at '
+                                 '700–900 °C, with the capillary limit '
+                                 'dominating at the low end of that '
+                                 'temperature range and the sonic limit at '
+                                 'the high end. Typical microreactor '
+                                 'designs target 0.05–0.20 kW/cm for '
+                                 'margin against transient overpower. '
+                                 'Above ~0.30 kW/cm the design is in the '
+                                 'limit-pushing regime where wick design '
+                                 'and Na inventory must be tuned together; '
+                                 'above ~0.5 kW/cm requires R&D-grade HPs.'),
+                                section=5,
+                            )
+
+                        _n_pins = int(params.get('Fuel Pin Count', 0))
+                        if _n_pins > 0:
+                            _pin_hp_ratio = _n_pins / _n_hp
+                            _fuel_card(
+                                'Pin-to-heat-pipe ratio',
+                                f'{_pin_hp_ratio:,.2f}  (pins / HP)',
+                                ('Number of fuel pins served per heat '
+                                 'pipe = Fuel Pin Count / N_HP. Geometry '
+                                 'sanity check on the lattice: HPMR '
+                                 'designs typically run 1–6 pins per HP '
+                                 'depending on the assembly ring layout '
+                                 '(N_A=6 in MOUSE puts ~3 pins per HP). '
+                                 'Below 1.0 means more heat pipes than '
+                                 'fuel pins — geometrically possible only '
+                                 'in very small assemblies and usually '
+                                 'over-conservative. Above ~6 means each '
+                                 'HP must drain heat from many pins '
+                                 'simultaneously, which raises the local '
+                                 'cladding-to-HP heat flux and forces '
+                                 'larger HP diameter or smaller pin '
+                                 'pitch. Drives the radial conduction '
+                                 'path length from fuel-pin cladding '
+                                 'through the graphite monolith to the '
+                                 'nearest HP evaporator wall.'),
+                                section=5,
+                            )
 
                 # Power density = Power_MWt / Active Core Volume.
                 # Active core is a hex prism with apothem = active_radius
@@ -2610,7 +2789,7 @@ with streamlit_analytics.track():
                          'is over-fuelled (long lifetime, low utilization); '
                          'above ~80 means the design is thermal-hydraulically '
                          'aggressive — also check the heat-flux card.'),
-                        accent='#dc2626', bg='#fef2f2', border='#fecaca',
+                        section=5,
                     )
 
                 # Aspect ratio = active height / active diameter.
@@ -2632,8 +2811,12 @@ with streamlit_analytics.track():
                          'microreactor designs sit between 0.7 and 1.5. The '
                          'webapp constrains H/D to [0.5, 2.0] via the '
                          'active-height slider.'),
-                        accent='#dc2626', bg='#fef2f2', border='#fecaca',
+                        section=5,
                     )
+
+            # ── Render queued Section 3 cards inside Tab A here.
+            #    Section 4 + 5 cards are rendered later in Tab B.
+            _render_section_cards(3)
 
             st.markdown('<div style="height:0.75rem"></div>', unsafe_allow_html=True)
 
@@ -2651,8 +2834,10 @@ with streamlit_analytics.track():
             #   weights <  1 ton -> 1 significant figure
             #   dimensions       -> meters with 1 decimal
             st.markdown(
-                '<div style="font-size:0.7rem;font-weight:700;color:#64748b;text-transform:uppercase;'
-                'letter-spacing:0.09em;margin-bottom:0.6rem;">Transportability Considerations</div>',
+                '<div style="font-size:1.05rem;font-weight:800;color:#1B4F8C;'
+                'border-left:4px solid #1B4F8C;padding:0.4rem 0 0.4rem 0.75rem;'
+                'margin:1.2rem 0 0.85rem 0;">'
+                'Can we ship it?</div>',
                 unsafe_allow_html=True,
             )
             st.markdown(
@@ -3675,7 +3860,73 @@ with streamlit_analytics.track():
             )
 
     # ═══════════════════════════════════════════════════════════════
-    # TAB 2 — COST DRIVERS
+    # TAB 2 — PHYSICS & THERMAL
+    # Sections 4–5: How does the neutronics look? · What are the
+    # thermal-hydraulic conditions?  (Section 6 — Transportability —
+    # is rendered in the Design & Economics tab.)
+    # ═══════════════════════════════════════════════════════════════
+    with tab_physics:
+        # Section 4 — Neutronics
+        st.markdown(
+            '<div style="font-size:1.05rem;font-weight:800;color:#1B4F8C;'
+            'border-left:4px solid #1B4F8C;padding:0.4rem 0 0.4rem 0.75rem;'
+            'margin:0.5rem 0 0.85rem 0;">'
+            'How does the neutronics look?</div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            '<div style="background:#fffbeb;border:1.5px solid #f59e0b;'
+            'border-radius:10px;padding:0.95rem 1.15rem;margin-bottom:1rem;'
+            'font-size:0.85rem;line-height:1.55;color:#78350f;">'
+            '<strong style="color:#92400e;">Scoping-only note. </strong>'
+            'These are first-pass scoping designs for initial economic '
+            'analysis. They have NOT been checked for shutdown margin, '
+            'reactivity coefficients, kinetics, control-drum worth, or '
+            'transient response. The k_eff, peaking factor, and leakage '
+            'values shown below are sufficient to size the fuel cycle '
+            'and bound discharge burnup, but a full safety / licensing '
+            'analysis would require additional Monte Carlo and depletion '
+            'calculations.'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+        for _h in _section_cards.get(4, []):
+            st.markdown(_h, unsafe_allow_html=True)
+        if not _section_cards.get(4):
+            st.info('No neutronics metrics available — this typically '
+                    'means the case is subcritical. See the Design & '
+                    'Economics tab for the subcritical warning.')
+
+        # Section 5 — Thermal-hydraulics
+        st.markdown(
+            '<div style="font-size:1.05rem;font-weight:800;color:#1B4F8C;'
+            'border-left:4px solid #1B4F8C;padding:0.4rem 0 0.4rem 0.75rem;'
+            'margin:1.5rem 0 0.85rem 0;">'
+            'What are the thermal-hydraulic conditions?</div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            '<div style="background:#fffbeb;border:1.5px solid #f59e0b;'
+            'border-radius:10px;padding:0.95rem 1.15rem;margin-bottom:1rem;'
+            'font-size:0.85rem;line-height:1.55;color:#78350f;">'
+            '<strong style="color:#92400e;">Scoping-only note. </strong>'
+            'Heat flux, power density, and per-component thermal duty '
+            'are reported for first-order sizing only. The app does NOT '
+            'verify passive heat-removal capability, peak fuel / cladding '
+            '/ coolant temperatures, transient cooling under loss-of-flow '
+            'or loss-of-heat-sink, or material temperature limits. '
+            'Steady-state design margins must be confirmed with a coupled '
+            'thermal-hydraulics analysis before relying on these numbers.'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+        for _h in _section_cards.get(5, []):
+            st.markdown(_h, unsafe_allow_html=True)
+        if not _section_cards.get(5):
+            st.info('No thermal-hydraulic metrics available for this case.')
+
+    # ═══════════════════════════════════════════════════════════════
+    # TAB 3 — COST DRIVERS
     # ═══════════════════════════════════════════════════════════════
     with tab_drivers:
         _drv = enriched_df[enriched_df['Account'].apply(
