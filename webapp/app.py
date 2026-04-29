@@ -1998,6 +1998,42 @@ with streamlit_analytics.track():
                         accent='#15803d', bg='#f0fdf4', border='#bbf7d0',
                     )
 
+                # Onsite coolant inventory — power-scaled, reactor-specific.
+                # LTMR: 1833 kg/MWt of NaK (Creys-Malville scaling).
+                # GCMR: 3.3 kg/MWt of helium (UNT 919556 tables 17 & 18).
+                # HPMR: 0 (heat pipes individually sealed; no bulk inventory).
+                if reactor_type in ('LTMR', 'GCMR'):
+                    _inv_kg = float(params.get('Onsite Coolant Inventory', 0.0))
+                    if _inv_kg > 0:
+                        _coolant_label = {'LTMR': 'NaK', 'GCMR': 'Helium'}[reactor_type]
+                        _inv_help = {
+                            'LTMR': (
+                                'Total mass of primary NaK coolant on site (filled '
+                                'inventory + storage). Scales linearly with thermal '
+                                'power at 1833 kg/MWt, derived from the '
+                                'Creys-Malville sodium plant (5,500 t Na for a '
+                                '3,000 MWt core). NaK does not require periodic '
+                                'replacement — the primary boundary is sealed and '
+                                'the coolant is not consumed. Drives the coolant '
+                                'procurement line in OCC.'
+                            ),
+                            'GCMR': (
+                                'Total mass of helium coolant on site. Scales '
+                                'linearly with thermal power at 3.3 kg/MWt '
+                                '(UNT 919556 tables 17 & 18). He has a steady '
+                                '~10 %/year leakage rate (NAS 12844), so '
+                                'one-tenth of this inventory is replaced '
+                                'annually. Drives both the OCC coolant line and '
+                                'the OPEX make-up term.'
+                            ),
+                        }[reactor_type]
+                        _fuel_card(
+                            'Coolant inventory',
+                            f'{_inv_kg:,.1f} kg  ({_coolant_label})',
+                            _inv_help,
+                            accent='#0e7490', bg='#ecfeff', border='#a5f3fc',
+                        )
+
                 # Coolant mass flow rate — only meaningful for LTMR (NaK).
                 # GCMR uses helium gas; HPMR uses heat pipes (no flow).
                 if reactor_type == 'LTMR':
