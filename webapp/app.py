@@ -2282,6 +2282,28 @@ with streamlit_analytics.track():
                         accent='#dc2626', bg='#fef2f2', border='#fecaca',
                     )
 
+                # Aspect ratio = active height / active diameter.
+                # Uses the active fissioning region (excludes reflector
+                # and vessel) so it characterises the core itself.
+                _active_diam_cm = 2.0 * _active_radius_cm
+                if _active_diam_cm > 0:
+                    _aspect = float(params['Active Height']) / _active_diam_cm
+                    _fuel_card(
+                        'Aspect ratio',
+                        f'{_aspect:,.2f}  (H/D)',
+                        ('Active height divided by active diameter (active '
+                         'fissioning region only — no reflector, no vessel). '
+                         'A value of 1.0 means a "cube-like" cylinder where '
+                         'height equals diameter, which minimises neutron '
+                         'leakage per unit core volume. Tall, slender cores '
+                         '(H/D > 1.5) lose more axial neutrons; short, fat '
+                         'cores (H/D < 0.5) lose more radial neutrons. Most '
+                         'microreactor designs sit between 0.7 and 1.5. The '
+                         'webapp constrains H/D to [0.5, 2.0] via the '
+                         'active-height slider.'),
+                        accent='#dc2626', bg='#fef2f2', border='#fecaca',
+                    )
+
             st.markdown('<div style="height:0.75rem"></div>', unsafe_allow_html=True)
 
             # ─────────────────────────────────────────────────────────────
@@ -2976,7 +2998,7 @@ with streamlit_analytics.track():
                                    linewidth=1.0, alpha=0.9),
                          zorder=6)
 
-            _ax.set_xlim(0, 100)
+            _ax.set_xlim(1, 100)
             # Y-axis sizing — use the 90th-percentile of (mean + std)
             # rather than max, so a single outlier point doesn't blow
             # up the y-range and squash the rest of the data.  Hard
@@ -2991,7 +3013,7 @@ with streamlit_analytics.track():
             _ax.set_ylim(0, _ymax)
             _ax.set_xlabel('Number of Units Deployed', fontsize=12, fontweight='bold')
             _ax.set_ylabel('LCOE ($/MWh)', fontsize=12, fontweight='bold')
-            _ax.set_xticks([0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100])
+            _ax.set_xticks([1, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100])
             from matplotlib.ticker import MaxNLocator
             _ax.yaxis.set_major_locator(MaxNLocator(nbins=10, integer=True))
             _ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
