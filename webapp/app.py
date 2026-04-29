@@ -3008,24 +3008,6 @@ with streamlit_analytics.track():
             st.pyplot(_fig)
             plt.close(_fig)
 
-            # Prominent caption with the raw sweep points so the user
-            # can verify the curve at a glance.  Shown in a soft-blue
-            # panel with monospace font for the numbers.
-            _pts_str = ' · '.join(
-                f'N={int(u)}: ${m:.0f}±{s:.0f}'
-                for u, m, s in zip(_u_arr, _m_arr, _s_arr)
-            )
-            st.markdown(
-                f'<div style="background:#f0f9ff;border:1px solid #bae6fd;'
-                f'border-radius:8px;padding:0.55rem 0.9rem;margin-top:0.2rem;'
-                f'margin-bottom:0.9rem;font-size:0.78rem;color:#0c4a6e;">'
-                f'<strong>NOAK LCOE per sweep point ($/MWh):</strong> '
-                f'<span style="font-family:ui-monospace,Menlo,monospace;'
-                f'color:#0f172a;">{_pts_str}</span>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
-
             # Market definitions panel (matches the user-provided spec)
             st.markdown(
                 '<div style="background:#f0f9ff;border:1px solid #bae6fd;'
@@ -3185,19 +3167,39 @@ with streamlit_analytics.track():
                             linewidth=1.8, linestyle='--', zorder=2,
                             label=f'NOAK LCOE ${_noak_m_btm:.0f}/MWh')
 
-            # Place state code label vertically inside each column,
-            # near the bottom so it's always visible (even on short
-            # columns).  White bold for legibility on every color.
-            _ymax_chart = max(_state_vals) * 1.08
+            # Place state code label vertically next to each column.
+            # Use dark slate text with a white halo (path_effects) so
+            # the label reads cleanly on every column color (green /
+            # yellow / gray) and on the white background above short
+            # columns.  Labels are positioned just above each column
+            # top, so they never collide with the column color.
+            import matplotlib.patheffects as _pe
+
+            # Y-axis must accommodate the FOAK and NOAK reference
+            # bands even when they exceed the highest state retail
+            # price (e.g. high-power FOAK at $800+/MWh against a
+            # max state of ~$330/MWh).  Use the larger of (max state
+            # price, FOAK upper band) as the basis.
+            _band_top_btm = max(
+                _foak_m_btm + _foak_s_btm,
+                _noak_m_btm + _noak_s_btm,
+                max(_state_vals),
+            )
+            _ymax_chart = _band_top_btm * 1.18
+
             for _i, (_code, _val) in enumerate(zip(_state_codes, _state_vals)):
-                _label_y = min(_val * 0.5, _val - 8) if _val > 18 else _val + 2
-                _ax_btm.text(
+                # Place label just above the column top (in axis coords).
+                _label_y = _val + _ymax_chart * 0.012
+                _t = _ax_btm.text(
                     _i, _label_y, _code,
-                    rotation=90, ha='center', va='center',
+                    rotation=90, ha='center', va='bottom',
                     fontsize=10, fontweight='bold',
-                    color=('white' if _val > 18 else '#1e293b'),
+                    color='#0f172a',  # near-black slate
                     zorder=4,
                 )
+                _t.set_path_effects([
+                    _pe.withStroke(linewidth=2.6, foreground='white'),
+                ])
 
             _ax_btm.set_xticks([])  # state names are on the columns themselves
             _ax_btm.set_xlim(-0.7, len(_state_codes) - 0.3)
