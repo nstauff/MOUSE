@@ -109,7 +109,11 @@ from webapp.gcmr_fuel_lifetime_estimator import (
     get_gcmr_leakage,
     get_gcmr_keff_curve,
 )
-from webapp.hpmr_fuel_lifetime_estimator import get_hpmr_keff_curve
+from webapp.hpmr_fuel_lifetime_estimator import (
+    get_hpmr_keff_curve,
+    get_hpmr_peaking_factor,
+    get_hpmr_leakage,
+)
 from cost.cost_estimation import bottom_up_cost_estimate, transform_dataframe
 from cost.cost_drivers import cost_drivers_estimate, is_double_digit_excluding_multiples_of_10, get_detailed_driver_rows
 
@@ -1965,6 +1969,19 @@ with streamlit_analytics.track():
                     'with non-trained (Assembly Rings, Core Rings) pairs (marked * in '
                     'the diameter slider) or near the criticality boundary.'
                 )
+            elif reactor_type == 'HPMR':
+                st.caption(
+                    'Fuel Lifetime is estimated by KNN local regression on the HPMR '
+                    'parametric study (104 rows, K=4 distance-weighted). Typical '
+                    'error is **5–15%** for queries inside the trained envelope '
+                    '(N_A=6, N_C ∈ [3..7], H = 136–1056 cm, E = 10–19.75%, P = '
+                    '1–60 MWt). Mass U-235 / U-238 are derived from the exact '
+                    'HPMR mass formula (1.6116 g/(pin·cm) × N_pins(N_A, N_C) × H), '
+                    'so off-grid geometry queries are mass-consistent. The 8–10% '
+                    'enrichment band lets you see the subcritical region '
+                    'explicitly — model returns 0 there because the nearest '
+                    'training point at E = 10% is itself subcritical.'
+                )
 
             st.markdown('<div style="height:1rem"></div>', unsafe_allow_html=True)
 
@@ -2211,6 +2228,14 @@ with streamlit_analytics.track():
                         enrichment     = params['Enrichment'],
                         power_mwt      = params['Power MWt'],
                     )
+                elif reactor_type == 'HPMR':
+                    _pf = get_hpmr_peaking_factor(
+                        n_rings_per_assembly = params['Number of Rings per Assembly'],
+                        n_rings_per_core     = params['Number of Rings per Core'],
+                        active_height        = params['Active Height'],
+                        enrichment           = params['Enrichment'],
+                        power_mwt            = params['Power MWt'],
+                    )
 
                 # Average discharge burnup: total energy / total HM mass.
                 # MWt × days = MW·d, divided by kg → MWd/kg.
@@ -2262,6 +2287,17 @@ with streamlit_analytics.track():
                         active_radius_cm    = _active_radius_cm,
                         radial_reflector_cm = _r_refl,
                         axial_reflector_cm  = _z_refl,
+                    )
+                elif reactor_type == 'HPMR':
+                    _ax_lk, _tot_lk, _lk_src = get_hpmr_leakage(
+                        n_rings_per_assembly = params['Number of Rings per Assembly'],
+                        n_rings_per_core     = params['Number of Rings per Core'],
+                        active_height        = params['Active Height'],
+                        enrichment           = params['Enrichment'],
+                        power_mwt            = params['Power MWt'],
+                        active_radius_cm     = _active_radius_cm,
+                        radial_reflector_cm  = _r_refl,
+                        axial_reflector_cm   = _z_refl,
                     )
 
                 _src_note = (

@@ -376,3 +376,142 @@ def get_hpmr_keff_curve(n_rings_per_assembly, n_rings_per_core, active_height,
         times_arr = times_arr * scale
 
     return times_arr, keffs_arr
+
+
+# ---------------------------------------------------------------------------
+# Generic KNN interpolator for any scalar HPMR column
+# ---------------------------------------------------------------------------
+
+def _hpmr_knn_scalar(column_name, n_rings_per_assembly, n_rings_per_core,
+                     active_height, enrichment, power_mwt):
+    """Distance-weighted KNN interpolator for any scalar HPMR
+    parametric-study column.  Uses the K=4 nearest neighbours in the
+    same active feature subset as the lifetime estimator (drops
+    degenerate-range features so off-grid geometry queries don't get
+    swamped by a constant offset)."""
+    _load()
+
+    df = _train_df.copy()
+    if column_name not in df.columns:
+        full = pd.read_excel(_XLSX_PATH, sheet_name=_SHEET, engine='openpyxl')
+        df[column_name] = full[column_name].values
+        _train_df[column_name] = df[column_name]
+
+    df = df[df[column_name].notna()].reset_index(drop=True)
+    if len(df) == 0:
+        return 0.0
+
+    feat_idx_active = [i for i in range(5) if _feat_max[i] > _feat_min[i]]
+    if not feat_idx_active:
+        return 0.0
+    feat_range_active = (_feat_max - _feat_min)[feat_idx_active]
+
+    q_full = np.array([float(enrichment),
+                       float(n_rings_per_assembly),
+                       float(n_rings_per_core),
+                       float(active_height),
+                       float(power_mwt)], dtype=float)
+    q_norm = (q_full[feat_idx_active]
+              - _feat_min[feat_idx_active]) / feat_range_active
+    train_full = df[['E', 'NA', 'NC', 'H', 'P']].values.astype(float)
+    train_norm = ((train_full[:, feat_idx_active]
+                   - _feat_min[feat_idx_active]) / feat_range_active)
+    dists = np.sqrt(((train_norm - q_norm) ** 2).sum(axis=1))
+    k_idx = np.argsort(dists)[: _K]
+    nb = df.iloc[k_idx]
+    nb_dists = dists[k_idx]
+    weights = 1.0 / (nb_dists + 1e-9)
+    weights = weights / weights.sum()
+    return float(np.sum(weights * nb[column_name].values))
+
+
+def get_hpmr_peaking_factor(n_rings_per_assembly, n_rings_per_core,
+                            active_height, enrichment, power_mwt):
+    """Interpolated Max Peaking Factor for an HPMR design point."""
+    return _hpmr_knn_scalar('Max Peaking Factor',
+                            n_rings_per_assembly, n_rings_per_core,
+                            active_height, enrichment, power_mwt)
+
+
+def get_hpmr_axial_leakage_pct(n_rings_per_assembly, n_rings_per_core,
+                               active_height, enrichment, power_mwt):
+    """Interpolated BOL axial leakage (%) for an HPMR design point."""
+    return _hpmr_knn_scalar('Estimated Axial Leakage (%)',
+                            n_rings_per_assembly, n_rings_per_core,
+                            active_height, enrichment, power_mwt)
+
+
+def get_hpmr_total_leakage_pct(n_rings_per_assembly, n_rings_per_core,
+                               active_height, enrichment, power_mwt):
+    """Interpolated BOL total leakage (%) for an HPMR design point."""
+    return _hpmr_knn_scalar('Estimated Total Leakage (%)',
+                            n_rings_per_assembly, n_rings_per_core,
+                            active_height, enrichment, power_mwt)
+
+
+# ---------------------------------------------------------------------------
+# Physics-based leakage with KNN/physics dispatch
+# ---------------------------------------------------------------------------
+# HPMR is graphite-moderated like GCMR (monolith graphite block),
+# so the migration area and reflector savings are similar to GCMR's
+# values.  M² calibrated against the typical (NA=6, NC=5) HPMR
+# parametric case.
+_HPMR_M_SQUARED_CM2     = 220.0
+_HPMR_REFLECTOR_SAVINGS = 0.65
+
+
+def _hpmr_physics_leakage(active_radius_cm, active_height_cm,
+                          radial_reflector_cm, axial_reflector_cm):
+    """Physics-based (axial%, total%) leakage using the one-group
+    migration-area approximation.  Same formula as the GCMR fallback
+    with HPMR-calibrated constants."""
+    delta_r = _HPMR_REFLECTOR_SAVINGS * radial_reflector_cm
+    delta_z = _HPMR_REFLECTOR_SAVINGS * axial_reflector_cm
+    R_eff = active_radius_cm + delta_r
+    H_eff = active_height_cm + 2.0 * delta_z
+    B2_radial = (2.405 / R_eff) ** 2
+    B2_axial  = (np.pi / H_eff) ** 2
+    B2_total  = B2_radial + B2_axial
+    P_NL = 1.0 / (1.0 + _HPMR_M_SQUARED_CM2 * B2_total)
+    total_lk = (1.0 - P_NL) * 100.0
+    axial_lk = total_lk * (B2_axial / B2_total)
+    return axial_lk, total_lk
+
+
+def _hpmr_h_within_trained_range(n_rings_per_assembly, n_rings_per_core,
+                                 active_height):
+    """True if the user's H falls inside the per-(N_A, N_C) trained
+    H range (5 % tolerance)."""
+    _load()
+    df = _train_df.dropna(subset=['H'])
+    df = df[df['LT'] > 0]
+    pair_df = df[(df['NA'] == n_rings_per_assembly) & (df['NC'] == n_rings_per_core)]
+    if len(pair_df) == 0:
+        # Fall back to the closest trained (NA, NC) pair
+        pairs = df.groupby(['NA', 'NC']).size().index.tolist()
+        if not pairs:
+            return False
+        nearest = min(pairs,
+                      key=lambda p: abs(p[0] - n_rings_per_assembly) +
+                                    abs(p[1] - n_rings_per_core))
+        pair_df = df[(df['NA'] == nearest[0]) & (df['NC'] == nearest[1])]
+    h_min, h_max = pair_df['H'].min(), pair_df['H'].max()
+    return (h_min * 0.95) <= active_height <= (h_max * 1.05)
+
+
+def get_hpmr_leakage(n_rings_per_assembly, n_rings_per_core, active_height,
+                     enrichment, power_mwt,
+                     active_radius_cm, radial_reflector_cm, axial_reflector_cm):
+    """Return (axial_pct, total_pct, source) for HPMR.  Source is
+    'interpolated' for in-range queries, 'physics' for out-of-range."""
+    if _hpmr_h_within_trained_range(n_rings_per_assembly, n_rings_per_core,
+                                    active_height):
+        ax = get_hpmr_axial_leakage_pct(n_rings_per_assembly, n_rings_per_core,
+                                         active_height, enrichment, power_mwt)
+        tot = get_hpmr_total_leakage_pct(n_rings_per_assembly, n_rings_per_core,
+                                          active_height, enrichment, power_mwt)
+        return ax, tot, 'interpolated'
+
+    ax, tot = _hpmr_physics_leakage(active_radius_cm, active_height,
+                                    radial_reflector_cm, axial_reflector_cm)
+    return ax, tot, 'physics'
