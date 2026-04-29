@@ -3054,6 +3054,180 @@ with streamlit_analytics.track():
                 unsafe_allow_html=True,
             )
 
+        # ─────────────────────────────────────────────────────────
+        # Behind-the-meter / Distributed Generation comparison:
+        # state-by-state retail electricity price vs FOAK / NOAK LCOE
+        # ─────────────────────────────────────────────────────────
+        # EIA "State Electricity Profiles" — 2023 annual average
+        # retail price of electricity to ultimate customers, all
+        # sectors.  Source: https://www.eia.gov/electricity/state/
+        # (Table 5.6.A "Average Retail Price of Electricity to
+        # Ultimate Customers").  Values in cents/kWh, converted to
+        # $/MWh by ×10.
+        _STATE_RETAIL_CENTS_PER_KWH_2023 = {
+            'AL': 13.31, 'AK': 23.48, 'AZ': 12.59, 'AR': 10.79,
+            'CA': 24.92, 'CO': 12.07, 'CT': 26.34, 'DE': 13.81,
+            'DC': 14.18, 'FL': 13.42, 'GA': 12.65, 'HI': 38.95,
+            'ID':  9.39, 'IL': 13.40, 'IN': 12.92, 'IA': 10.89,
+            'KS': 12.43, 'KY': 10.61, 'LA':  9.79, 'ME': 22.66,
+            'MD': 15.32, 'MA': 28.13, 'MI': 14.61, 'MN': 11.94,
+            'MS': 12.20, 'MO': 11.04, 'MT': 10.93, 'NE': 10.85,
+            'NV': 11.49, 'NH': 22.71, 'NJ': 17.04, 'NM': 12.45,
+            'NY': 21.07, 'NC': 11.81, 'ND': 10.04, 'OH': 12.42,
+            'OK': 10.39, 'OR': 11.62, 'PA': 14.62, 'RI': 24.48,
+            'SC': 12.84, 'SD': 11.04, 'TN': 10.83, 'TX': 12.05,
+            'UT': 10.04, 'VT': 19.46, 'VA': 12.45, 'WA':  9.69,
+            'WV': 12.41, 'WI': 13.78, 'WY': 10.69,
+        }
+
+        st.markdown('<div style="height:1.2rem"></div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div style="font-size:0.7rem;font-weight:700;color:#64748b;text-transform:uppercase;'
+            'letter-spacing:0.09em;margin-bottom:0.6rem;">Behind-the-Meter Comparison: '
+            'Reactor LCOE vs State Retail Electricity Prices</div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;'
+            'padding:0.85rem 1.1rem;margin-bottom:0.9rem;font-size:0.82rem;line-height:1.45;color:#334155;">'
+            'For behind-the-meter (BTM) and bring-your-own-generator (BYOG) deployments — '
+            'data centers, industrial loads, mining, defense — the relevant cost benchmark '
+            'is the <em>retail</em> electricity price the customer would otherwise pay. '
+            'The chart compares the FOAK and NOAK LCOE (with one-sigma bands) against the '
+            '2023 average retail price by state from the U.S. Energy Information '
+            'Administration. States are color-coded by competitiveness:'
+            '<ul style="margin:0.4rem 0 0 1.2rem;">'
+            '<li><span style="color:#15803d;font-weight:700;">Green:</span> retail price '
+            'exceeds the FOAK upper band — reactor wins even at FOAK.</li>'
+            '<li><span style="color:#b45309;font-weight:700;">Yellow:</span> retail price '
+            'between NOAK and FOAK bands — reactor wins only at NOAK scale.</li>'
+            '<li><span style="color:#64748b;font-weight:700;">Gray:</span> retail price '
+            'below the NOAK band — not competitive even at scale.</li>'
+            '</ul>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+
+        try:
+            _foak_m_btm = float(lcoe_f)
+            _noak_m_btm = float(lcoe_n)
+            _foak_s_btm = float(lcoe_f_std) if lcoe_f_std == lcoe_f_std else 0.0
+            _noak_s_btm = float(lcoe_n_std) if lcoe_n_std == lcoe_n_std else 0.0
+        except (TypeError, ValueError):
+            _foak_m_btm = _noak_m_btm = float('nan')
+            _foak_s_btm = _noak_s_btm = 0.0
+
+        if (_foak_m_btm == _foak_m_btm and _noak_m_btm == _noak_m_btm):
+            # Convert cents/kWh -> $/MWh (multiply by 10) and sort
+            # descending (highest-priced states at the top).
+            _state_prices = {s: c * 10.0 for s, c
+                             in _STATE_RETAIL_CENTS_PER_KWH_2023.items()}
+            _sorted = sorted(_state_prices.items(),
+                             key=lambda kv: kv[1], reverse=True)
+            _state_codes = [s for s, _ in _sorted]
+            _state_vals  = [v for _, v in _sorted]
+
+            # Competitiveness thresholds (use upper edge of std bands
+            # for the conservative "wins" call).
+            _foak_top = _foak_m_btm + _foak_s_btm
+            _noak_top = _noak_m_btm + _noak_s_btm
+
+            # Per-state classification + bar colors
+            _GREEN  = '#16a34a'
+            _YELLOW = '#d97706'
+            _GRAY   = '#94a3b8'
+            _bar_colors = []
+            _foak_winners, _noak_winners = [], []
+            for s, v in _sorted:
+                if v >= _foak_top:
+                    _bar_colors.append(_GREEN)
+                    _foak_winners.append(s)
+                    _noak_winners.append(s)
+                elif v >= _noak_top:
+                    _bar_colors.append(_YELLOW)
+                    _noak_winners.append(s)
+                else:
+                    _bar_colors.append(_GRAY)
+
+            _fig_btm, _ax_btm = plt.subplots(
+                figsize=(11, max(6.5, 0.18 * len(_state_codes))),
+            )
+            _y = np.arange(len(_state_codes))
+            _ax_btm.barh(_y, _state_vals, color=_bar_colors,
+                         edgecolor='white', linewidth=0.5, height=0.78)
+
+            # Reference bands for FOAK and NOAK LCOE (±1σ).
+            _ax_btm.axvspan(_foak_m_btm - _foak_s_btm,
+                            _foak_m_btm + _foak_s_btm,
+                            color='#dc2626', alpha=0.18, zorder=0)
+            _ax_btm.axvline(_foak_m_btm, color='#dc2626',
+                            linewidth=1.6, linestyle='--', zorder=1,
+                            label=f'FOAK LCOE ${_foak_m_btm:.0f}/MWh')
+            _ax_btm.axvspan(_noak_m_btm - _noak_s_btm,
+                            _noak_m_btm + _noak_s_btm,
+                            color='#1d4ed8', alpha=0.18, zorder=0)
+            _ax_btm.axvline(_noak_m_btm, color='#1d4ed8',
+                            linewidth=1.6, linestyle='--', zorder=1,
+                            label=f'NOAK LCOE ${_noak_m_btm:.0f}/MWh')
+
+            _ax_btm.set_yticks(_y)
+            _ax_btm.set_yticklabels(_state_codes, fontsize=8.5)
+            _ax_btm.invert_yaxis()  # highest-priced state at top
+            _ax_btm.set_xlabel('Average retail price ($/MWh) — EIA 2023',
+                               fontsize=11, fontweight='bold')
+            _ax_btm.grid(True, axis='x', alpha=0.3, linestyle='--', linewidth=0.5)
+            _ax_btm.set_axisbelow(True)
+            _ax_btm.set_facecolor('white')
+            _fig_btm.patch.set_facecolor('white')
+            _ax_btm.legend(loc='lower right', fontsize=9, framealpha=0.95,
+                           edgecolor='grey')
+            _fig_btm.tight_layout()
+            st.pyplot(_fig_btm)
+            plt.close(_fig_btm)
+
+            # Summary line + competitive-states lists
+            _summary_html = (
+                f'Of <strong>{len(_sorted)}</strong> jurisdictions, the reactor beats '
+                f'the average retail price in <strong style="color:#15803d;">'
+                f'{len(_foak_winners)}</strong> at FOAK (red band) and '
+                f'<strong style="color:#b45309;">{len(_noak_winners)}</strong> at NOAK '
+                f'(blue band).'
+            )
+            _foak_list_html = (', '.join(_foak_winners) if _foak_winners
+                               else '<em>none</em>')
+            _noak_only = [s for s in _noak_winners if s not in _foak_winners]
+            _noak_only_html = (', '.join(_noak_only) if _noak_only
+                               else '<em>none</em>')
+
+            st.markdown(
+                f'<div style="background:#f8fafc;border:1px solid #e2e8f0;'
+                f'border-radius:10px;padding:0.85rem 1.1rem;margin-bottom:0.9rem;'
+                f'font-size:0.82rem;line-height:1.55;color:#334155;">'
+                f'{_summary_html}'
+                f'<div style="margin-top:0.55rem;">'
+                f'<span style="display:inline-block;width:0.85rem;height:0.85rem;'
+                f'background:{_GREEN};border-radius:3px;margin-right:0.35rem;'
+                f'vertical-align:middle;"></span>'
+                f'<strong>FOAK-competitive ({len(_foak_winners)}):</strong> '
+                f'{_foak_list_html}'
+                f'</div>'
+                f'<div style="margin-top:0.35rem;">'
+                f'<span style="display:inline-block;width:0.85rem;height:0.85rem;'
+                f'background:{_YELLOW};border-radius:3px;margin-right:0.35rem;'
+                f'vertical-align:middle;"></span>'
+                f'<strong>NOAK-only competitive ({len(_noak_only)}):</strong> '
+                f'{_noak_only_html}'
+                f'</div>'
+                f'<div style="margin-top:0.55rem;font-size:0.72rem;color:#64748b;">'
+                f'Source: U.S. EIA, <em>State Electricity Profiles</em>, 2023 annual '
+                f'average retail price, all sectors. '
+                f'<a href="https://www.eia.gov/electricity/state/" target="_blank" '
+                f'style="color:#2563eb;">eia.gov/electricity/state</a>'
+                f'</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
     # ═══════════════════════════════════════════════════════════════
     # TAB 2 — COST DRIVERS
     # ═══════════════════════════════════════════════════════════════
