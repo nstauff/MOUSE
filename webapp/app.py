@@ -1899,7 +1899,7 @@ with streamlit_analytics.track():
     # then dispatched to the right tab when rendered.
     # 3 = "How much fuel and how long does it last?" → Tab A
     # 4 = "Core neutronics at glance" → Tab B
-    # 5 = "What are the thermal-hydraulic conditions?" → Tab B
+    # 5 = "Core thermal-hydraulic conditions at a glance" → Tab B
     _section_cards = {3: [], 4: [], 5: []}
 
     # ═══════════════════════════════════════════════════════════════
@@ -3857,7 +3857,7 @@ with streamlit_analytics.track():
     # ═══════════════════════════════════════════════════════════════
     # TAB 2 PHYSICS & THERMAL
     # Sections 4-5: Core neutronics at glance · What are the
-    # thermal-hydraulic conditions? (Section 6 Transportability 
+    # thermal-hydraulic conditions at a glance (Section 6 Transportability
     # is rendered in the Design & Economics tab.)
     # ═══════════════════════════════════════════════════════════════
     with tab_physics:
@@ -3897,7 +3897,7 @@ with streamlit_analytics.track():
             '<div style="font-size:1.05rem;font-weight:800;color:#1B4F8C;'
             'border-left:4px solid #1B4F8C;padding:0.4rem 0 0.4rem 0.75rem;'
             'margin:1.5rem 0 0.85rem 0;">'
-            'What are the thermal-hydraulic conditions?</div>',
+            'Core thermal-hydraulic conditions at a glance</div>',
             unsafe_allow_html=True,
         )
         st.markdown(
