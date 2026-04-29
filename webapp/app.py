@@ -2672,31 +2672,37 @@ with streamlit_analytics.track():
         st.markdown(
             '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;'
             'padding:0.85rem 1.1rem;margin-bottom:0.9rem;font-size:0.82rem;line-height:1.45;color:#334155;">'
-            'NOAK LCOE for the selected reactor configuration is recomputed across deployment '
-            'scales of 1, 5, 10, 20, 30, 40, 60, 80, and 100 units (with one-sigma uncertainty '
-            'bands). The shaded band is overlaid against typical retail/wholesale electricity '
-            'price ranges for seven US-relevant markets, to indicate where the reactor would '
-            'be cost-competitive at each deployment scale.'
+            'The two anchor points on the curve are the same FOAK and NOAK LCOE values shown in '
+            'the headline cards above — FOAK at N=1 and NOAK at the user-set NOAK Unit Number '
+            '(default 100). The shaded band reflects the one-sigma uncertainty around each '
+            'anchor and is connected linearly between them. Overlaid against seven US-relevant '
+            'electricity-market price ranges to indicate where the reactor would be '
+            'cost-competitive at FOAK vs at scale.'
             '</div>',
             unsafe_allow_html=True,
         )
 
-        with st.spinner('Computing LCOE across deployment scales…'):
-            try:
-                _units, _means, _stds = _run_lcoe_sweep(
-                    reactor_type, power_mwt, enrichment,
-                    interest_rate, discount_rate, construction_duration,
-                    debt_to_equity, operation_mode, emergency_shutdowns,
-                    startup_duration, startup_duration_refueling,
-                    tax_credit_type, tax_credit_value, plant_lifetime,
-                    n_rings_per_assembly=n_rings_per_assembly,
-                    active_height=active_height,
-                    n_assembly_rings=n_assembly_rings,
-                    n_core_rings=n_core_rings,
-                )
-            except Exception as _e:
-                _units, _means, _stds = [], [], []
-                st.warning(f'Could not compute LCOE sweep: {_e}')
+        # Use ONLY the FOAK and NOAK values that the headline cards
+        # already computed.  No extra cost-engine calls.  Two anchor
+        # points: FOAK at N=1, NOAK at the user's NOAK Unit Number
+        # (default 100).  Plotted as a straight line with a shaded
+        # uncertainty band — keeps the section instant and consistent
+        # with the headline cards by construction.
+        _N_user = int(round(float(params.get('NOAK Unit Number', 100))))
+        if _N_user < 2:
+            _N_user = 100
+        _units = [1, _N_user]
+        try:
+            _means = [float(lcoe_f), float(lcoe_n)]
+        except (TypeError, ValueError):
+            _means = [float('nan'), float('nan')]
+        try:
+            _stds = [
+                float(lcoe_f_std) if lcoe_f_std == lcoe_f_std else 0.0,
+                float(lcoe_n_std) if lcoe_n_std == lcoe_n_std else 0.0,
+            ]
+        except (TypeError, ValueError):
+            _stds = [0.0, 0.0]
 
         # ── Diagnostic dump (always visible) so we can debug ──────────
         # Print the raw sweep results in a fixed-width panel.  This
