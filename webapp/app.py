@@ -3005,6 +3005,23 @@ with streamlit_analytics.track():
                        framealpha=0.9, edgecolor='grey')
 
             _fig.tight_layout()
+
+            # If the LCOE band sits entirely above the y-axis cap
+            # ($800 max), the band is invisible on the chart.  Warn
+            # the user explicitly so they know why nothing is plotted
+            # for the reactor and what to do about it.
+            _band_min_visible = (_m_arr - _s_arr).min() if _m_arr.size else 0.0
+            if _band_min_visible > _ymax:
+                st.warning(
+                    f'⚠️ The reactor LCOE band ranges roughly '
+                    f'\${(_m_arr - _s_arr).min():,.0f}–\${(_m_arr + _s_arr).max():,.0f}/MWh, '
+                    f'which is above the chart\'s \${int(_ymax)}/MWh ceiling, so the curve is '
+                    f'not visible on the plot below. The market benchmarks remain visible for '
+                    f'reference. To bring the curve into the chart, try a higher reactor power, '
+                    f'higher enrichment, longer plant lifetime, or a larger NOAK Unit Number — '
+                    f'any of those reduces the LCOE.'
+                )
+
             st.pyplot(_fig)
             plt.close(_fig)
 
@@ -3065,6 +3082,25 @@ with streamlit_analytics.track():
             'SC':  6.86, 'SD':  8.44, 'TN':  6.77, 'TX':  6.97,
             'UT':  6.80, 'VT':  9.91, 'VA':  7.74, 'WA':  6.10,
             'WV':  7.54, 'WI':  8.17, 'WY':  6.77,
+        }
+        _STATE_FULL_NAMES = {
+            'AL': 'Alabama',        'AK': 'Alaska',         'AZ': 'Arizona',
+            'AR': 'Arkansas',       'CA': 'California',     'CO': 'Colorado',
+            'CT': 'Connecticut',    'DE': 'Delaware',       'DC': 'D.C.',
+            'FL': 'Florida',        'GA': 'Georgia',        'HI': 'Hawaii',
+            'ID': 'Idaho',          'IL': 'Illinois',       'IN': 'Indiana',
+            'IA': 'Iowa',           'KS': 'Kansas',         'KY': 'Kentucky',
+            'LA': 'Louisiana',      'ME': 'Maine',          'MD': 'Maryland',
+            'MA': 'Massachusetts',  'MI': 'Michigan',       'MN': 'Minnesota',
+            'MS': 'Mississippi',    'MO': 'Missouri',       'MT': 'Montana',
+            'NE': 'Nebraska',       'NV': 'Nevada',         'NH': 'New Hampshire',
+            'NJ': 'New Jersey',     'NM': 'New Mexico',     'NY': 'New York',
+            'NC': 'North Carolina', 'ND': 'North Dakota',   'OH': 'Ohio',
+            'OK': 'Oklahoma',       'OR': 'Oregon',         'PA': 'Pennsylvania',
+            'RI': 'Rhode Island',   'SC': 'South Carolina', 'SD': 'South Dakota',
+            'TN': 'Tennessee',      'TX': 'Texas',          'UT': 'Utah',
+            'VT': 'Vermont',        'VA': 'Virginia',       'WA': 'Washington',
+            'WV': 'West Virginia',  'WI': 'Wisconsin',      'WY': 'Wyoming',
         }
 
         st.markdown('<div style="height:1.2rem"></div>', unsafe_allow_html=True)
@@ -3167,12 +3203,6 @@ with streamlit_analytics.track():
                             linewidth=1.8, linestyle='--', zorder=2,
                             label=f'NOAK LCOE ${_noak_m_btm:.0f}/MWh')
 
-            # Place state code label vertically next to each column.
-            # Use dark slate text with a white halo (path_effects) so
-            # the label reads cleanly on every column color (green /
-            # yellow / gray) and on the white background above short
-            # columns.  Labels are positioned just above each column
-            # top, so they never collide with the column color.
             import matplotlib.patheffects as _pe
 
             # Y-axis must accommodate the FOAK and NOAK reference
@@ -3187,13 +3217,23 @@ with streamlit_analytics.track():
             )
             _ymax_chart = _band_top_btm * 1.18
 
+            # Place full state name vertically OVERLAPPING each
+            # column.  Anchor the text at the top of the column and
+            # extend downward into it (rotation=270, va='top'), so
+            # long names like "Massachusetts" stretch into the body
+            # of the column.  Dark slate text with a white halo
+            # (path_effect) keeps it legible regardless of column
+            # color — green, yellow, gray, or the white plot
+            # background.
             for _i, (_code, _val) in enumerate(zip(_state_codes, _state_vals)):
-                # Place label just above the column top (in axis coords).
-                _label_y = _val + _ymax_chart * 0.012
+                _full_name = _STATE_FULL_NAMES.get(_code, _code)
+                # Anchor at the top of the column, slight inset, text
+                # extends downward into the column.
+                _label_y = _val - _ymax_chart * 0.005
                 _t = _ax_btm.text(
-                    _i, _label_y, _code,
-                    rotation=90, ha='center', va='bottom',
-                    fontsize=10, fontweight='bold',
+                    _i, _label_y, _full_name,
+                    rotation=270, ha='center', va='top',
+                    fontsize=9, fontweight='bold',
                     color='#0f172a',  # near-black slate
                     zorder=4,
                 )
