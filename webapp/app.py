@@ -372,7 +372,7 @@ def _run_lcoe_sweep(reactor_type, power_mwt, enrichment, interest_rate, discount
                     tax_credit_type, tax_credit_value, plant_lifetime,
                     n_rings_per_assembly=None, active_height=None,
                     n_assembly_rings=None, n_core_rings=None,
-                    units_tuple=(1, 5, 10, 20, 30, 40, 60, 80, 100)):
+                    units_tuple=(1, 5, 20, 50, 100)):
     base_overrides = {
         'Interest Rate': interest_rate,
         'Discount Rate': discount_rate,
@@ -407,33 +407,38 @@ def _run_lcoe_sweep(reactor_type, power_mwt, enrichment, interest_rate, discount
                          n_core_rings=n_core_rings)
         raw_df = bottom_up_cost_estimate('cost/Cost_Database.xlsx', p)
         enriched_df, _ = cost_drivers_estimate(raw_df, p)
-        # Use the per-account LCOE columns ($/MWh) added by
-        # cost_drivers_estimate.  Summing across all per-account rows
-        # gives the total NOAK LCOE in clean $/MWh units, avoiding the
-        # column-name ambiguity in transform_dataframe / _get_mean_std.
-        # Filter to per-account rows only (not totals/summary rows)
-        # using the same mask the cost-drivers code uses.
-        _mask = enriched_df['Account'].apply(
-            is_double_digit_excluding_multiples_of_10
-        ) if 'Account' in enriched_df.columns else None
-        if _mask is None or not _mask.any():
+        # Read the 'LCOE' summary row's NOAK value directly from the
+        # enriched dataframe, BEFORE transform_dataframe processes it.
+        # The cost engine writes the LCOE row's value (in $/MWh) into
+        # whichever column get_estimated_cost_column resolves for the
+        # NOAK side (e.g. 'NOAK Estimated Cost ($2025M)').
+        try:
+            from cost.code_of_account_processing import get_estimated_cost_column as _gecc
+            _noak_col = _gecc(enriched_df, 'N')
+            _noak_std_col = _gecc(enriched_df, 'N std')
+        except Exception:
+            _noak_col = None
+            _noak_std_col = None
+        if (_noak_col is None
+                or 'Account' not in enriched_df.columns
+                or _noak_col not in enriched_df.columns):
             means.append(float('nan'))
             stds.append(float('nan'))
             continue
-        _foak_or_noak_lcoe_col = 'NOAK LCOE'
-        _foak_or_noak_lcoe_std_col = 'NOAK LCOE_std'
-        if _foak_or_noak_lcoe_col not in enriched_df.columns:
+        _row = enriched_df[enriched_df['Account'] == lcoe_account]
+        if _row.empty:
             means.append(float('nan'))
             stds.append(float('nan'))
             continue
-        _vals = pd.to_numeric(enriched_df.loc[_mask, _foak_or_noak_lcoe_col],
-                              errors='coerce')
-        m = float(_vals.sum(skipna=True))
-        if _foak_or_noak_lcoe_std_col in enriched_df.columns:
-            _stds = pd.to_numeric(enriched_df.loc[_mask, _foak_or_noak_lcoe_std_col],
-                                  errors='coerce')
-            # Combine std deviations in quadrature (independent accounts)
-            s = float(np.sqrt((_stds.dropna() ** 2).sum()))
+        try:
+            m = float(_row[_noak_col].iloc[0])
+        except (TypeError, ValueError):
+            m = float('nan')
+        if _noak_std_col and _noak_std_col in enriched_df.columns:
+            try:
+                s = float(_row[_noak_std_col].iloc[0])
+            except (TypeError, ValueError):
+                s = 0.0
         else:
             s = 0.0
         means.append(m)
