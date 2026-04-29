@@ -107,6 +107,7 @@ from webapp.fuel_lifetime_estimator import (
 from webapp.gcmr_fuel_lifetime_estimator import (
     get_gcmr_peaking_factor,
     get_gcmr_leakage,
+    get_gcmr_keff_curve,
 )
 from cost.cost_estimation import bottom_up_cost_estimate, transform_dataframe
 from cost.cost_drivers import cost_drivers_estimate, is_double_digit_excluding_multiples_of_10, get_detailed_driver_rows
@@ -1881,6 +1882,56 @@ with streamlit_analytics.track():
                         'axis is anchored so the k_eff = 1 crossing matches the '
                         'estimated fuel lifetime above; the subcritical tail is '
                         'omitted.'
+                    )
+                    st.markdown('<div style="height:1rem"></div>', unsafe_allow_html=True)
+
+            # ── Reactivity vs Time (GCMR — same pattern as LTMR) ────────────
+            if reactor_type == 'GCMR':
+                _times, _keffs = get_gcmr_keff_curve(
+                    assembly_rings = params['Assembly Rings'],
+                    core_rings     = params['Core Rings'],
+                    active_height  = params['Active Height'],
+                    enrichment     = params['Enrichment'],
+                    power_mwt      = params['Power MWt'],
+                    anchor_lifetime_days = params.get('Fuel Lifetime', None),
+                )
+                if _times.size >= 2:
+                    _k_bol = float(_keffs[0])
+                    if _k_bol > 1.0:
+                        _reactivity_swing_pct = (_k_bol - 1.0) / _k_bol * 100.0
+                if _times.size >= 2:
+                    st.markdown(
+                        '<div style="font-size:0.7rem;font-weight:700;color:#64748b;'
+                        'text-transform:uppercase;letter-spacing:0.09em;'
+                        'margin-bottom:0.6rem;">k_eff vs Time</div>',
+                        unsafe_allow_html=True,
+                    )
+                    _kfig, _kax = plt.subplots(figsize=(5.5, 2.8))
+                    _kax.plot(_times, _keffs, color='#1d4ed8', lw=1.5,
+                              marker='o', markersize=5, markerfacecolor='#1d4ed8',
+                              markeredgecolor='white', markeredgewidth=0.8)
+                    _kax.fill_between(_times, _keffs, 1.0,
+                                      where=(_keffs >= 1.0),
+                                      color='#1d4ed8', alpha=0.10)
+                    _kax.axhline(1.0, color='#7f1d1d', lw=1.0, ls='--')
+                    _kax.set_xlabel('Time (days)', fontsize=9)
+                    _kax.set_ylabel(r'$k_{\rm eff}$', fontsize=10)
+                    _kax.tick_params(axis='both', labelsize=8)
+                    _kax.set_xlim(left=0)
+                    _kax.set_ylim(0.98, max(1.005, _keffs.max() + 0.005))
+                    _kax.grid(True, alpha=0.3)
+                    for _spine in ('top', 'right'):
+                        _kax.spines[_spine].set_visible(False)
+                    _kfig.tight_layout()
+                    st.pyplot(_kfig, use_container_width=True)
+                    plt.close(_kfig)
+                    st.caption(
+                        'k_eff vs depletion time, interpolated from the 4 nearest '
+                        'cases in the GCMR parametric study (distance-weighted '
+                        'average of time and k_eff at each timestep, in '
+                        '(E, N_A, N_C, H, P) feature space). The time axis is '
+                        'anchored so the k_eff = 1 crossing matches the estimated '
+                        'fuel lifetime above; the subcritical tail is omitted.'
                     )
                     st.markdown('<div style="height:1rem"></div>', unsafe_allow_html=True)
 
