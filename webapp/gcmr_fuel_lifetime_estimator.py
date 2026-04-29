@@ -1,30 +1,30 @@
 # Copyright 2025, Battelle Energy Alliance, LLC, ALL RIGHTS RESERVED
 """
-GCMR fuel-lifetime estimator — local KNN regression.
+GCMR fuel-lifetime estimator local KNN regression.
 
 Model
 -----
     Lifetime = F_A × F_C × H × A1 × (Enrichment − A2) / Power
 
 where
-    F_A = 3(N_A−1)² − 3(N_A−1) + 1   (fuel compacts per assembly)
-    F_C = 3 N_C²  − 3 N_C  + 1        (fuel assemblies in core)
+    F_A = 3(N_A−1)² − 3(N_A−1) + 1 (fuel compacts per assembly)
+    F_C = 3 N_C² − 3 N_C + 1 (fuel assemblies in core)
 
 For each query the K=4 nearest training points are found in the
 (Enrichment, N_A, N_C, H, Power) feature space (raw features normalised
-to [0,1] for the distance calculation).  A1 and A2 are then fitted by
+to [0,1] for the distance calculation). A1 and A2 are then fitted by
 simple linear regression of the normalised lifetime
 
     L* = Lifetime × Power / (F_A × F_C × H)
 
-against Enrichment on those K neighbours.  Subcritical cases have
-L*=0 and are included in the training pool — they anchor the local
+against Enrichment on those K neighbours. Subcritical cases have
+L*=0 and are included in the training pool they anchor the local
 fit near the criticality boundary and improve A2 estimation.
 
 Accuracy (LOO-CV on 132 non-zero training points)
 --------------------------------------------------
   Median absolute error : ~129 days
-  Median MAPE           : ~5.9 %
+  Median MAPE : ~5.9 %
 
 Reference data
 --------------
@@ -43,7 +43,7 @@ _XLSX_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     'assets', 'Ref_Results', 'GCMR_parametric_size_power_enrichment.xlsx',
 )
-# Sheet name candidates — pre-update files used 'Merged Data', the
+# Sheet name candidates pre-update files used 'Merged Data', the
 # k_eff-update version (April 2026) uses 'Merged'.
 _SHEET_CANDIDATES = ('Merged', 'Merged Data')
 
@@ -63,11 +63,11 @@ def _resolve_sheet_name():
     )
 
 
-_K = 4          # nearest neighbours to use for local fit
+_K = 4 # nearest neighbours to use for local fit
 
-_train_df = None    # cached training data (loaded once)
-_feat_min = None    # min of each feature — used for [0,1] normalisation
-_feat_max = None    # max of each feature
+_train_df = None # cached training data (loaded once)
+_feat_min = None # min of each feature used for [0,1] normalisation
+_feat_max = None # max of each feature
 
 
 def _assembly_factor(n_a):
@@ -85,7 +85,7 @@ def _core_factor(n_c):
 def _load():
     """Load and cache the training data on first call.
 
-    All rows including subcritical (LT=0) are loaded — they anchor the
+    All rows including subcritical (LT=0) are loaded they anchor the
     local linear fit near the criticality boundary.
     """
     global _train_df, _feat_min, _feat_max
@@ -99,15 +99,15 @@ def _load():
     df['LT'] = df['LT'].fillna(0)
 
     # Pre-compute physics factors and normalised lifetime L*
-    df['F_A']   = df['NA'].apply(_assembly_factor)
-    df['F_C']   = df['NC'].apply(_core_factor)
+    df['F_A'] = df['NA'].apply(_assembly_factor)
+    df['F_C'] = df['NC'].apply(_core_factor)
     df['L_star'] = df['LT'] * df['P'] / (df['F_A'] * df['F_C'] * df['H'])
 
     _train_df = df
-    _feat_min = np.array([df['E'].min(),  df['NA'].min(), df['NC'].min(),
-                          df['H'].min(),  df['P'].min()],  dtype=float)
-    _feat_max = np.array([df['E'].max(),  df['NA'].max(), df['NC'].max(),
-                          df['H'].max(),  df['P'].max()],  dtype=float)
+    _feat_min = np.array([df['E'].min(), df['NA'].min(), df['NC'].min(),
+                          df['H'].min(), df['P'].min()], dtype=float)
+    _feat_max = np.array([df['E'].max(), df['NA'].max(), df['NC'].max(),
+                          df['H'].max(), df['P'].max()], dtype=float)
 
 
 # ---------------------------------------------------------------------------
@@ -122,16 +122,16 @@ def estimate_gcmr_fuel_lifetime(assembly_rings, core_rings, active_height,
     Parameters
     ----------
     assembly_rings : int or float
-        Number of rings per fuel assembly N_A (training range: 4–7).
+        Number of rings per fuel assembly N_A (training range: 4-7).
     core_rings : int or float
-        Number of assembly rings in the core N_C (training range: 3–5).
+        Number of assembly rings in the core N_C (training range: 3-5).
     active_height : float
-        Active core height in cm (training range: 40–385 cm).
+        Active core height in cm (training range: 40-385 cm).
     enrichment : float
         U-235 enrichment fraction, e.g. 0.12 for 12 %
-        (training range: 0.05–0.1975).
+        (training range: 0.05-0.1975).
     power_mwt : float
-        Thermal power in MWt (training range: 1–60 MWt).
+        Thermal power in MWt (training range: 1-60 MWt).
 
     Returns
     -------
@@ -153,34 +153,34 @@ def estimate_gcmr_fuel_lifetime(assembly_rings, core_rings, active_height,
                   - _feat_min) / feat_range
 
     # Find K nearest neighbours by Euclidean distance
-    dists  = np.sqrt(((train_norm - q_norm) ** 2).sum(axis=1))
-    k_idx  = np.argsort(dists)[:_K]
-    nb     = df.iloc[k_idx]
+    dists = np.sqrt(((train_norm - q_norm) ** 2).sum(axis=1))
+    k_idx = np.argsort(dists)[:_K]
+    nb = df.iloc[k_idx]
 
     if len(nb) < 2:
         return 0
 
     # Fit L* = A1 * E + c by ordinary least squares on the K neighbours
-    E_nb    = nb['E'].values
-    Ls_nb   = nb['L_star'].values
-    E_mean  = E_nb.mean()
+    E_nb = nb['E'].values
+    Ls_nb = nb['L_star'].values
+    E_mean = E_nb.mean()
     Ls_mean = Ls_nb.mean()
-    denom   = ((E_nb - E_mean) ** 2).sum()
+    denom = ((E_nb - E_mean) ** 2).sum()
 
     if denom == 0:
         L_star_pred = max(0.0, Ls_mean)
     else:
-        slope     = ((E_nb - E_mean) * (Ls_nb - Ls_mean)).sum() / denom
+        slope = ((E_nb - E_mean) * (Ls_nb - Ls_mean)).sum() / denom
         intercept = Ls_mean - slope * E_mean
 
         if slope <= 0:
             return 0
 
-        A2          = -intercept / slope
+        A2 = -intercept / slope
         L_star_pred = max(0.0, slope * (enrichment - A2))
 
-    fa       = _assembly_factor(assembly_rings)
-    fc       = _core_factor(core_rings)
+    fa = _assembly_factor(assembly_rings)
+    fc = _core_factor(core_rings)
     lifetime = L_star_pred * fa * fc * active_height / power_mwt
 
     return int(round(lifetime))
@@ -248,23 +248,23 @@ def get_gcmr_total_leakage_pct(assembly_rings, core_rings, active_height,
 # Physics-based leakage with KNN/physics dispatch
 # ---------------------------------------------------------------------------
 # Migration area calibrated against (6,5), H=215 GCMR training case
-# (total leakage 13.3 %).  Graphite-moderated, hence much larger M²
+# (total leakage 13.3 %). Graphite-moderated, hence much larger M²
 # than a ZrH-moderated LTMR.
-_GCMR_M_SQUARED_CM2     = 220.0
+_GCMR_M_SQUARED_CM2 = 220.0
 _GCMR_REFLECTOR_SAVINGS = 0.65
 
 
 def _gcmr_physics_leakage(active_radius_cm, active_height_cm,
                           radial_reflector_cm, axial_reflector_cm):
-    """Physics-based (axial%, total%) leakage for GCMR — same formula
+    """Physics-based (axial%, total%) leakage for GCMR same formula
     as LTMR but with graphite-calibrated M² and reflector savings."""
     delta_r = _GCMR_REFLECTOR_SAVINGS * radial_reflector_cm
     delta_z = _GCMR_REFLECTOR_SAVINGS * axial_reflector_cm
     R_eff = active_radius_cm + delta_r
     H_eff = active_height_cm + 2.0 * delta_z
     B2_radial = (2.405 / R_eff) ** 2
-    B2_axial  = (np.pi / H_eff) ** 2
-    B2_total  = B2_radial + B2_axial
+    B2_axial = (np.pi / H_eff) ** 2
+    B2_total = B2_radial + B2_axial
     P_NL = 1.0 / (1.0 + _GCMR_M_SQUARED_CM2 * B2_total)
     total_lk = (1.0 - P_NL) * 100.0
     axial_lk = total_lk * (B2_axial / B2_total)
@@ -321,20 +321,20 @@ def estimate_gcmr_fuel_lifetime_from_params(params):
     lifetime = estimate_gcmr_fuel_lifetime(
         assembly_rings = params.get('Assembly Rings',
                                     params.get('Number of Rings per Assembly')),
-        core_rings     = params['Core Rings'],
-        active_height  = params['Active Height'],
-        enrichment     = params['Enrichment'],
-        power_mwt      = params['Power MWt'],
+        core_rings = params['Core Rings'],
+        active_height = params['Active Height'],
+        enrichment = params['Enrichment'],
+        power_mwt = params['Power MWt'],
     )
     params['Fuel Lifetime'] = lifetime
     return lifetime
 
 
 # ---------------------------------------------------------------------------
-# k_eff(time) curve — same interpolation pattern as the LTMR version
+# k_eff(time) curve same interpolation pattern as the LTMR version
 # ---------------------------------------------------------------------------
 
-_curve_df = None  # cached subset of training rows that carry a k_eff curve
+_curve_df = None # cached subset of training rows that carry a k_eff curve
 
 
 def _parse_curve(raw):
@@ -391,7 +391,7 @@ def get_gcmr_keff_curve(assembly_rings, core_rings, active_height,
 
     Mirrors the LTMR version: distance-weighted average of the K=4 nearest
     training neighbours in normalised (E, NA, NC, H, P) feature space (same
-    metric as the GCMR lifetime estimator).  Curve is truncated at the first
+    metric as the GCMR lifetime estimator). Curve is truncated at the first
     crossing of k_eff = 1 (subcritical tail dropped).
 
     If anchor_lifetime_days is provided, the time axis is rescaled so the
@@ -408,7 +408,7 @@ def get_gcmr_keff_curve(assembly_rings, core_rings, active_height,
     if len(df) == 0:
         return np.array([]), np.array([])
 
-    _load()  # populate _feat_min / _feat_max
+    _load() # populate _feat_min / _feat_max
     feat_range = np.where(_feat_max != _feat_min, _feat_max - _feat_min, 1.0)
     q_norm = (np.array([enrichment, assembly_rings, core_rings,
                         active_height, power_mwt], dtype=float)
@@ -435,7 +435,7 @@ def get_gcmr_keff_curve(assembly_rings, core_rings, active_height,
     keffs_out = [keffs[0]]
     for i in range(1, nsteps):
         t_prev, k_prev = times_out[-1], keffs_out[-1]
-        t_cur,  k_cur  = times[i],     keffs[i]
+        t_cur, k_cur = times[i], keffs[i]
         if k_cur >= 1.0:
             times_out.append(t_cur)
             keffs_out.append(k_cur)

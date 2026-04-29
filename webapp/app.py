@@ -2,7 +2,7 @@
 # Released under the MIT License.
 """
 MOUSE Streamlit Web App
-Microreactor Online Unified Simulation Engine — cost estimation without OpenMC.
+Microreactor Online Unified Simulation Engine cost estimation without OpenMC.
 
 Run from the MOUSE repo root:
     streamlit run webapp/app.py
@@ -163,19 +163,19 @@ _REACTOR_IMAGES = {
     'LTMR': {
         'main': (
             os.path.join(_ASSETS, 'LTMR_core.png'),
-            'LTMR core cross-section — hexagonal arrangement of TRIGA-type U-ZrH fuel '
+            'LTMR core cross-section hexagonal arrangement of TRIGA-type U-ZrH fuel '
             'pins and ZrH moderator pins cooled by NaK liquid metal, surrounded by a '
             'graphite radial reflector with control drums.',
         ),
         'details': [
             (
                 os.path.join(_ASSETS, 'LTMR_fuel_pin_universe.png'),
-                'LTMR fuel pin cross-section — from center outward: zirconium cladding, '
+                'LTMR fuel pin cross-section from center outward: zirconium cladding, '
                 'gap, U-ZrH fuel meat, gap, and SS304 outer cladding.',
             ),
             (
                 os.path.join(_ASSETS, 'LTMR_moderator_pin_universe.png'),
-                'LTMR moderator pin cross-section — ZrH hydrogen moderator encased in '
+                'LTMR moderator pin cross-section ZrH hydrogen moderator encased in '
                 'SS304 cladding, interspersed between fuel pins to thermalize neutrons.',
             ),
         ],
@@ -186,27 +186,27 @@ _REACTOR_IMAGES = {
         # image isn't available.
         'main': (
             os.path.join(_ASSETS, 'GCMR_Core.png'),
-            'GCMR core cross-section — hexagonal fuel assemblies containing TRISO fuel '
+            'GCMR core cross-section hexagonal fuel assemblies containing TRISO fuel '
             'compacts arranged in a honeycomb pattern, cooled by helium gas flowing '
             'through dedicated coolant channels, with graphite reflector and control drums.',
         ),
         # The fuel assembly entry below is overridden at runtime with the
         # per-N_A image. The TRISO particle and zoomed fuel-assembly
-        # images don't depend on geometry — kept static.
+        # images don't depend on geometry kept static.
         'details': [
             (
                 os.path.join(_ASSETS, 'GCMR_Fuel Assembly.png'),
-                'GCMR fuel assembly cross-section — TRISO fuel compacts, helium coolant '
+                'GCMR fuel assembly cross-section TRISO fuel compacts, helium coolant '
                 'channels, and ZrH moderator booster pins embedded in a graphite matrix.',
             ),
             (
                 os.path.join(_ASSETS, 'GCMR_fuel_assembly_zoomed.png'),
-                'GCMR fuel assembly zoomed — individual TRISO particles visible within '
+                'GCMR fuel assembly zoomed individual TRISO particles visible within '
                 'the graphite fuel compact at the target packing fraction.',
             ),
             (
                 os.path.join(_ASSETS, 'GCMR_TRISO_particle.png'),
-                'TRISO fuel particle — multi-layer design with UN fuel kernel, buffer '
+                'TRISO fuel particle multi-layer design with UN fuel kernel, buffer '
                 'graphite, inner PyC, SiC pressure vessel, and outer PyC coating that '
                 'retains fission products up to ~1600 °C.',
             ),
@@ -215,24 +215,24 @@ _REACTOR_IMAGES = {
     'HPMR': {
         'main': (
             os.path.join(_ASSETS, 'HPMR_core.png'),
-            'HPMR core cross-section — monolithic graphite/metal core with hexagonal '
+            'HPMR core cross-section monolithic graphite/metal core with hexagonal '
             'fuel assemblies and embedded alkali-metal heat pipes that passively transfer '
             'heat to the secondary side, with graphite reflector and control drums.',
         ),
         'details': [
             (
                 os.path.join(_ASSETS, 'HPMR_fuel_assembly.png'),
-                'HPMR fuel assembly cross-section — TRISO fuel pins and heat pipes '
+                'HPMR fuel assembly cross-section TRISO fuel pins and heat pipes '
                 'arranged in a hexagonal pattern within the graphite monolith block.',
             ),
             (
                 os.path.join(_ASSETS, 'HPMR_fuel_pin_universe.png'),
-                'HPMR fuel pin cross-section — homogenized TRISO fuel region surrounded '
+                'HPMR fuel pin cross-section homogenized TRISO fuel region surrounded '
                 'by a thin helium gap within the monolith.',
             ),
             (
                 os.path.join(_ASSETS, 'HPMR_heatpipe_universe.png'),
-                'HPMR heat pipe cross-section — working fluid region and outer cladding '
+                'HPMR heat pipe cross-section working fluid region and outer cladding '
                 'that passively carries heat from the core to the power conversion system '
                 'with no moving parts.',
             ),
@@ -244,17 +244,17 @@ _REACTOR_IMAGES = {
 # Cached cost estimate (module-level so cache persists across reruns)
 # ---------------------------------------------------------------------------
 # Aspect-ratio bounds for the Active Height slider:
-#     0.5 ≤ H / D ≤ 2.0
+# 0.5 ≤ H / D ≤ 2.0
 # where D is the active core diameter (= 2 × active_radius, no reflector).
 # H is the active fuel height. Reflectors are excluded from both.
 ASPECT_RATIO_MIN = 0.5
 ASPECT_RATIO_MAX = 2.0
 
 # LTMR per-N geometry:
-#  - ACTIVE_R    = Core Radius − Reflector Thickness  (≈ 2.836·N − 1.136 cm)
-#  - DIAMETER_CM = 2 × ACTIVE_R   (active core diameter, NO reflector)
+# - ACTIVE_R = Core Radius − Reflector Thickness (≈ 2.836·N − 1.136 cm)
+# - DIAMETER_CM = 2 × ACTIVE_R (active core diameter, NO reflector)
 # Trained N values come directly from the parametric study Excel; intermediate
-# N values are linearly interpolated from the trained table — adequate for
+# N values are linearly interpolated from the trained table adequate for
 # slider display, but flagged in the UI as interpolated.
 LTMR_TRAINED_N = {10, 12, 14, 18, 24}
 LTMR_N_TO_ACTIVE_RADIUS_CM = {
@@ -269,7 +269,7 @@ LTMR_N_TO_DIAMETER_CM = {
 
 def _ltmr_diameter_label(n, d):
     star = '' if n in LTMR_TRAINED_N else ' *'
-    return f"{d} cm  (N={n}){star}"
+    return f"{d} cm (N={n}){star}"
 
 
 LTMR_DIAMETER_LABELS = [_ltmr_diameter_label(n, d)
@@ -279,11 +279,11 @@ LTMR_DIAMETER_LABEL_TO_N = {label: n
                                                 LTMR_DIAMETER_LABELS)}
 
 # GCMR per-(N_A, N_C) geometry. Formulas (verified against parametric study):
-#     Assembly_FTF(N_A) = 2.25 × (N_A − 1) × √3
-#     Reflector(N_A)    = Assembly_FTF / 2
-#     Active_Radius     = Assembly_FTF × N_C
-#     Core_Radius       = Active_Radius + Reflector
-#     Diameter          = 2 × Core_Radius
+# Assembly_FTF(N_A) = 2.25 × (N_A − 1) × √3
+# Reflector(N_A) = Assembly_FTF / 2
+# Active_Radius = Assembly_FTF × N_C
+# Core_Radius = Active_Radius + Reflector
+# Diameter = 2 × Core_Radius
 import math as _math
 GCMR_TRAINED_PAIRS = {(4, 3), (5, 3), (6, 4), (6, 5), (7, 5)}
 GCMR_NA_VALUES = [4, 5, 6, 7]
@@ -315,7 +315,7 @@ GCMR_PAIR_TO_DIAMETER_CM = dict(sorted(GCMR_PAIR_TO_DIAMETER_CM.items(),
 
 def _gcmr_diameter_label(na, nc, d):
     star = '' if (na, nc) in GCMR_TRAINED_PAIRS else ' *'
-    return f"{d} cm  (N_A={na}, N_C={nc}){star}"
+    return f"{d} cm (N_A={na}, N_C={nc}){star}"
 
 
 GCMR_DIAMETER_LABELS = [_gcmr_diameter_label(na, nc, d)
@@ -327,17 +327,17 @@ GCMR_DIAMETER_LABEL_TO_PAIR = {
 }
 
 # Mass-scaling constant derived from the GCMR parametric study reference
-# row (N_A=6, N_C=5, H=215 cm, E=0.1975, P=1 MWt).  Total uranium mass per
+# row (N_A=6, N_C=5, H=215 cm, E=0.1975, P=1 MWt). Total uranium mass per
 # unit of [F_A × F_C × H] volume index.
 GCMR_G_PER_VOLUME_INDEX = 0.5776
 
 
-# HPMR — Active core diameter per N_C, with N_A locked to 6 (the only
+# HPMR Active core diameter per N_C, with N_A locked to 6 (the only
 # value present in the HPMR parametric study).
-#   Active diameter = 2 × Active radius  (excludes reflector)
-#   Active radius   = (sqrt(3)/2) × hex_edge
-#   hex_edge        = Assembly_FTF × (N_C - 1) + Assembly_FTF/2 + 6.6
-#   Assembly_FTF    = (Lattice_Pitch × (N_A - 1) + 1.4 × R_pin) × sqrt(3)
+# Active diameter = 2 × Active radius (excludes reflector)
+# Active radius = (sqrt(3)/2) × hex_edge
+# hex_edge = Assembly_FTF × (N_C - 1) + Assembly_FTF/2 + 6.6
+# Assembly_FTF = (Lattice_Pitch × (N_A - 1) + 1.4 × R_pin) × sqrt(3)
 # At N_A=6, Lattice_Pitch=3.4, R_pin=1.05 → Assembly_FTF ≈ 31.99 cm.
 HPMR_NA_FIXED = 6
 _HPMR_LATTICE_PITCH = 3.4
@@ -360,7 +360,7 @@ HPMR_NC_TO_DIAMETER_CM = {
     nc: int(round(2 * _hpmr_active_radius(nc))) for nc in HPMR_NC_VALUES
 }
 HPMR_DIAMETER_LABELS = [
-    f"{HPMR_NC_TO_DIAMETER_CM[nc]} cm  (N_C={nc})"
+    f"{HPMR_NC_TO_DIAMETER_CM[nc]} cm (N_C={nc})"
     for nc in HPMR_NC_VALUES
 ]
 HPMR_DIAMETER_LABEL_TO_NC = {
@@ -405,9 +405,9 @@ def _run_estimate(reactor_type, power_mwt, enrichment, interest_rate, discount_r
 
 
 # Sweep NOAK Unit Number across a list of deployment scales for the
-# "Costs in perspective" plot.  Each call to bottom_up_cost_estimate uses
-# the same Number of Samples (10 — set inside reactor_config.py) as the
-# headline LCOE card.  Cached on every input that influences cost.
+# "Costs in perspective" plot. Each call to bottom_up_cost_estimate uses
+# the same Number of Samples (10 set inside reactor_config.py) as the
+# headline LCOE card. Cached on every input that influences cost.
 @st.cache_data(show_spinner=False)
 def _run_lcoe_sweep(reactor_type, power_mwt, enrichment, interest_rate, discount_rate,
                     construction_duration, debt_to_equity, operation_mode,
@@ -491,7 +491,7 @@ def _run_lcoe_sweep(reactor_type, power_mwt, enrichment, interest_rate, discount
 
 # Single-point cost-engine call for the Costs-in-Perspective plot.
 # Used to add an intermediate anchor (e.g. NOAK Unit Number = 10)
-# between the headline FOAK (N=1) and NOAK (N=user_setting).  Same
+# between the headline FOAK (N=1) and NOAK (N=user_setting). Same
 # extraction path as _run_estimate so the value matches the headline
 # format exactly: bottom_up_cost_estimate -> cost_drivers_estimate ->
 # transform_dataframe -> _get_mean_std.
@@ -506,7 +506,7 @@ def _lcoe_at_noak_unit(reactor_type, power_mwt, enrichment, interest_rate, disco
     """Returns (mean, std, per_account_df) for one NOAK Unit Number.
 
     The per_account_df includes Account, Account Title, FOAK and NOAK
-    columns for all rows — useful for diagnosing which account drives
+    columns for all rows useful for diagnosing which account drives
     a wild LCOE value.
     """
     overrides = {
@@ -542,7 +542,7 @@ def _lcoe_at_noak_unit(reactor_type, power_mwt, enrichment, interest_rate, disco
     display_df = transform_dataframe(enriched_df)
     m, s = _get_mean_std(display_df, lcoe_account, 'NOAK')
 
-    # Build a tidy per-account diagnostic frame.  Pulls 'Account',
+    # Build a tidy per-account diagnostic frame. Pulls 'Account',
     # 'Account Title', and any column starting with 'FOAK Estimated
     # Cost (' / 'NOAK Estimated Cost ('.
     _foak_cols = [c for c in display_df.columns if c.startswith('FOAK Estimated Cost (')]
@@ -552,19 +552,19 @@ def _lcoe_at_noak_unit(reactor_type, power_mwt, enrichment, interest_rate, disco
     diag_df = display_df[_keep].copy() if _keep else None
 
     # Also pull a snapshot of the key params actually used for this
-    # cost-engine call.  Reveals whether Construction Duration,
+    # cost-engine call. Reveals whether Construction Duration,
     # Power MWe, Capacity Factor etc. are what we expect.
     diag_params = {
-        'NOAK Unit Number':            p.get('NOAK Unit Number'),
-        'Power MWt':                   p.get('Power MWt'),
-        'Power MWe':                   p.get('Power MWe'),
-        'Thermal Efficiency':          p.get('Thermal Efficiency'),
-        'Capacity Factor':             p.get('Capacity Factor'),
-        'Construction Duration':       p.get('Construction Duration'),
-        'Interest Rate':               p.get('Interest Rate'),
-        'Discount Rate':               p.get('Discount Rate'),
-        'Debt To Equity Ratio':        p.get('Debt To Equity Ratio'),
-        'Levelization Period':         p.get('Levelization Period'),
+        'NOAK Unit Number': p.get('NOAK Unit Number'),
+        'Power MWt': p.get('Power MWt'),
+        'Power MWe': p.get('Power MWe'),
+        'Thermal Efficiency': p.get('Thermal Efficiency'),
+        'Capacity Factor': p.get('Capacity Factor'),
+        'Construction Duration': p.get('Construction Duration'),
+        'Interest Rate': p.get('Interest Rate'),
+        'Discount Rate': p.get('Discount Rate'),
+        'Debt To Equity Ratio': p.get('Debt To Equity Ratio'),
+        'Levelization Period': p.get('Levelization Period'),
         'Annual Electricity Production': p.get('Annual Electricity Production'),
     }
 
@@ -757,9 +757,9 @@ def _get_mean_std(df, account, which='FOAK'):
     if row.empty:
         return float('nan'), float('nan')
     mean_prefix = 'FOAK Estimated Cost (' if which == 'FOAK' else 'NOAK Estimated Cost ('
-    std_prefix  = 'FOAK Estimated Cost std (' if which == 'FOAK' else 'NOAK Estimated Cost std ('
+    std_prefix = 'FOAK Estimated Cost std (' if which == 'FOAK' else 'NOAK Estimated Cost std ('
     mean_cols = [c for c in df.columns if c.startswith(mean_prefix)]
-    std_cols  = [c for c in df.columns if c.startswith(std_prefix)]
+    std_cols = [c for c in df.columns if c.startswith(std_prefix)]
     try:
         mean = float(row[mean_cols[0]].iloc[0]) if mean_cols else float('nan')
     except (TypeError, ValueError):
@@ -779,7 +779,7 @@ def _fmt_cost(mean, std):
         return f'${m}M'
     lo = round((mean - std) / 1e6)
     hi = round((mean + std) / 1e6)
-    return f'${lo}M – ${hi}M'
+    return f'${lo}M ${hi}M'
 
 
 def _fmt_lcoe(mean, std):
@@ -790,7 +790,7 @@ def _fmt_lcoe(mean, std):
         return f'${m}/MW<sub>e</sub>h'
     lo = int(round(mean - std))
     hi = int(round(mean + std))
-    return f'${lo} – ${hi}/MW<sub>e</sub>h'
+    return f'${lo} ${hi}/MW<sub>e</sub>h'
 
 
 def _fmt_lcoh(mean, std):
@@ -801,12 +801,12 @@ def _fmt_lcoh(mean, std):
         return f'${m}/MW<sub>t</sub>h'
     lo = int(round(mean - std))
     hi = int(round(mean + std))
-    return f'${lo} – ${hi}/MW<sub>t</sub>h'
+    return f'${lo} ${hi}/MW<sub>t</sub>h'
 
 
 def _get_lcof(df, which='FOAK'):
     mean_col = 'FOAK LCOE' if which == 'FOAK' else 'NOAK LCOE'
-    std_col  = 'FOAK LCOE_std' if which == 'FOAK' else 'NOAK LCOE_std'
+    std_col = 'FOAK LCOE_std' if which == 'FOAK' else 'NOAK LCOE_std'
     if mean_col not in df.columns:
         return float('nan'), float('nan')
     mask = df['Account'].isin([25, 80])
@@ -848,8 +848,8 @@ def _fmt_table_val(x):
 # HTML/CSS card helpers
 # ---------------------------------------------------------------------------
 _CARD_COLORS = {
-    'occ':  '#7c3aed',
-    'tci':  '#0369a1',
+    'occ': '#7c3aed',
+    'tci': '#0369a1',
     'lcoe': '#0891b2',
     'lcoh': '#059669',
     'lcof': '#d97706',
@@ -890,7 +890,7 @@ def _make_side_view_figure(diameter_cm, active_height_cm,
     empty to mirror where the cross-section's material legend sits), and
     its xlim spans the same range the cross-section uses (= ±ceil(D/2)).
     The axis box dimensions are picked so 1 cm in x equals 1 cm in y,
-    without invoking aspect='equal' — that way the rectangle width
+    without invoking aspect='equal' that way the rectangle width
     (= D) renders at exactly the same horizontal pixel range as the
     circle in the cross-section above.
     """
@@ -903,43 +903,43 @@ def _make_side_view_figure(diameter_cm, active_height_cm,
 
     # Axis box dimensions in inches, sized so cm/inch is the same in x and y.
     box_w = 4.0
-    box_h = box_w * (half_h_int / half_d_int)   # H/D aspect, preserved exactly
+    box_h = box_w * (half_h_int / half_d_int) # H/D aspect, preserved exactly
     # Cap very tall/short reactors so the figure stays a reasonable size.
     box_h = max(0.6, min(8.0, box_h))
 
     # The plot occupies the same x-range as the cross-section's plot
-    # box (≈ 13%–62% of the column width — between the leftmost and
+    # box (≈ 13%-62% of the column width between the leftmost and
     # rightmost x-tick of the cross-section image). The right ~38% is
     # empty (mirroring the cross-section legend area), and the left
     # ~13% is empty (matching the cross-section's y-axis label margin).
-    ax_left_frac, ax_width_frac  = 0.13, 0.49
-    ax_bot_frac,  ax_height_frac = 0.13, 0.72
+    ax_left_frac, ax_width_frac = 0.13, 0.49
+    ax_bot_frac, ax_height_frac = 0.13, 0.72
     fig_w = box_w / ax_width_frac
-    fig_h = box_h / ax_height_frac + 0.4   # +0.4 inches for title/labels
+    fig_h = box_h / ax_height_frac + 0.4 # +0.4 inches for title/labels
 
     fig = plt.figure(figsize=(fig_w, fig_h))
     ax = fig.add_axes([ax_left_frac, ax_bot_frac, ax_width_frac, ax_height_frac])
 
-    # Outer envelope (radial reflector) — full diameter × full height
+    # Outer envelope (radial reflector) full diameter × full height
     outer = mpatches.Rectangle((-diameter_cm / 2.0, -total_h / 2.0),
                                diameter_cm, total_h,
                                facecolor='#fde68a', edgecolor='#92400e', lw=1.0)
     ax.add_patch(outer)
 
-    # Active core — active diameter × active height, centred
+    # Active core active diameter × active height, centred
     core = mpatches.Rectangle((-active_d / 2.0, -active_height_cm / 2.0),
                               active_d, active_height_cm,
                               facecolor='#fca5a5', edgecolor='#7f1d1d', lw=1.0)
     ax.add_patch(core)
 
-    # Dimension labels — active labels are placed close to the inner
+    # Dimension labels active labels are placed close to the inner
     # (red) core rectangle; total labels are placed next to the outer
     # (yellow) envelope. annotation_clip=False so labels can spill
     # outside the axis box.
     #
     # H_active: just to the RIGHT of the inner core, slightly ABOVE the
     # vertical centre. H_total: outside the outer envelope on the right,
-    # slightly BELOW centre — staggered so the two labels don't overlap.
+    # slightly BELOW centre staggered so the two labels don't overlap.
     ax.annotate(f'H_active = {active_height_cm:.0f} cm',
                 xy=(active_d / 2.0 + 0.01 * half_d_int, +half_h_int * 0.30),
                 ha='left', va='center', fontsize=7, fontweight='bold',
@@ -975,7 +975,7 @@ def _materials_section(reactor_type, params):
     """Render a 'Materials & Components' panel that lists the basic
     materials of the reactor (fuel, moderator, reflector, drums, …)
     plus, for LTMR, the per-assembly fuel and moderator pin counts.
-    All values are read directly from `params` — no interpolation."""
+    All values are read directly from `params` no interpolation."""
     def _pretty(name):
         """Replace underscores with spaces so material names like
         'UZrH_alloy' read as 'UZrH alloy' in the displayed table."""
@@ -984,28 +984,28 @@ def _materials_section(reactor_type, params):
         return name.replace('_', ' ')
 
     rows = []
-    # Fuel — for LTMR (UZrH alloy) we know the U weight fraction, so
+    # Fuel for LTMR (UZrH alloy) we know the U weight fraction, so
     # show it next to the material name.
-    _fuel_str = _pretty(params.get('Fuel', '—'))
+    _fuel_str = _pretty(params.get('Fuel', ''))
     if reactor_type == 'LTMR' and 'U_met_wo' in params:
         _u_wo = float(params['U_met_wo']) * 100.0
-        _fuel_str = f"{_fuel_str}  ({_u_wo:.0f} wt% U)"
+        _fuel_str = f"{_fuel_str} ({_u_wo:.0f} wt% U)"
     rows.append(('Fuel', _fuel_str))
 
-    rows.append(('Moderator', _pretty(params.get('Moderator', '—'))))
+    rows.append(('Moderator', _pretty(params.get('Moderator', ''))))
     if params.get('Moderator Booster Materials'):
         rows.append(('Moderator booster',
                      ', '.join(_pretty(m) for m in params['Moderator Booster Materials'])))
     if reactor_type == 'HPMR':
         rows.append(('Cooling device', _pretty(params.get('Cooling Device', 'Heat pipes'))))
     else:
-        rows.append(('Coolant', _pretty(params.get('Coolant', '—'))))
-    rows.append(('Radial reflector', _pretty(params.get('Radial Reflector', '—'))))
-    rows.append(('Axial reflector',  _pretty(params.get('Axial Reflector',  '—'))))
-    rows.append(('Control drum absorber',  _pretty(params.get('Control Drum Absorber',  '—'))))
-    rows.append(('Control drum reflector', _pretty(params.get('Control Drum Reflector', '—'))))
+        rows.append(('Coolant', _pretty(params.get('Coolant', ''))))
+    rows.append(('Radial reflector', _pretty(params.get('Radial Reflector', ''))))
+    rows.append(('Axial reflector', _pretty(params.get('Axial Reflector', ''))))
+    rows.append(('Control drum absorber', _pretty(params.get('Control Drum Absorber', ''))))
+    rows.append(('Control drum reflector', _pretty(params.get('Control Drum Reflector', ''))))
 
-    # LTMR is a single-assembly core — no per-assembly distinction needed.
+    # LTMR is a single-assembly core no per-assembly distinction needed.
     if reactor_type == 'LTMR':
         if 'Fuel Pin Count' in params:
             rows.append(('Number of fuel pins',
@@ -1076,7 +1076,7 @@ html, body, [class*="css"] {
 
 /* ── Hide Streamlit chrome ── */
 #MainMenu { visibility: hidden; }
-footer    { visibility: hidden; }
+footer { visibility: hidden; }
 [data-testid="stHeader"] {
     background: transparent !important;
     box-shadow: none !important;
@@ -1169,9 +1169,9 @@ section[data-testid="stSidebar"] .stButton > button:hover {
     border-radius: 10px !important;
     background: white;
 }
-/* The summary row is the clickable label.  Streamlit defaults render
+/* The summary row is the clickable label. Streamlit defaults render
    it in near-white text on a near-white background, which makes the
-   affordance invisible.  Force INL-blue + bold + a hover state so it's
+   affordance invisible. Force INL-blue + bold + a hover state so it's
    obvious the user can click it. */
 [data-testid="stExpander"] summary,
 [data-testid="stExpander"] details > summary,
@@ -1217,7 +1217,7 @@ section[data-testid="stSidebar"] .stButton > button:hover {
 # Page config (must be first Streamlit call)
 # ---------------------------------------------------------------------------
 st.set_page_config(
-    page_title='MOUSE — Microreactor Cost Estimator',
+    page_title='MOUSE Microreactor Cost Estimator',
     page_icon='⚛',
     layout='wide',
 )
@@ -1230,7 +1230,7 @@ analytics_conn = _get_analytics_conn()
 anonymous_id = _get_or_create_anonymous_id(cookies)
 
 # ---------------------------------------------------------------------------
-# Main app — wrapped in analytics tracker
+# Main app wrapped in analytics tracker
 # ---------------------------------------------------------------------------
 with streamlit_analytics.track():
 
@@ -1249,7 +1249,7 @@ with streamlit_analytics.track():
         )
 
         st.divider()
-        st.markdown('**A — Reactor Design**')
+        st.markdown('**A Reactor Design**')
 
         reactor_label = st.selectbox(
             'Reactor Type',
@@ -1260,12 +1260,12 @@ with streamlit_analytics.track():
 
         _log_visit_once_per_session(analytics_conn, anonymous_id, reactor_type=reactor_type, page_name='main')
 
-        # Per-reactor enrichment floor.  HPMR parametric study covers
+        # Per-reactor enrichment floor. HPMR parametric study covers
         # E in [0.10, 0.1975], so 10% is the lowest data-validated
-        # value.  We expose 8% as the floor — the 8 → 10% strip lets
+        # value. We expose 8% as the floor the 8 → 10% strip lets
         # users explicitly see the subcritical region (extrapolated
         # from training, which has subcritical rows at 10% for the
-        # smaller cores).  LTMR / GCMR keep their data-validated 5%.
+        # smaller cores). LTMR / GCMR keep their data-validated 5%.
         _enrichment_min = {'LTMR': 0.05, 'GCMR': 0.05, 'HPMR': 0.08}
         _e_min = _enrichment_min.get(reactor_type, 0.05)
         # Clamp the default to the per-reactor min in case a previous
@@ -1280,7 +1280,7 @@ with streamlit_analytics.track():
             format='%.4f',
             key=f'enrichment_{reactor_type}',
             help=('U-235 enrichment fraction. Affects uranium masses and '
-                  'fuel lifetime via interpolation.  Range tied to each '
+                  'fuel lifetime via interpolation. Range tied to each '
                   'reactor\'s parametric study coverage.'),
         )
         st.caption(f'{enrichment * 100:.2f}% enriched')
@@ -1299,10 +1299,10 @@ with streamlit_analytics.track():
         )
 
         # LTMR / GCMR / HPMR: extra geometry inputs (diameter + active height).
-        n_rings_per_assembly = None  # LTMR only
-        n_assembly_rings     = None  # GCMR (varies) and HPMR (locked at 6)
-        n_core_rings         = None  # GCMR / HPMR
-        active_height        = None
+        n_rings_per_assembly = None # LTMR only
+        n_assembly_rings = None # GCMR (varies) and HPMR (locked at 6)
+        n_core_rings = None # GCMR / HPMR
+        active_height = None
         if reactor_type == 'LTMR':
             # Default to N=12 (95 cm), a mid-range trained geometry.
             _default_diameter_label = next(
@@ -1321,11 +1321,11 @@ with streamlit_analytics.track():
             )
             n_rings_per_assembly = LTMR_DIAMETER_LABEL_TO_N[_diameter_label]
 
-            _ar_ltmr   = LTMR_N_TO_ACTIVE_RADIUS_CM[n_rings_per_assembly]
-            _ad_ltmr   = LTMR_N_TO_DIAMETER_CM[n_rings_per_assembly]   # active diameter
-            _h_min     = max(1, int(round(ASPECT_RATIO_MIN * _ad_ltmr)))
-            _h_max     = int(round(ASPECT_RATIO_MAX * _ad_ltmr))
-            _h_default = int(round(_ad_ltmr))   # H/D = 1.0
+            _ar_ltmr = LTMR_N_TO_ACTIVE_RADIUS_CM[n_rings_per_assembly]
+            _ad_ltmr = LTMR_N_TO_DIAMETER_CM[n_rings_per_assembly] # active diameter
+            _h_min = max(1, int(round(ASPECT_RATIO_MIN * _ad_ltmr)))
+            _h_max = int(round(ASPECT_RATIO_MAX * _ad_ltmr))
+            _h_default = int(round(_ad_ltmr)) # H/D = 1.0
 
             active_height = st.slider(
                 'Active Height (cm)',
@@ -1357,11 +1357,11 @@ with streamlit_analytics.track():
             )
             n_assembly_rings, n_core_rings = GCMR_DIAMETER_LABEL_TO_PAIR[_diameter_label]
 
-            _ar_gcmr   = _gcmr_active_radius(n_assembly_rings, n_core_rings)
-            _ad_gcmr   = 2.0 * _ar_gcmr                                 # active diameter
-            _h_min     = max(1, int(round(ASPECT_RATIO_MIN * _ad_gcmr)))
-            _h_max     = int(round(ASPECT_RATIO_MAX * _ad_gcmr))
-            _h_default = int(round(_ad_gcmr))   # H/D = 1.0
+            _ar_gcmr = _gcmr_active_radius(n_assembly_rings, n_core_rings)
+            _ad_gcmr = 2.0 * _ar_gcmr # active diameter
+            _h_min = max(1, int(round(ASPECT_RATIO_MIN * _ad_gcmr)))
+            _h_max = int(round(ASPECT_RATIO_MAX * _ad_gcmr))
+            _h_default = int(round(_ad_gcmr)) # H/D = 1.0
 
             active_height = st.slider(
                 'Active Height (cm)',
@@ -1378,7 +1378,7 @@ with streamlit_analytics.track():
 
         elif reactor_type == 'HPMR':
             # HPMR's parametric study has N_A locked at 6, so the
-            # active diameter slider varies only N_C.  H is then
+            # active diameter slider varies only N_C. H is then
             # selected independently with H/D in [0.5, 3.0] (the
             # parametric study covers H/D up to ~2.8).
             _default_label = next(
@@ -1395,16 +1395,16 @@ with streamlit_analytics.track():
                       '(N_C); Assembly Rings (N_A) is locked at 6 in the '
                       'HPMR parametric study.'),
             )
-            n_assembly_rings = HPMR_NA_FIXED   # always 6
-            n_core_rings     = HPMR_DIAMETER_LABEL_TO_NC[_diameter_label]
+            n_assembly_rings = HPMR_NA_FIXED # always 6
+            n_core_rings = HPMR_DIAMETER_LABEL_TO_NC[_diameter_label]
 
-            _ar_hpmr   = _hpmr_active_radius(n_core_rings)
-            _ad_hpmr   = 2.0 * _ar_hpmr
+            _ar_hpmr = _hpmr_active_radius(n_core_rings)
+            _ad_hpmr = 2.0 * _ar_hpmr
             _hpmr_aspect_min = 0.5
             _hpmr_aspect_max = 3.0
-            _h_min     = max(50, int(round(_hpmr_aspect_min * _ad_hpmr)))
-            _h_max     = int(round(_hpmr_aspect_max * _ad_hpmr))
-            _h_default = int(round(2.0 * _ar_hpmr))  # natural H/D = 2 (H=2R)
+            _h_min = max(50, int(round(_hpmr_aspect_min * _ad_hpmr)))
+            _h_max = int(round(_hpmr_aspect_max * _ad_hpmr))
+            _h_default = int(round(2.0 * _ar_hpmr)) # natural H/D = 2 (H=2R)
 
             active_height = st.slider(
                 'Active Height (cm)',
@@ -1420,11 +1420,11 @@ with streamlit_analytics.track():
             )
 
         st.divider()
-        st.markdown('**B — Operation Parameters**')
+        st.markdown('**B Operation Parameters**')
 
         _OPERATION_MODE_LABELS = {
             'Remotely Monitored': 'Autonomous',
-            'On-Site Staffed':    'Non-Autonomous',
+            'On-Site Staffed': 'Non-Autonomous',
         }
         operation_mode_label = st.selectbox(
             'Operation Mode',
@@ -1453,25 +1453,25 @@ with streamlit_analytics.track():
         )
 
         st.divider()
-        st.markdown('**C — Economic Parameters**')
+        st.markdown('**C Economic Parameters**')
 
         interest_rate = st.number_input(
             'Interest Rate (%)',
             min_value=2.0, max_value=15.0, value=7.0, step=0.5, format='%.1f',
             help=(
-                'Annual cost of debt — the rate at which the project borrows money to finance construction. '
+                'Annual cost of debt the rate at which the project borrows money to finance construction. '
                 'Used only to calculate interest expenses during construction (Account 62). '
-                'Typical range: 2–15%. Nuclear projects commonly use 5–12%.'
+                'Typical range: 2-15%. Nuclear projects commonly use 5-12%.'
             ),
         )
         discount_rate = st.number_input(
             'Discount Rate (%)',
             min_value=3.0, max_value=15.0, value=7.0, step=0.5, format='%.1f',
             help=(
-                'Annual discount rate (Weighted Average Cost of Capital, WACC) — reflects the '
+                'Annual discount rate (Weighted Average Cost of Capital, WACC) reflects the '
                 'opportunity cost of capital and the time value of money. Used for LCOE/LCOH '
                 'levelization and cost annualization. Should be >= interest rate. '
-                'Typical range: 3–15%. Government/public projects: 3–7%; private nuclear: 8–15%.'
+                'Typical range: 3-15%. Government/public projects: 3-7%; private nuclear: 8-15%.'
             ),
         )
         construction_duration = st.number_input(
@@ -1520,13 +1520,13 @@ with streamlit_analytics.track():
             )
 
         st.divider()
-        run_button = st.button('⚡  Run Cost Estimate', type='primary', use_container_width=True)
+        run_button = st.button('⚡ Run Cost Estimate', type='primary', use_container_width=True)
 
         st.divider()
         st.markdown('**💬 Feedback**')
         st.caption('Help us improve MOUSE by sharing your thoughts.')
         st.link_button(
-            '📝  Give Feedback',
+            '📝 Give Feedback',
             'https://qualtricsxm69xy9s7vm.qualtrics.com/jfe/form/SV_4Pb0vub9xCcsVV4',
             use_container_width=True,
         )
@@ -1577,7 +1577,7 @@ with streamlit_analytics.track():
                  <p style="font-size:0.92rem;opacity:0.75;margin:0 0 1.8rem;max-width:620px;color:white;line-height:1.6;">
                    MOUSE bridges nuclear microreactor design and economics by integrating core physics
                    simulations (OpenMC), simplified balance-of-plant calculations, and detailed bottom-up
-                   cost estimation — enabling parametric optimization studies and uncertainty analysis
+                   cost estimation enabling parametric optimization studies and uncertainty analysis
                    for both <strong style="color:white;">First-of-a-Kind (FOAK)</strong> and
                    <strong style="color:white;">Nth-of-a-Kind (NOAK)</strong> deployments.
                    Cost estimation correlations derive from the MARVEL project and supplementary literature.
@@ -1595,13 +1595,13 @@ with streamlit_analytics.track():
                                border-radius:10px;padding:0.7rem 1.2rem;">
                      <div style="font-size:0.62rem;text-transform:uppercase;letter-spacing:0.1em;
                                  opacity:0.6;margin-bottom:0.2rem;">Power Range</div>
-                     <div style="font-weight:700;font-size:0.88rem;">1 – 20 MW<sub>t</sub></div>
+                     <div style="font-weight:700;font-size:0.88rem;">1 20 MW<sub>t</sub></div>
                    </div>
                    <div style="background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.2);
                                border-radius:10px;padding:0.7rem 1.2rem;">
                      <div style="font-size:0.62rem;text-transform:uppercase;letter-spacing:0.1em;
                                  opacity:0.6;margin-bottom:0.2rem;">Enrichment</div>
-                     <div style="font-weight:700;font-size:0.88rem;">5 – 19.75%</div>
+                     <div style="font-weight:700;font-size:0.88rem;">5 19.75%</div>
                    </div>
                    <div style="background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.2);
                                border-radius:10px;padding:0.7rem 1.2rem;">
@@ -1628,7 +1628,7 @@ with streamlit_analytics.track():
                    <span style="font-size:1.2rem;">⚠️</span>
                    <span style="font-size:0.82rem;font-weight:800;color:#92400e;
                                 text-transform:uppercase;letter-spacing:0.07em;">
-                     Important Caveats — Please Read Before Use
+                     Important Caveats Please Read Before Use
                    </span>
                  </div>
                  <ul style="margin:0;padding-left:1.2rem;color:#78350f;font-size:0.84rem;line-height:1.75;">
@@ -1678,8 +1678,8 @@ with streamlit_analytics.track():
             st.warning(str(exc))
             ca, cb, cc = st.columns(3)
             _info_card(ca, 'Fuel Lifetime', '0 days', accent='#dc2626', bg='#fef2f2', border='#fecaca')
-            _info_card(cb, 'Thermal Power', f'{power_mwt} MW<sub>t</sub>',  accent='#9a3412', bg='#fff7ed', border='#fed7aa')
-            _info_card(cc, 'Enrichment',    f'{enrichment*100:.2f}%', accent='#9a3412', bg='#fff7ed', border='#fed7aa')
+            _info_card(cb, 'Thermal Power', f'{power_mwt} MW<sub>t</sub>', accent='#9a3412', bg='#fff7ed', border='#fed7aa')
+            _info_card(cc, 'Enrichment', f'{enrichment*100:.2f}%', accent='#9a3412', bg='#fff7ed', border='#fed7aa')
             st.info('No cost estimate is available for a subcritical operating point. '
                     'Try reducing the power or increasing the enrichment.')
 
@@ -1704,7 +1704,7 @@ with streamlit_analytics.track():
                        accent='#dc2626', bg='#fef2f2', border='#fecaca')
             _info_card(cb, 'Thermal Power', f'{power_mwt} MW<sub>t</sub>',
                        accent='#9a3412', bg='#fff7ed', border='#fed7aa')
-            _info_card(cc, 'Enrichment',    f'{enrichment*100:.2f}%',
+            _info_card(cc, 'Enrichment', f'{enrichment*100:.2f}%',
                        accent='#9a3412', bg='#fff7ed', border='#fed7aa')
             st.info('No cost estimate is performed when the fuel lifetime is below 90 days. '
                     'Try increasing the diameter, the height, or the enrichment.')
@@ -1734,13 +1734,13 @@ with streamlit_analytics.track():
             st.stop()
 
     # ── Extract key params ──────────────────────────────────────────────────
-    fuel_lifetime   = params.get('Fuel Lifetime', float('nan'))
-    power_mwe       = params.get('Power MWe', float('nan'))
+    fuel_lifetime = params.get('Fuel Lifetime', float('nan'))
+    power_mwe = params.get('Power MWe', float('nan'))
     capacity_factor = params.get('Capacity Factor', float('nan'))
 
-    _fl_str  = f'{fuel_lifetime / 365:.1f} yrs' if not math.isnan(float(fuel_lifetime)) else 'N/A'
-    _fl_days = f'{int(fuel_lifetime):,} days'    if not math.isnan(float(fuel_lifetime)) else ''
-    _cf_str  = f'{capacity_factor * 100:.1f}%'  if not math.isnan(float(capacity_factor)) else 'N/A'
+    _fl_str = f'{fuel_lifetime / 365:.1f} yrs' if not math.isnan(float(fuel_lifetime)) else 'N/A'
+    _fl_days = f'{int(fuel_lifetime):,} days' if not math.isnan(float(fuel_lifetime)) else ''
+    _cf_str = f'{capacity_factor * 100:.1f}%' if not math.isnan(float(capacity_factor)) else 'N/A'
 
     # ── Result hero banner ──────────────────────────────────────────────────
     _credit_badge = ''
@@ -1798,28 +1798,28 @@ with streamlit_analytics.track():
 
     # ── Collect all summary values ──────────────────────────────────────────
     if tax_credit_type == 'ITC':
-        occ_account  = 'OCC (ITC-adjusted)'
-        tci_account  = 'TCI (ITC-adjusted)'
+        occ_account = 'OCC (ITC-adjusted)'
+        tci_account = 'TCI (ITC-adjusted)'
         lcoe_account = 'LCOE (ITC-adjusted)'
     elif tax_credit_type == 'PTC':
-        occ_account  = 'OCC'
-        tci_account  = 'TCI'
+        occ_account = 'OCC'
+        tci_account = 'TCI'
         lcoe_account = 'LCOE with PTC'
     else:
-        occ_account  = 'OCC'
-        tci_account  = 'TCI'
+        occ_account = 'OCC'
+        tci_account = 'TCI'
         lcoe_account = 'LCOE'
 
-    occ_f,  occ_f_std  = _get_mean_std(display_df, occ_account,  'FOAK')
-    tci_f,  tci_f_std  = _get_mean_std(display_df, tci_account,  'FOAK')
+    occ_f, occ_f_std = _get_mean_std(display_df, occ_account, 'FOAK')
+    tci_f, tci_f_std = _get_mean_std(display_df, tci_account, 'FOAK')
     lcoe_f, lcoe_f_std = _get_mean_std(display_df, lcoe_account, 'FOAK')
-    lcoh_f, lcoh_f_std = _get_mean_std(display_df, 'LCOH',       'FOAK')
+    lcoh_f, lcoh_f_std = _get_mean_std(display_df, 'LCOH', 'FOAK')
     lcof_f, lcof_f_std = _get_lcof(enriched_df, 'FOAK')
 
-    occ_n,  occ_n_std  = _get_mean_std(display_df, occ_account,  'NOAK')
-    tci_n,  tci_n_std  = _get_mean_std(display_df, tci_account,  'NOAK')
+    occ_n, occ_n_std = _get_mean_std(display_df, occ_account, 'NOAK')
+    tci_n, tci_n_std = _get_mean_std(display_df, tci_account, 'NOAK')
     lcoe_n, lcoe_n_std = _get_mean_std(display_df, lcoe_account, 'NOAK')
-    lcoh_n, lcoh_n_std = _get_mean_std(display_df, 'LCOH',       'NOAK')
+    lcoh_n, lcoh_n_std = _get_mean_std(display_df, 'LCOH', 'NOAK')
     lcof_n, lcof_n_std = _get_lcof(enriched_df, 'NOAK')
 
     # ── Caveat reminder ─────────────────────────────────────────────────────
@@ -1838,6 +1838,55 @@ with streamlit_analytics.track():
         unsafe_allow_html=True,
     )
 
+    # ── Pre-compute the slow cost-engine sweep BEFORE rendering any
+    # tab, so all results show up at once when the spinner clears.
+    # Without this, the user sees half the tab populate, then a long
+    # gap, then the rest as the LCOE sweep finishes (15-25s on a
+    # cold cache).  Re-using _mid_results below in the Costs in
+    # Perspective block keeps the cost-engine call count the same.
+    _N_user_pre = int(round(float(params.get('NOAK Unit Number', 100))))
+    if _N_user_pre < 2:
+        _N_user_pre = 100
+    _N_mids_pre = [2, 10]
+    _mid_results = {}
+    _precompute_slot = st.empty()
+    _precompute_slot.markdown(
+        '<div style="background:linear-gradient(90deg,#fef3c7 0%,#fde68a 100%);'
+        'border:2px solid #f59e0b;border-radius:12px;padding:1.4rem 1.6rem;'
+        'margin-bottom:1rem;color:#78350f;text-align:center;'
+        'box-shadow:0 4px 12px rgba(245,158,11,0.18);">'
+        '<div style="font-size:1.15rem;font-weight:800;margin-bottom:0.4rem;'
+        'letter-spacing:0.02em;">⏳ Computing all results...</div>'
+        '<div style="font-size:0.88rem;font-weight:500;line-height:1.5;">'
+        'Running the cost engine for the LCOE-vs-deployment-scale curve. '
+        'Roughly <strong>15-25 seconds</strong> on a fresh cache. '
+        'All tabs and results appear together once this finishes.'
+        '</div></div>',
+        unsafe_allow_html=True,
+    )
+    with st.spinner('Computing all results...'):
+        for _N in _N_mids_pre:
+            if _N <= 1 or _N >= _N_user_pre:
+                continue
+            try:
+                _m_i, _s_i, _, _ = _lcoe_at_noak_unit(
+                    reactor_type, power_mwt, enrichment,
+                    interest_rate / 100.0, discount_rate / 100.0,
+                    construction_duration,
+                    debt_to_equity, operation_mode, emergency_shutdowns,
+                    startup_duration, startup_duration_refueling,
+                    tax_credit_type, tax_credit_value, plant_lifetime,
+                    n_rings_per_assembly=n_rings_per_assembly,
+                    active_height=active_height,
+                    n_assembly_rings=n_assembly_rings,
+                    n_core_rings=n_core_rings,
+                    noak_unit_number=_N,
+                )
+                _mid_results[_N] = (_m_i, _s_i)
+            except Exception as _e:
+                st.warning(f'Could not compute N={_N} anchor: {_e}')
+    _precompute_slot.empty()
+
     tab_design, tab_physics, tab_drivers, tab_table = st.tabs([
         'Design & Economics',
         'Physics & Thermal',
@@ -1845,17 +1894,17 @@ with streamlit_analytics.track():
         'Full Breakdown',
     ])
 
-    # Card queue shared across tabs.  Cards are appended during the
+    # Card queue shared across tabs. Cards are appended during the
     # compute block in tab_design (via _fuel_card with a section= tag),
     # then dispatched to the right tab when rendered.
-    #   3 = "How much fuel and how long does it last?"  → Tab A
-    #   4 = "How does the neutronics look?"             → Tab B
-    #   5 = "What are the thermal-hydraulic conditions?" → Tab B
+    # 3 = "How much fuel and how long does it last?" → Tab A
+    # 4 = "How does the neutronics look?" → Tab B
+    # 5 = "What are the thermal-hydraulic conditions?" → Tab B
     _section_cards = {3: [], 4: [], 5: []}
 
     # ═══════════════════════════════════════════════════════════════
-    # TAB 1 — DESIGN & ECONOMICS
-    # Sections 1–3: What does it cost? · What does it look like? ·
+    # TAB 1 DESIGN & ECONOMICS
+    # Sections 1-3: What does it cost? · What does it look like? ·
     # How much fuel and how long does it last?
     # ═══════════════════════════════════════════════════════════════
     with tab_design:
@@ -1918,7 +1967,7 @@ with streamlit_analytics.track():
                     )
 
             # Cross-section on top, side-view directly below (LTMR/GCMR
-            # only — both have geometry-driven height inputs). Both render
+            # only both have geometry-driven height inputs). Both render
             # at the column width, so the side view's vertical extent
             # relative to the cross-section's diameter makes H/D visually
             # obvious.
@@ -1933,7 +1982,7 @@ with streamlit_analytics.track():
                 # would crop the right-side empty space, defeating the
                 # alignment).
                 _diam = float(2.0 * params['Core Radius'])
-                _h    = float(params['Active Height'])
+                _h = float(params['Active Height'])
                 _ax_r = float(params.get('Axial Reflector Thickness', 0.0))
                 _rad_r = float(params.get('Radial Reflector Thickness', 0.0))
                 _fig = _make_side_view_figure(_diam, _h, _ax_r, _rad_r)
@@ -1990,7 +2039,7 @@ with streamlit_analytics.track():
             if reactor_type == 'LTMR':
                 st.caption(
                     'Fuel Lifetime is estimated by KNN local regression on the LTMR '
-                    'parametric study. Typical error is **5–15%** for cases close to '
+                    'parametric study. Typical error is **5-15%** for cases close to '
                     'the trained design space, and may be larger for combinations '
                     'with non-trained ring counts (marked * in the diameter slider) '
                     'or near the criticality boundary.'
@@ -1998,7 +2047,7 @@ with streamlit_analytics.track():
             elif reactor_type == 'GCMR':
                 st.caption(
                     'Fuel Lifetime is estimated by KNN local regression on the GCMR '
-                    'parametric study. Typical error is **5–15%** for cases close to '
+                    'parametric study. Typical error is **5-15%** for cases close to '
                     'the trained design space, and may be larger for combinations '
                     'with non-trained (Assembly Rings, Core Rings) pairs (marked * in '
                     'the diameter slider) or near the criticality boundary.'
@@ -2007,26 +2056,26 @@ with streamlit_analytics.track():
                 st.caption(
                     'Fuel Lifetime is estimated by KNN local regression on the HPMR '
                     'parametric study (104 rows, K=4 distance-weighted). Typical '
-                    'error is **5–15%** for queries inside the trained envelope '
-                    '(N_A=6, N_C ∈ [3..7], H = 136–1056 cm, E = 10–19.75%, P = '
-                    '1–60 MWt). Mass U-235 / U-238 are derived from the exact '
+                    'error is **5-15%** for queries inside the trained envelope '
+                    '(N_A=6, N_C ∈ [3..7], H = 136-1056 cm, E = 10-19.75%, P = '
+                    '1-60 MWt). Mass U-235 / U-238 are derived from the exact '
                     'HPMR mass formula (1.6116 g/(pin·cm) × N_pins(N_A, N_C) × H), '
-                    'so off-grid geometry queries are mass-consistent. The 8–10% '
+                    'so off-grid geometry queries are mass-consistent. The 8-10% '
                     'enrichment band lets you see the subcritical region '
-                    'explicitly — model returns 0 there because the nearest '
+                    'explicitly model returns 0 there because the nearest '
                     'training point at E = 10% is itself subcritical.'
                 )
 
             st.markdown('<div style="height:1rem"></div>', unsafe_allow_html=True)
 
             # ── Reactivity vs Time (LTMR only) ──────────────────────────────
-            _reactivity_swing_pct = None     # filled in for LTMR if curve available
+            _reactivity_swing_pct = None # filled in for LTMR if curve available
             if reactor_type == 'LTMR':
                 _times, _keffs = get_ltmr_keff_curve(
                     n_rings_per_assembly = params['Number of Rings per Assembly'],
-                    active_height        = params['Active Height'],
-                    enrichment           = params['Enrichment'],
-                    power_mwt            = params['Power MWt'],
+                    active_height = params['Active Height'],
+                    enrichment = params['Enrichment'],
+                    power_mwt = params['Power MWt'],
                     anchor_lifetime_days = params.get('Fuel Lifetime', None),
                 )
                 if _times.size >= 2:
@@ -2042,7 +2091,7 @@ with streamlit_analytics.track():
                     )
                     _kfig, _kax = plt.subplots(figsize=(5.5, 2.8))
                     # Show discrete interpolated points (markers) connected
-                    # by straight segments — so the user can see we only
+                    # by straight segments so the user can see we only
                     # have data at specific depletion timesteps, not a
                     # continuous curve.
                     _kax.plot(_times, _keffs, color='#1d4ed8', lw=1.5,
@@ -2074,14 +2123,14 @@ with streamlit_analytics.track():
                     )
                     st.markdown('<div style="height:1rem"></div>', unsafe_allow_html=True)
 
-            # ── Reactivity vs Time (GCMR — same pattern as LTMR) ────────────
+            # ── Reactivity vs Time (GCMR same pattern as LTMR) ────────────
             if reactor_type == 'GCMR':
                 _times, _keffs = get_gcmr_keff_curve(
                     assembly_rings = params['Assembly Rings'],
-                    core_rings     = params['Core Rings'],
-                    active_height  = params['Active Height'],
-                    enrichment     = params['Enrichment'],
-                    power_mwt      = params['Power MWt'],
+                    core_rings = params['Core Rings'],
+                    active_height = params['Active Height'],
+                    enrichment = params['Enrichment'],
+                    power_mwt = params['Power MWt'],
                     anchor_lifetime_days = params.get('Fuel Lifetime', None),
                 )
                 if _times.size >= 2:
@@ -2124,14 +2173,14 @@ with streamlit_analytics.track():
                     )
                     st.markdown('<div style="height:1rem"></div>', unsafe_allow_html=True)
 
-            # ── Reactivity vs Time (HPMR — same pattern as LTMR / GCMR) ─────
+            # ── Reactivity vs Time (HPMR same pattern as LTMR / GCMR) ─────
             if reactor_type == 'HPMR':
                 _times, _keffs = get_hpmr_keff_curve(
                     n_rings_per_assembly = params['Number of Rings per Assembly'],
-                    n_rings_per_core     = params['Number of Rings per Core'],
-                    active_height        = params['Active Height'],
-                    enrichment           = params['Enrichment'],
-                    power_mwt            = params['Power MWt'],
+                    n_rings_per_core = params['Number of Rings per Core'],
+                    active_height = params['Active Height'],
+                    enrichment = params['Enrichment'],
+                    power_mwt = params['Power MWt'],
                     anchor_lifetime_days = params.get('Fuel Lifetime', None),
                 )
                 if _times.size >= 2:
@@ -2168,7 +2217,7 @@ with streamlit_analytics.track():
                         'k_eff vs depletion time, interpolated from the 4 nearest '
                         'cases in the HPMR parametric study (distance-weighted '
                         'average of time and k_eff at each timestep). KNN distance '
-                        'uses only the features that vary in the training data — '
+                        'uses only the features that vary in the training data '
                         'currently (E, N_C, H, P), since N_A is locked at 6. The '
                         'time axis is anchored so the k_eff = 1 crossing matches '
                         'the estimated fuel lifetime above; the subcritical tail '
@@ -2176,7 +2225,7 @@ with streamlit_analytics.track():
                     )
                     st.markdown('<div style="height:1rem"></div>', unsafe_allow_html=True)
 
-            # ─── SECTION 2 — What does it look like? ───
+            # ─── SECTION 2 What does it look like? ───
             # (cross-section image + side-view + reactivity-vs-time were
             # rendered above; the Materials & Components panel completes
             # the visual / structural picture of the design.)
@@ -2191,7 +2240,7 @@ with streamlit_analytics.track():
             # ── Materials & Components (read directly from params) ──
             _materials_section(reactor_type, params)
 
-            # ─── SECTION 3 — How much fuel and how long does it last? ───
+            # ─── SECTION 3 How much fuel and how long does it last? ───
             st.markdown(
                 '<div style="font-size:1.05rem;font-weight:800;color:#1B4F8C;'
                 'border-left:4px solid #1B4F8C;padding:0.4rem 0 0.4rem 0.75rem;'
@@ -2203,12 +2252,12 @@ with streamlit_analytics.track():
             # ── Fuel Inventory (uses st.metric so we get the built-in help icon) ──
             _u235_g = float(params.get('Mass U235', 0.0))
             _u238_g = float(params.get('Mass U238', 0.0))
-            _hm_g   = _u235_g + _u238_g
-            _mwe    = float(params.get('Power MWe', 0.0)) or float('nan')
-            _hm_kg          = _hm_g / 1.0e3                            # g → kg
-            _hm_kg_per_mwe  = _hm_kg / _mwe                            # kg / MWe
-            _fis_kg         = _u235_g / 1.0e3                          # g → kg
-            _fis_kg_per_mwe = _fis_kg / _mwe                           # kg / MWe
+            _hm_g = _u235_g + _u238_g
+            _mwe = float(params.get('Power MWe', 0.0)) or float('nan')
+            _hm_kg = _hm_g / 1.0e3 # g → kg
+            _hm_kg_per_mwe = _hm_kg / _mwe # kg / MWe
+            _fis_kg = _u235_g / 1.0e3 # g → kg
+            _fis_kg_per_mwe = _fis_kg / _mwe # kg / MWe
 
             # _section_cards is initialized above the tab declarations
             # so it's visible from both tab_design and tab_physics.
@@ -2216,8 +2265,8 @@ with streamlit_analytics.track():
                            accent=None, bg=None, border=None,
                            status=None, section=3):
                 # QUEUE-MODE: appends to _section_cards[section] instead
-                # of rendering immediately.  The actual render happens
-                # later inside the appropriate tab.  Status/style choice
+                # of rendering immediately. The actual render happens
+                # later inside the appropriate tab. Status/style choice
                 # is computed at queue time so callers don't need to
                 # think about it.
                 if status == 'warning':
@@ -2267,10 +2316,10 @@ with streamlit_analytics.track():
 
             _fuel_card(
                 'Fuel loading',
-                f'{_hm_kg:,.1f} kgHM  |  {_hm_kg_per_mwe:,.1f} kgHM/MWe',
+                f'{_hm_kg:,.1f} kgHM | {_hm_kg_per_mwe:,.1f} kgHM/MWe',
                 ('Total mass of heavy metal (uranium) in the core. '
                  'HM = Heavy Metal = Mass U-235 + Mass U-238. '
-                 'kgHM/MWe normalises by net electric output — a specific fuel '
+                 'kgHM/MWe normalises by net electric output a specific fuel '
                  'inventory metric useful for comparing fuel-cycle requirements '
                  'across reactor types. Microreactors typically run '
                  '100-1,000 kgHM/MWe depending on technology.'),
@@ -2278,17 +2327,17 @@ with streamlit_analytics.track():
             )
             _fuel_card(
                 'Fissile loading',
-                f'{_fis_kg:,.1f} kg  |  {_fis_kg_per_mwe:,.1f} kg/MWe',
+                f'{_fis_kg:,.1f} kg | {_fis_kg_per_mwe:,.1f} kg/MWe',
                 ('Mass of fissile material only (U-235 for LEU/HALEU fuel). '
                  'Drives enrichment cost (HALEU is expensive at ~$3k-$15k/kg) and '
                  'safeguards requirements. kg/MWe is one of the main metrics used '
                  'when comparing the economics of microreactors against larger '
-                 'reactors — microreactor values are typically much higher than '
+                 'reactors microreactor values are typically much higher than '
                  'commercial LWRs (~5 kg/MWe).'),
                 section=3,
             )
 
-            # Peaking factor + discharge burnup — only meaningful for
+            # Peaking factor + discharge burnup only meaningful for
             # critical cases. Skip if HM mass or lifetime aren't available.
             _lifetime_days = float(params.get('Fuel Lifetime', 0.0))
             if _hm_kg > 0 and _lifetime_days > 0:
@@ -2296,25 +2345,25 @@ with streamlit_analytics.track():
                 if reactor_type == 'LTMR':
                     _pf = get_ltmr_peaking_factor(
                         n_rings_per_assembly = params['Number of Rings per Assembly'],
-                        active_height        = params['Active Height'],
-                        enrichment           = params['Enrichment'],
-                        power_mwt            = params['Power MWt'],
+                        active_height = params['Active Height'],
+                        enrichment = params['Enrichment'],
+                        power_mwt = params['Power MWt'],
                     )
                 elif reactor_type == 'GCMR':
                     _pf = get_gcmr_peaking_factor(
                         assembly_rings = params['Assembly Rings'],
-                        core_rings     = params['Core Rings'],
-                        active_height  = params['Active Height'],
-                        enrichment     = params['Enrichment'],
-                        power_mwt      = params['Power MWt'],
+                        core_rings = params['Core Rings'],
+                        active_height = params['Active Height'],
+                        enrichment = params['Enrichment'],
+                        power_mwt = params['Power MWt'],
                     )
                 elif reactor_type == 'HPMR':
                     _pf = get_hpmr_peaking_factor(
                         n_rings_per_assembly = params['Number of Rings per Assembly'],
-                        n_rings_per_core     = params['Number of Rings per Core'],
-                        active_height        = params['Active Height'],
-                        enrichment           = params['Enrichment'],
-                        power_mwt            = params['Power MWt'],
+                        n_rings_per_core = params['Number of Rings per Core'],
+                        active_height = params['Active Height'],
+                        enrichment = params['Enrichment'],
+                        power_mwt = params['Power MWt'],
                     )
 
                 # Average discharge burnup: total energy / total HM mass.
@@ -2325,23 +2374,23 @@ with streamlit_analytics.track():
                 _fuel_card(
                     'Peaking factor',
                     f'{_pf:,.2f}' if _pf > 0 else 'N/A',
-                    ('Power Peaking Factor (PPF) — ratio of the maximum local '
+                    ('Power Peaking Factor (PPF) ratio of the maximum local '
                      'fission rate to the core-average fission rate. Drives the '
                      'difference between average and peak fuel pin temperatures, '
                      'and between average and peak burnup. Lower is better; '
-                     'typical microreactor values are 1.5–3.0 depending on '
+                     'typical microreactor values are 1.5-3.0 depending on '
                      'reflector design and fuel arrangement. Interpolated from '
                      'the parametric study.'),
                     section=4,
                 )
 
-                # Axial + total leakage (BOL, %).  Inside the trained
+                # Axial + total leakage (BOL, %). Inside the trained
                 # H range we use the KNN-interpolated value; outside we
                 # fall back to a one-group migration-area physics
                 # formula (which actually responds to the user's H).
                 _ax_lk, _tot_lk, _lk_src = 0.0, 0.0, None
                 _active_radius_cm = float(2.0 * params['Core Radius']) / 2.0
-                # active_radius excludes the reflector — recompute from active diameter
+                # active_radius excludes the reflector recompute from active diameter
                 _active_radius_cm = (float(2.0 * params['Core Radius'])
                                      - 2.0 * float(params.get('Radial Reflector Thickness', 0.0))
                                      ) / 2.0
@@ -2350,44 +2399,44 @@ with streamlit_analytics.track():
                 if reactor_type == 'LTMR':
                     _ax_lk, _tot_lk, _lk_src = get_ltmr_leakage(
                         n_rings_per_assembly = params['Number of Rings per Assembly'],
-                        active_height        = params['Active Height'],
-                        enrichment           = params['Enrichment'],
-                        power_mwt            = params['Power MWt'],
-                        active_radius_cm     = _active_radius_cm,
-                        radial_reflector_cm  = _r_refl,
-                        axial_reflector_cm   = _z_refl,
+                        active_height = params['Active Height'],
+                        enrichment = params['Enrichment'],
+                        power_mwt = params['Power MWt'],
+                        active_radius_cm = _active_radius_cm,
+                        radial_reflector_cm = _r_refl,
+                        axial_reflector_cm = _z_refl,
                     )
                 elif reactor_type == 'GCMR':
                     _ax_lk, _tot_lk, _lk_src = get_gcmr_leakage(
-                        assembly_rings  = params['Assembly Rings'],
-                        core_rings      = params['Core Rings'],
-                        active_height   = params['Active Height'],
-                        enrichment      = params['Enrichment'],
-                        power_mwt       = params['Power MWt'],
-                        active_radius_cm    = _active_radius_cm,
+                        assembly_rings = params['Assembly Rings'],
+                        core_rings = params['Core Rings'],
+                        active_height = params['Active Height'],
+                        enrichment = params['Enrichment'],
+                        power_mwt = params['Power MWt'],
+                        active_radius_cm = _active_radius_cm,
                         radial_reflector_cm = _r_refl,
-                        axial_reflector_cm  = _z_refl,
+                        axial_reflector_cm = _z_refl,
                     )
                 elif reactor_type == 'HPMR':
                     _ax_lk, _tot_lk, _lk_src = get_hpmr_leakage(
                         n_rings_per_assembly = params['Number of Rings per Assembly'],
-                        n_rings_per_core     = params['Number of Rings per Core'],
-                        active_height        = params['Active Height'],
-                        enrichment           = params['Enrichment'],
-                        power_mwt            = params['Power MWt'],
-                        active_radius_cm     = _active_radius_cm,
-                        radial_reflector_cm  = _r_refl,
-                        axial_reflector_cm   = _z_refl,
+                        n_rings_per_core = params['Number of Rings per Core'],
+                        active_height = params['Active Height'],
+                        enrichment = params['Enrichment'],
+                        power_mwt = params['Power MWt'],
+                        active_radius_cm = _active_radius_cm,
+                        radial_reflector_cm = _r_refl,
+                        axial_reflector_cm = _z_refl,
                     )
 
                 _src_note = (
                     'This value is INTERPOLATED from nearby cases in the '
-                    'parametric study (KNN, K=4, distance-weighted average) — '
+                    'parametric study (KNN, K=4, distance-weighted average) '
                     'the geometry sits inside the trained design space.'
                     if _lk_src == 'interpolated' else
                     'This value is COMPUTED from a one-group migration-area '
                     'physics formula because the requested geometry sits '
-                    'outside the trained H range for this diameter — KNN '
+                    'outside the trained H range for this diameter KNN '
                     'would just saturate at the training boundary. The '
                     'formula uses '
                     'B² = (2.405/R_eff)² + (π/H_eff)², '
@@ -2417,10 +2466,10 @@ with streamlit_analytics.track():
                         f'{_tot_lk:,.2f} %',
                         ('Total fraction of neutrons that escape the active '
                          'core (axial + radial) at beginning of life. Driven '
-                         'by core dimensions — both Active Height and active '
+                         'by core dimensions both Active Height and active '
                          'radius. The reflector and the control drums are '
                          'accounted for the same way as above. Microreactors '
-                         'typically have higher total leakage (~5–35 %) than '
+                         'typically have higher total leakage (~5-35 %) than '
                          'commercial LWRs (~3 %) because of their small size. '
                          + _src_note),
                         section=4,
@@ -2431,7 +2480,7 @@ with streamlit_analytics.track():
                     ('Average burnup of the fuel at end-of-life (when the reactor '
                      'first becomes subcritical). Computed as Power [MWt] × Fuel '
                      'Lifetime [days] / Heavy Metal mass [kg]. This is the '
-                     'headline economic metric — higher discharge burnup means '
+                     'headline economic metric higher discharge burnup means '
                      'more energy extracted per kg of fuel, lowering fuel cost '
                      'per MWh.'),
                     section=3,
@@ -2440,7 +2489,7 @@ with streamlit_analytics.track():
                     _fuel_card(
                         'Discharge burnup (max)',
                         f'{_bu_max:,.1f} MWd/kgHM',
-                        ('Peak burnup at end-of-life — the burnup of the most '
+                        ('Peak burnup at end-of-life the burnup of the most '
                          'heavily depleted region (= average × peaking factor). '
                          'This is the design-limiting value: cladding integrity, '
                          'fission gas release, and dimensional change all depend '
@@ -2456,7 +2505,7 @@ with streamlit_analytics.track():
                 _nat_u_kg = float(params.get('Natural Uranium Mass', 0.0))
                 _mwh_total = _mwe * _lifetime_days * 24.0
                 if _nat_u_kg > 0 and _mwh_total > 0:
-                    _mining = (_nat_u_kg * 1000.0) / _mwh_total   # kg→g, /MWh
+                    _mining = (_nat_u_kg * 1000.0) / _mwh_total # kg→g, /MWh
                     _fuel_card(
                         'Mining intensity',
                         f'{_mining:,.1f} gU/MWh',
@@ -2465,9 +2514,9 @@ with streamlit_analytics.track():
                          'MOUSE\'s natural-uranium consumption '
                          '(tails enrichment 0.25 %, feed enrichment 0.71 %), '
                          'then divided by the total lifetime electrical energy '
-                         'produced. Typical values: commercial LWRs ~17–25 '
-                         'gU/MWh, HALEU microreactors ~30–80, natural-U reactors '
-                         '(CANDU) ~150–200. Lower means less front-end fuel-'
+                         'produced. Typical values: commercial LWRs ~17-25 '
+                         'gU/MWh, HALEU microreactors ~30-80, natural-U reactors '
+                         '(CANDU) ~150-200. Lower means less front-end fuel-'
                          'cycle resource demand.'),
                         section=3,
                     )
@@ -2479,15 +2528,15 @@ with streamlit_analytics.track():
                         ('Total reactivity consumed by burnup over the fuel '
                          'cycle, in %Δk/k = (k_BOL − 1) / k_BOL × 100. k_BOL is '
                          'the interpolated beginning-of-life k_eff (fresh fuel, '
-                         'before depletion). Drives control-drum sizing — drum '
+                         'before depletion). Drives control-drum sizing drum '
                          'worth must exceed the swing to keep cold-clean k_eff '
-                         '< 1 with all drums in. Typical: commercial LWRs ~10–'
-                         '15 %, HALEU microreactors ~15–40 % (large because '
+                         '< 1 with all drums in. Typical: commercial LWRs ~10-'
+                         '15 %, HALEU microreactors ~15-40 % (large because '
                          'long cycles + high enrichment).'),
                         section=4,
                     )
 
-                # Heat flux at the fuel-pin surface (MW/m²) — already in
+                # Heat flux at the fuel-pin surface (MW/m²) already in
                 # params from calculate_heat_flux: Power / total pin
                 # cylindrical surface area.
                 _hflux = float(params.get('Heat Flux', 0.0))
@@ -2497,10 +2546,10 @@ with streamlit_analytics.track():
                         f'{_hflux * 100.0:,.1f} W/cm² ({_hflux:,.3f} MW/m²)',
                         ('Average heat flux at the outer surface of the fuel '
                          'pins = Power / (π × pin_diameter × H × pin_count). '
-                         'Sets the convective heat-transfer requirement — the '
+                         'Sets the convective heat-transfer requirement the '
                          'coolant has to pull this much heat per unit area off '
-                         'each pin. Typical microreactor values are 0.1–1 '
-                         'MW/m² (10–100 W/cm²). Watch for departure-from-'
+                         'each pin. Typical microreactor values are 0.1-1 '
+                         'MW/m² (10-100 W/cm²). Watch for departure-from-'
                          'nucleate-boiling (DNB) limits in liquid-cooled '
                          'designs and burnout limits in gas-cooled designs.'),
                         section=5,
@@ -2509,31 +2558,31 @@ with streamlit_analytics.track():
                 # Separative Work Units (SWU): kg-SWU total and per MWh.
                 _swu = float(params.get('SWU', 0.0))
                 if _swu > 0 and _mwh_total > 0:
-                    _swu_per_mwh = _swu * 1000.0 / _mwh_total       # kg → g, /MWh
+                    _swu_per_mwh = _swu * 1000.0 / _mwh_total # kg → g, /MWh
                     _fuel_card(
                         'Enrichment SWU',
-                        f'{_swu:,.0f} kg-SWU  |  {_swu_per_mwh:,.2f} g-SWU/MWh',
+                        f'{_swu:,.0f} kg-SWU | {_swu_per_mwh:,.2f} g-SWU/MWh',
                         ('Separative Work Units consumed to produce the fuel '
-                         'in this core — the standard metric for enrichment '
+                         'in this core the standard metric for enrichment '
                          'effort. Computed in MOUSE\'s fuel_calculations using '
                          'the standard value-function method (tails 0.25 %, '
                          'feed 0.71 %). g-SWU/MWh normalises by total '
                          'electrical energy delivered. SWU directly drives '
-                         'enrichment cost ($/kg-SWU varies, typically $50–'
+                         'enrichment cost ($/kg-SWU varies, typically $50-'
                          '$200/kg-SWU). Higher enrichment products require '
                          'disproportionately more SWU per kg.'),
                         section=3,
                     )
 
-                # Onsite coolant inventory — power-scaled, reactor-specific.
+                # Onsite coolant inventory power-scaled, reactor-specific.
                 # LTMR: 1833 kg/MWt of NaK (Creys-Malville scaling).
                 # GCMR: 3.3 kg/MWt of helium (UNT 919556 tables 17 & 18).
                 # HPMR: 0 (heat pipes individually sealed; no bulk inventory).
                 #
                 # Display in tons with deliberately coarse rounding to signal
                 # this is a rough estimate, not a precision figure:
-                #   >= 1 ton  -> integer tons
-                #   <  1 ton  -> 1 significant figure
+                # >= 1 ton -> integer tons
+                # < 1 ton -> 1 significant figure
                 if reactor_type in ('LTMR', 'GCMR'):
                     _inv_kg = float(params.get('Onsite Coolant Inventory', 0.0))
                     if _inv_kg > 0:
@@ -2550,7 +2599,7 @@ with streamlit_analytics.track():
                                 'linearly with thermal power at ~1833 kg/MWt, '
                                 'derived from the Creys-Malville sodium plant '
                                 '(5,500 t Na for a 3,000 MWt core). NaK does '
-                                'not require periodic replacement — the '
+                                'not require periodic replacement the '
                                 'primary boundary is sealed and the coolant '
                                 'is not consumed. Drives the coolant '
                                 'procurement line in OCC. Value is rounded '
@@ -2570,13 +2619,13 @@ with streamlit_analytics.track():
                         }[reactor_type]
                         _fuel_card(
                             'Coolant inventory',
-                            f'{_val_str}  ({_coolant_label})',
+                            f'{_val_str} ({_coolant_label})',
                             _inv_help,
                             section=5,
                         )
 
                 # Coolant mass flow rate + primary-loop power fraction.
-                # LTMR: NaK pump.  GCMR: He compressor.  HPMR: heat
+                # LTMR: NaK pump. GCMR: He compressor. HPMR: heat
                 # pipes (no flow, no card).
                 if reactor_type == 'LTMR':
                     _mdot = float(params.get('Coolant Mass Flow Rate', 0.0))
@@ -2590,8 +2639,8 @@ with streamlit_analytics.track():
                              '430 → Tout 520 °C) and the heat capacity of '
                              'NaK eutectic. Sets the primary-pump and heat-'
                              'exchanger sizing. Liquid-metal microreactor '
-                             'flow rates are typically 5–100 kg/s for the '
-                             '1–20 MWt range; higher powers scale linearly.'),
+                             'flow rates are typically 5-100 kg/s for the '
+                             '1-20 MWt range; higher powers scale linearly.'),
                             section=5,
                         )
 
@@ -2600,13 +2649,13 @@ with streamlit_analytics.track():
                         _pump_pct = 100.0 * _pump_kW / (_mwe * 1000.0)
                         _fuel_card(
                             'Primary pump fraction',
-                            f'{_pump_pct:,.2f} %  ({_pump_kW:,.0f} kW)',
+                            f'{_pump_pct:,.2f} % ({_pump_kW:,.0f} kW)',
                             ('Primary-loop pump mechanical power as a fraction '
                              'of the gross electric output. Computed from a '
                              'lumped pressure-drop model: P = m_dot × Δp / (ρ '
                              '× η), with default Δp = 250 kPa, ρ = 750 kg/m³ '
                              '(NaK at ~500 °C), η = 0.75. Typical liquid-metal '
-                             'primary-loop pump fractions are 1–3 %; higher '
+                             'primary-loop pump fractions are 1-3 %; higher '
                              'values indicate an aggressively-loaded loop or '
                              'oversized core, lower values suggest natural-'
                              'circulation-dominated cooling.'),
@@ -2617,7 +2666,7 @@ with streamlit_analytics.track():
                     # Coolant Mass Flow Rate is set by mass_flow_rate()
                     # in tools.py and represents the TOTAL helium flow
                     # across all primary loops (loop_factor adjustment
-                    # already applied).  ΔT is 250 °C for the GCMR
+                    # already applied). ΔT is 250 °C for the GCMR
                     # configuration (300 → 550 °C).
                     _mdot_gcmr = float(params.get('Coolant Mass Flow Rate', 0.0))
                     if _mdot_gcmr > 0:
@@ -2633,7 +2682,7 @@ with streamlit_analytics.track():
                              '(T_in 300 → T_out 550 °C) and the c_p of He '
                              '(~5193 J/(kg·K)). Helium\'s low density makes '
                              'these values much smaller than liquid-metal '
-                             'flows — typically 1–10 kg/s for a 1–20 MWt '
+                             'flows typically 1-10 kg/s for a 1-20 MWt '
                              'GCMR. Sets compressor and PCHE sizing.'),
                             section=5,
                         )
@@ -2651,7 +2700,7 @@ with streamlit_analytics.track():
                         _comp_pct = 100.0 * _comp_kW_total / (_mwe * 1000.0)
                         _fuel_card(
                             'Primary compressor fraction',
-                            f'{_comp_pct:,.2f} %  ({_comp_kW_total:,.0f} kW total)',
+                            f'{_comp_pct:,.2f} % ({_comp_kW_total:,.0f} kW total)',
                             ('Primary-loop helium-compressor mechanical power '
                              'as a fraction of gross electric output. '
                              'Computed from P_per_loop = Δp · m_dot_per_loop '
@@ -2659,7 +2708,7 @@ with streamlit_analytics.track():
                              '(He at 4 MPa, 300 °C), Δp = 50 kPa, η_isentropic '
                              '= 0.8, then multiplied by Primary Loop Count '
                              '(=2 for GCMR) to get the total. Typical GCMR '
-                             'compressor fractions are 2–6 % — higher than '
+                             'compressor fractions are 2-6 % higher than '
                              'liquid-metal pumps because helium\'s low '
                              'density needs more volumetric flow per unit '
                              'thermal power.'),
@@ -2681,12 +2730,12 @@ with streamlit_analytics.track():
                              'per core). The per-assembly count comes from '
                              'the hex-lattice positions not occupied by '
                              'fuel pins. Typical microreactor HPMR designs '
-                             'have ~500–5,000 heat pipes depending on '
+                             'have ~500-5,000 heat pipes depending on '
                              'power and assembly count (e.g. eVinci-class '
-                             '~1,000–2,000). Drives the per-pipe thermal '
+                             '~1,000-2,000). Drives the per-pipe thermal '
                              'duty (the next card) and the manufacturing '
                              'cost (each Na HP with wick + cladding costs '
-                             '$1–3k). More HPs lower the per-pipe duty '
+                             '$1-3k). More HPs lower the per-pipe duty '
                              'but increase the BOP and fabrication cost.'),
                             section=5,
                         )
@@ -2704,8 +2753,8 @@ with streamlit_analytics.track():
                              'reaches Mach 1), entrainment (vapor shear '
                              'rips droplets off the wick), and boiling '
                              '(nucleation in the wick). For Na HPs at '
-                             '700–900 °C the practical envelope is '
-                             '~5–15 kW/HP for 1.5–3 cm diameter pipes; '
+                             '700-900 °C the practical envelope is '
+                             '~5-15 kW/HP for 1.5-3 cm diameter pipes; '
                              'designs above ~20 kW/HP need exotic wick '
                              'geometries (artery, composite). Below '
                              '~3 kW/HP usually indicates the core is '
@@ -2721,15 +2770,15 @@ with streamlit_analytics.track():
                                 f'{_kw_per_cm:,.3f} kW/cm',
                                 ('Heat-pipe linear heat rate = (kW per HP) '
                                  '/ Active Height. This is THE key sizing '
-                                 'metric for sodium heat pipes — published '
+                                 'metric for sodium heat pipes published '
                                  'Na HP test data (LANL, INL) shows steady-'
-                                 'state operation up to ~0.20–0.30 kW/cm '
-                                 'for 1.5–2.5 cm diameter pipes at '
-                                 '700–900 °C, with the capillary limit '
+                                 'state operation up to ~0.20-0.30 kW/cm '
+                                 'for 1.5-2.5 cm diameter pipes at '
+                                 '700-900 °C, with the capillary limit '
                                  'dominating at the low end of that '
                                  'temperature range and the sonic limit at '
                                  'the high end. Typical microreactor '
-                                 'designs target 0.05–0.20 kW/cm for '
+                                 'designs target 0.05-0.20 kW/cm for '
                                  'margin against transient overpower. '
                                  'Above ~0.30 kW/cm the design is in the '
                                  'limit-pushing regime where wick design '
@@ -2743,15 +2792,15 @@ with streamlit_analytics.track():
                             _pin_hp_ratio = _n_pins / _n_hp
                             _fuel_card(
                                 'Pin-to-heat-pipe ratio',
-                                f'{_pin_hp_ratio:,.2f}  (pins / HP)',
+                                f'{_pin_hp_ratio:,.2f} (pins / HP)',
                                 ('Number of fuel pins served per heat '
                                  'pipe = Fuel Pin Count / N_HP. Geometry '
                                  'sanity check on the lattice: HPMR '
-                                 'designs typically run 1–6 pins per HP '
+                                 'designs typically run 1-6 pins per HP '
                                  'depending on the assembly ring layout '
                                  '(N_A=6 in MOUSE puts ~3 pins per HP). '
                                  'Below 1.0 means more heat pipes than '
-                                 'fuel pins — geometrically possible only '
+                                 'fuel pins geometrically possible only '
                                  'in very small assemblies and usually '
                                  'over-conservative. Above ~6 means each '
                                  'HP must drain heat from many pins '
@@ -2783,12 +2832,12 @@ with streamlit_analytics.track():
                          'core hex apothem (no reflector) and H is the active '
                          'height. Tells you how aggressively the fuel is '
                          'loaded relative to the core size. Typical ranges: '
-                         'eVinci/HPMR-class ~10–15 MW/m³, TRIGA/LTMR ~10–30, '
-                         'metal-fuel microreactors (Oklo, BANR) ~50–100, '
+                         'eVinci/HPMR-class ~10-15 MW/m³, TRIGA/LTMR ~10-30, '
+                         'metal-fuel microreactors (Oklo, BANR) ~50-100, '
                          'commercial LWRs ~100. Below ~5 MW/m³ means the core '
                          'is over-fuelled (long lifetime, low utilization); '
                          'above ~80 means the design is thermal-hydraulically '
-                         'aggressive — also check the heat-flux card.'),
+                         'aggressive also check the heat-flux card.'),
                         section=5,
                     )
 
@@ -2800,9 +2849,9 @@ with streamlit_analytics.track():
                     _aspect = float(params['Active Height']) / _active_diam_cm
                     _fuel_card(
                         'Aspect ratio',
-                        f'{_aspect:,.2f}  (H/D)',
+                        f'{_aspect:,.2f} (H/D)',
                         ('Active height divided by active diameter (active '
-                         'fissioning region only — no reflector, no vessel). '
+                         'fissioning region only no reflector, no vessel). '
                          'A value of 1.0 means a "cube-like" cylinder where '
                          'height equals diameter, which minimises neutron '
                          'leakage per unit core volume. Tall, slender cores '
@@ -2815,7 +2864,7 @@ with streamlit_analytics.track():
                     )
 
             # ── Render queued Section 3 cards inside Tab A here.
-            #    Section 4 + 5 cards are rendered later in Tab B.
+            # Section 4 + 5 cards are rendered later in Tab B.
             _render_section_cards(3)
 
             st.markdown('<div style="height:0.75rem"></div>', unsafe_allow_html=True)
@@ -2826,13 +2875,13 @@ with streamlit_analytics.track():
             # Per-component dimensions (height, diameter) and dry mass for
             # the four nested envelopes that make up a microreactor module.
             # Per-mode badges compare the outermost (RVACS) envelope to
-            # three transport-mode dimensional limits.  No total mass is
-            # computed (per design choice — each component is shown alone).
+            # three transport-mode dimensional limits. No total mass is
+            # computed (per design choice each component is shown alone).
             #
             # Rounding rules (match the coolant-inventory card):
-            #   weights ≥ 1 ton  -> integer tons
-            #   weights <  1 ton -> 1 significant figure
-            #   dimensions       -> meters with 1 decimal
+            # weights ≥ 1 ton -> integer tons
+            # weights < 1 ton -> 1 significant figure
+            # dimensions -> meters with 1 decimal
             st.markdown(
                 '<div style="font-size:1.05rem;font-weight:800;color:#1B4F8C;'
                 'border-left:4px solid #1B4F8C;padding:0.4rem 0 0.4rem 0.75rem;'
@@ -2843,7 +2892,7 @@ with streamlit_analytics.track():
             st.markdown(
                 '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;'
                 'padding:0.85rem 1.1rem;margin-bottom:0.9rem;font-size:0.82rem;line-height:1.45;color:#334155;">'
-                'Transportability is one of the headline features of microreactors — the option to '
+                'Transportability is one of the headline features of microreactors the option to '
                 'ship the reactor module in one piece on a truck, rail car, or sea container differentiates '
                 'them from large NPPs. The values below check the current MOUSE configuration against the '
                 'most relevant US transport-mode envelopes. Per-component masses are listed individually; '
@@ -2856,13 +2905,13 @@ with streamlit_analytics.track():
             def _ton_str(kg):
                 """Match the coolant-inventory rounding convention."""
                 if kg is None:
-                    return '—'
+                    return ''
                 try:
                     kg = float(kg)
                 except (TypeError, ValueError):
-                    return '—'
+                    return ''
                 if kg <= 0:
-                    return '—'
+                    return ''
                 t = kg / 1000.0
                 if t >= 1:
                     return f'{round(t):,d} ton'
@@ -2870,26 +2919,26 @@ with streamlit_analytics.track():
 
             def _m1(cm):
                 if cm is None or cm <= 0:
-                    return '—'
+                    return ''
                 return f'{cm/100.0:.1f} m'
 
             # MOUSE label disambiguation:
-            #   - LTMR: 'Vessel' = reactor vessel, 'Guard Vessel' = guard vessel
-            #   - GCMR: 'Vessel' = core barrel (internal),
-            #           'Guard Vessel' = the actual RPV (He pressure boundary)
-            #   - HPMR: 'Vessel' = reactor vessel, no guard vessel
+            # - LTMR: 'Vessel' = reactor vessel, 'Guard Vessel' = guard vessel
+            # - GCMR: 'Vessel' = core barrel (internal),
+            # 'Guard Vessel' = the actual RPV (He pressure boundary)
+            # - HPMR: 'Vessel' = reactor vessel, no guard vessel
             _vessel_height_cm = float(params.get('Vessel Height', 0.0))
-            _bottom_depth_cm  = float(params.get('Vessel Bottom Depth', 0.0))
-            _vessel_thk_cm    = float(params.get('Vessel Thickness', 0.0))
-            _guard_thk_cm     = float(params.get('Guard Vessel Thickness', 0.0))
-            _gap_v_g_cm       = float(params.get('Gap Between Vessel And Guard Vessel', 0.0))
+            _bottom_depth_cm = float(params.get('Vessel Bottom Depth', 0.0))
+            _vessel_thk_cm = float(params.get('Vessel Thickness', 0.0))
+            _guard_thk_cm = float(params.get('Guard Vessel Thickness', 0.0))
+            _gap_v_g_cm = float(params.get('Gap Between Vessel And Guard Vessel', 0.0))
 
-            # Reactor (core + reflectors + drums).  All component masses
-            # are in kg.  Note: 'Uranium Mass' is already in kg in MOUSE;
+            # Reactor (core + reflectors + drums). All component masses
+            # are in kg. Note: 'Uranium Mass' is already in kg in MOUSE;
             # cladding mass is not separately tracked (small relative to
             # the other terms).
-            _reactor_dia_cm  = 2.0 * float(params.get('Core Radius', 0.0))
-            _reactor_h_cm    = (float(params.get('Active Height', 0.0))
+            _reactor_dia_cm = 2.0 * float(params.get('Core Radius', 0.0))
+            _reactor_h_cm = (float(params.get('Active Height', 0.0))
                                 + 2.0 * float(params.get('Axial Reflector Thickness', 0.0)))
             _reactor_mass_kg = (
                 float(params.get('Uranium Mass', 0.0))
@@ -2905,42 +2954,42 @@ with streamlit_analytics.track():
                 # MOUSE 'Guard Vessel' is the RPV for GCMR
                 _rv_outer_r_cm = (float(params.get('Guard Vessel Radius', 0.0))
                                   + _guard_thk_cm)
-                _rv_height_cm  = (_vessel_height_cm
+                _rv_height_cm = (_vessel_height_cm
                                   + _bottom_depth_cm + _vessel_thk_cm + _gap_v_g_cm
                                   + _guard_thk_cm)
-                _rv_mass_kg    = float(params.get('Guard Vessel Mass', 0.0))
+                _rv_mass_kg = float(params.get('Guard Vessel Mass', 0.0))
             else:
                 _rv_outer_r_cm = (float(params.get('Vessel Radius', 0.0)) + _vessel_thk_cm)
-                _rv_height_cm  = _vessel_height_cm + _bottom_depth_cm
-                _rv_mass_kg    = float(params.get('Vessel Mass', 0.0))
+                _rv_height_cm = _vessel_height_cm + _bottom_depth_cm
+                _rv_mass_kg = float(params.get('Vessel Mass', 0.0))
             _rv_dia_cm = 2.0 * _rv_outer_r_cm
 
-            # Guard vessel — only for LTMR
+            # Guard vessel only for LTMR
             _has_guard = (reactor_type == 'LTMR'
                           and float(params.get('Guard Vessel Thickness', 0.0)) > 0)
             if _has_guard:
                 _gv_outer_r_cm = (float(params.get('Guard Vessel Radius', 0.0)) + _guard_thk_cm)
-                _gv_dia_cm     = 2.0 * _gv_outer_r_cm
-                _gv_height_cm  = (_vessel_height_cm
+                _gv_dia_cm = 2.0 * _gv_outer_r_cm
+                _gv_height_cm = (_vessel_height_cm
                                   + _bottom_depth_cm + _vessel_thk_cm + _gap_v_g_cm
                                   + _guard_thk_cm)
-                _gv_mass_kg    = float(params.get('Guard Vessel Mass', 0.0))
+                _gv_mass_kg = float(params.get('Guard Vessel Mass', 0.0))
             else:
                 _gv_dia_cm = _gv_height_cm = _gv_mass_kg = 0.0
 
             # RVACS (cooling vessel + intake vessel combined)
             _rvacs_outer_r_cm = float(params.get('Vessels Total Radius', 0.0))
-            _rvacs_dia_cm     = 2.0 * _rvacs_outer_r_cm
-            _rvacs_height_cm  = float(params.get('Vessels Total Height', 0.0))
-            _rvacs_mass_kg    = (float(params.get('Cooling Vessel Mass', 0.0))
+            _rvacs_dia_cm = 2.0 * _rvacs_outer_r_cm
+            _rvacs_height_cm = float(params.get('Vessels Total Height', 0.0))
+            _rvacs_mass_kg = (float(params.get('Cooling Vessel Mass', 0.0))
                                  + float(params.get('Intake Vessel Mass', 0.0)))
 
             # ── Render component table ──
             # Each row carries an always-visible small-font description
             # under the component name explaining what is included and
-            # what is excluded.  The hover-only title= tooltip approach
+            # what is excluded. The hover-only title= tooltip approach
             # was unreliable across browsers/themes, so the notes are
-            # shown inline in the table itself.  Explicit colors
+            # shown inline in the table itself. Explicit colors
             # throughout so the table is readable regardless of the
             # Streamlit theme.
             _CELL = ('padding:0.55rem 0.8rem;color:#1e293b;'
@@ -2957,7 +3006,7 @@ with streamlit_analytics.track():
                 'monolith graphite for HPMR), radial + axial reflector, '
                 'control drums. Excludes: fuel cladding (small, not '
                 'tracked in MOUSE).'
-                + (' <span style="color:#b45309;">HPMR — heat-pipe '
+                + (' <span style="color:#b45309;">HPMR heat-pipe '
                    'steel cladding and Na working fluid not yet '
                    'modeled.</span>' if reactor_type == 'HPMR' else '')
             )
@@ -2981,7 +3030,7 @@ with streamlit_analytics.track():
                 'guard-vessel wall only (no internals).'
             )
             _gv_na_desc = (
-                'Intentionally omitted for this reactor type — He is '
+                'Intentionally omitted for this reactor type He is '
                 'inert (GCMR) and heat pipes are individually sealed '
                 '(HPMR), so neither has a bulk primary coolant '
                 'requiring secondary containment.'
@@ -3028,7 +3077,7 @@ with streamlit_analytics.track():
                     '<tr style="background:#ffffff;">'
                     f'<td style="{_CELL_NAME};color:#94a3b8;">Guard vessel'
                     f'<div style="{_DESC}">{_gv_na_desc}</div></td>'
-                    f'<td colspan="3" style="{_CELL_C};color:#94a3b8;">N/A — not used for this reactor type</td>'
+                    f'<td colspan="3" style="{_CELL_C};color:#94a3b8;">N/A not used for this reactor type</td>'
                     '</tr>'
                 )
             _rows_html.append(
@@ -3069,7 +3118,7 @@ with streamlit_analytics.track():
             _hpmr_note = (
                 '<li><strong>HPMR-specific:</strong> heat-pipe steel '
                 'cladding and the Na working fluid are <em>not</em> '
-                'currently modeled in MOUSE — flagged for future addition.</li>'
+                'currently modeled in MOUSE flagged for future addition.</li>'
                 if reactor_type == 'HPMR' else ''
             )
             _gcmr_note = (
@@ -3083,9 +3132,9 @@ with streamlit_analytics.track():
                 '<li><strong>Guard vessel:</strong> wall thickness and '
                 'gap; mass = wall only (no internals).</li>'
                 if _has_guard else
-                '<li><strong>Guard vessel — N/A:</strong> intentionally '
+                '<li><strong>Guard vessel N/A:</strong> intentionally '
                 'omitted for this reactor type (helium is inert for GCMR; '
-                'each heat pipe is individually sealed for HPMR — neither '
+                'each heat pipe is individually sealed for HPMR neither '
                 'has a bulk primary coolant requiring secondary containment).</li>'
             )
             st.markdown(
@@ -3107,9 +3156,9 @@ with streamlit_analytics.track():
                 '2 × (vessel radius + vessel thickness); height includes '
                 f'active core, axial reflector, lower plenum, upper plenum, '
                 f'and bottom dish (currently using the placeholder Vessel '
-                f'Bottom Depth = {_bottom_depth_cm:.1f} cm — flagged for '
+                f'Bottom Depth = {_bottom_depth_cm:.1f} cm flagged for '
                 'review). Top closure dome is <em>not</em> currently '
-                'modeled in MOUSE — flagged for future addition. Mass is '
+                'modeled in MOUSE flagged for future addition. Mass is '
                 'the vessel wall only, no internals.</li>'
                 + _gcmr_note
                 + _gv_note +
@@ -3142,12 +3191,12 @@ with streamlit_analytics.track():
             _modes = [
                 {
                     'name': 'US road, no permit',
-                    'width_m':  2.59,   # 8.5 ft
-                    'height_m': 4.11,   # 13.5 ft (state-varying)
-                    'length_m': None,   # length rarely binding for a vessel module
-                    'weight_t': 36.3,   # 80,000 lb GVW
+                    'width_m': 2.59, # 8.5 ft
+                    'height_m': 4.11, # 13.5 ft (state-varying)
+                    'length_m': None, # length rarely binding for a vessel module
+                    'weight_t': 36.3, # 80,000 lb GVW
                     'cite_html': (
-                        'Federal Bridge Formula — '
+                        'Federal Bridge Formula '
                         '<a href="https://www.law.cornell.edu/uscode/text/23/127" '
                         'target="_blank" style="color:#2563eb;">23 U.S.C. § 127</a>; '
                         'FHWA "Federal Size Regulations for Commercial Motor Vehicles". '
@@ -3157,10 +3206,10 @@ with streamlit_analytics.track():
                 },
                 {
                     'name': 'US rail, AAR Plate F',
-                    'width_m':  5.18,
+                    'width_m': 5.18,
                     'height_m': 5.18,
                     'length_m': None,
-                    'weight_t': 130.0,  # 286,000 lb gross car weight
+                    'weight_t': 130.0, # 286,000 lb gross car weight
                     'cite_html': (
                         'AAR Manual of Standards & Recommended Practices §C-II '
                         '"Plate Drawings"; AAR Open Top Loading Rules. '
@@ -3170,38 +3219,38 @@ with streamlit_analytics.track():
                 },
                 {
                     'name': '40 ft ISO HC sea container',
-                    'width_m':  2.352,  # internal
-                    'height_m': 2.700,  # internal
+                    'width_m': 2.352, # internal
+                    'height_m': 2.700, # internal
                     'length_m': 12.032, # internal
                     'weight_t': 30.5,
                     'cite_html': (
-                        'ISO 668:2020 "Series 1 freight containers — Classification, '
+                        'ISO 668:2020 "Series 1 freight containers Classification, '
                         'dimensions and ratings"; ISO 1496-1:2013 "Specification '
-                        'and testing — Part 1: General-cargo containers".'
+                        'and testing Part 1: General-cargo containers".'
                     ),
                 },
             ]
 
             # Compare the outermost RVACS envelope to each mode's
-            # dimensional limits AND weight limit.  Weight comparison
+            # dimensional limits AND weight limit. Weight comparison
             # uses the sum of the four component masses (computed inline
-            # for badge logic only — not displayed as a "total" row in
+            # for badge logic only not displayed as a "total" row in
             # the table per design choice).
             _rvacs_dia_m = _rvacs_dia_cm / 100.0
-            _rvacs_h_m   = _rvacs_height_cm / 100.0
+            _rvacs_h_m = _rvacs_height_cm / 100.0
             _badge_total_kg = (_reactor_mass_kg + _rv_mass_kg
                                + _gv_mass_kg + _rvacs_mass_kg)
-            _badge_total_t  = _badge_total_kg / 1000.0
+            _badge_total_t = _badge_total_kg / 1000.0
 
             _mode_cards_html = []
             for _mode in _modes:
                 _w_ok = _rvacs_dia_m <= _mode['width_m']
-                _h_ok = _rvacs_h_m   <= _mode['height_m']
-                _len_ok  = (_mode['length_m'] is None) or (_rvacs_h_m <= _mode['length_m'])
-                _wt_ok   = _badge_total_t <= _mode['weight_t']
-                _fits    = _w_ok and _h_ok and _len_ok and _wt_ok
+                _h_ok = _rvacs_h_m <= _mode['height_m']
+                _len_ok = (_mode['length_m'] is None) or (_rvacs_h_m <= _mode['length_m'])
+                _wt_ok = _badge_total_t <= _mode['weight_t']
+                _fits = _w_ok and _h_ok and _len_ok and _wt_ok
                 _badge_color = ('#15803d', '#dcfce7', '#bbf7d0') if _fits else ('#b91c1c', '#fee2e2', '#fecaca')
-                _badge_text  = '✓ fits envelope' if _fits else '✗ exceeds envelope'
+                _badge_text = '✓ fits envelope' if _fits else '✗ exceeds envelope'
                 _len_str = (f' &nbsp;|&nbsp; length ≤ {_mode["length_m"]:.2f} m'
                             if _mode['length_m'] is not None else '')
                 _mode_cards_html.append(
@@ -3225,7 +3274,7 @@ with streamlit_analytics.track():
 
             st.markdown(''.join(_mode_cards_html), unsafe_allow_html=True)
 
-            # Footnote — what each badge does and doesn't check
+            # Footnote what each badge does and doesn't check
             st.markdown(
                 '<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;'
                 'padding:0.65rem 1rem;margin-bottom:1rem;font-size:0.74rem;line-height:1.45;color:#7c2d12;">'
@@ -3266,7 +3315,7 @@ with streamlit_analytics.track():
             _kpi_card(lc2, 'LCOH ($/MW<sub>t</sub>h)',
                       _fmt_lcoh(lcoh_f, lcoh_f_std), _fmt_lcoh(lcoh_n, lcoh_n_std),
                       color=_CARD_COLORS['lcoh'])
-            _kpi_card(lc3, 'LCOF — Fuel Only ($/MW<sub>e</sub>h)',
+            _kpi_card(lc3, 'LCOF Fuel Only ($/MW<sub>e</sub>h)',
                       _fmt_lcoe(lcof_f, lcof_f_std), _fmt_lcoe(lcof_n, lcof_n_std),
                       color=_CARD_COLORS['lcof'])
 
@@ -3275,10 +3324,10 @@ with streamlit_analytics.track():
             'border-radius:8px;border:1px solid #e2e8f0;font-size:0.78rem;color:#64748b;">'
             '<span style="background:#fff3ed;color:#c84b1e;font-size:0.62rem;font-weight:800;'
             'padding:0.1rem 0.4rem;border-radius:4px;margin-right:0.4rem;">FOAK</span>'
-            'First-of-a-Kind — includes learning curve and contingency premiums for an initial deployment.&emsp;'
+            'First-of-a-Kind includes learning curve and contingency premiums for an initial deployment.&emsp;'
             '<span style="background:#eff6ff;color:#1d4ed8;font-size:0.62rem;font-weight:800;'
             'padding:0.1rem 0.4rem;border-radius:4px;margin-right:0.4rem;">NOAK</span>'
-            'Nth-of-a-Kind — reflects mature, serial production cost reductions at scale.'
+            'Nth-of-a-Kind reflects mature, serial production cost reductions at scale.'
             '</div>',
             unsafe_allow_html=True,
         )
@@ -3308,69 +3357,15 @@ with streamlit_analytics.track():
 
         # Use the headline FOAK (N=1) and NOAK (N=user_setting) values
         # as anchors, and add ONE extra cost-engine call at N=10 to
-        # give an intermediate point.  Same extraction path as the
+        # give an intermediate point. Same extraction path as the
         # headline cards (bottom_up_cost_estimate ->
         # cost_drivers_estimate -> transform_dataframe ->
         # _get_mean_std), so values are consistent by construction.
-        _N_user = int(round(float(params.get('NOAK Unit Number', 100))))
-        if _N_user < 2:
-            _N_user = 100
-
-        # Compute intermediate anchors at N = 2, 10, 30 (each is one
-        # cost-engine call, cached on inputs).  Each call uses the
-        # same extraction path as the headline.
-        _N_mids = [2, 10]
-        _mid_results = {}  # N -> (mean, std)
-
-        # Big, unmissable loading banner shown ONLY during the
-        # cost-engine sweep — the user might otherwise scroll away
-        # before the plot finishes rendering on a fresh cache (~20s
-        # cold start).  Banner is rendered into a placeholder so we
-        # can clear it the moment computation finishes.
-        _loading_slot = st.empty()
-        _loading_slot.markdown(
-            '<div style="background:linear-gradient(90deg,#fef3c7 0%,#fde68a 100%);'
-            'border:2px solid #f59e0b;border-radius:12px;padding:1.4rem 1.6rem;'
-            'margin-bottom:1rem;color:#78350f;text-align:center;'
-            'box-shadow:0 4px 12px rgba(245,158,11,0.18);">'
-            '<div style="font-size:1.15rem;font-weight:800;margin-bottom:0.4rem;'
-            'letter-spacing:0.02em;">⏳ Computing the perspective curve…</div>'
-            '<div style="font-size:0.88rem;font-weight:500;line-height:1.5;">'
-            'Running the cost engine for three intermediate deployment scales. '
-            'This can take roughly <strong>15–25 seconds</strong> on a fresh cache. '
-            'Please don\'t change inputs or close the page until the plot appears below.'
-            '</div></div>',
-            unsafe_allow_html=True,
-        )
-
-        with st.spinner('Computing intermediate LCOE anchors…'):
-            for _N in _N_mids:
-                if _N <= 1 or _N >= _N_user:
-                    continue
-                try:
-                    # CRITICAL: interest_rate / 100 and discount_rate / 100
-                    # to convert UI percent to fraction.  Headline does
-                    # the same at line ~1537; without it the cost engine
-                    # treats 7 as 700% interest and inflates TCI / LCOE.
-                    _m_i, _s_i, _, _ = _lcoe_at_noak_unit(
-                        reactor_type, power_mwt, enrichment,
-                        interest_rate / 100.0, discount_rate / 100.0,
-                        construction_duration,
-                        debt_to_equity, operation_mode, emergency_shutdowns,
-                        startup_duration, startup_duration_refueling,
-                        tax_credit_type, tax_credit_value, plant_lifetime,
-                        n_rings_per_assembly=n_rings_per_assembly,
-                        active_height=active_height,
-                        n_assembly_rings=n_assembly_rings,
-                        n_core_rings=n_core_rings,
-                        noak_unit_number=_N,
-                    )
-                    _mid_results[_N] = (_m_i, _s_i)
-                except Exception as _e:
-                    st.warning(f'Could not compute N={_N} anchor: {_e}')
-
-        # Clear the loading banner now that the cost-engine sweep is done.
-        _loading_slot.empty()
+        # _mid_results and _N_user_pre were pre-computed above the
+        # tabs (under a single spinner) so the whole page renders at
+        # once. Re-bind the local names this block expects.
+        _N_user = _N_user_pre
+        _N_mids = _N_mids_pre
 
         try:
             _foak_m = float(lcoe_f)
@@ -3384,12 +3379,12 @@ with streamlit_analytics.track():
             _foak_s = _noak_s = 0.0
 
         # Build the anchor list: FOAK + intermediates + NOAK, sorted
-        # by N ascending.  Skip any intermediate with NaN.
+        # by N ascending. Skip any intermediate with NaN.
         _units = [1] + [_N for _N in _N_mids
                         if _N in _mid_results
                         and _mid_results[_N][0] == _mid_results[_N][0]] + [_N_user]
         _means = [_foak_m]
-        _stds  = [_foak_s]
+        _stds = [_foak_s]
         for _N in _N_mids:
             if _N in _mid_results and _mid_results[_N][0] == _mid_results[_N][0]:
                 _means.append(_mid_results[_N][0])
@@ -3398,11 +3393,11 @@ with streamlit_analytics.track():
         _stds.append(_noak_s)
 
         # NaN-tolerant gating: drop points where the LCOE came back
-        # NaN, plot whatever valid points remain.  Scatter markers +
+        # NaN, plot whatever valid points remain. Scatter markers +
         # mean line are always drawn (they don't need the spline).
         _u_arr = np.array(_units, dtype=float) if _units else np.array([])
         _m_arr = np.array(_means, dtype=float) if _means else np.array([])
-        _s_arr = np.array(_stds,  dtype=float) if _stds  else np.array([])
+        _s_arr = np.array(_stds, dtype=float) if _stds else np.array([])
         if _m_arr.size:
             _valid = ~np.isnan(_m_arr)
             _u_arr = _u_arr[_valid]
@@ -3416,9 +3411,9 @@ with streamlit_analytics.track():
             # Reactor-type-specific palette (matches the existing
             # webapp accent colors for each reactor).
             _palette = {
-                'LTMR': ('#4472C4', '#2E5090'),  # blue
-                'GCMR': ('#FF6B6B', '#D94444'),  # red
-                'HPMR': ('#7E57C2', '#4527A0'),  # purple
+                'LTMR': ('#4472C4', '#2E5090'), # blue
+                'GCMR': ('#FF6B6B', '#D94444'), # red
+                'HPMR': ('#7E57C2', '#4527A0'), # purple
             }
             _fill_color, _edge_color = _palette.get(reactor_type, _palette['LTMR'])
             _legend_label = {
@@ -3429,8 +3424,8 @@ with streamlit_analytics.track():
 
             _fig, _ax = plt.subplots(figsize=(11, 5.8))
 
-            # Plain linear interpolation between the anchor points —
-            # no spline, no overshoot.  np.interp gives straight line
+            # Plain linear interpolation between the anchor points 
+            # no spline, no overshoot. np.interp gives straight line
             # segments between consecutive anchors, which is the
             # honest representation when we only have 2-3 anchors.
             try:
@@ -3457,36 +3452,36 @@ with streamlit_analytics.track():
 
             # Market benchmark arrows (same coords as the reference figure)
             _markets = {
-                'Remote communities':           {'x':  2, 'y_start': 400, 'y_end': 290, 'color': '#C00000', 'arrow_only_down': True},
-                'Defense':                      {'x':  8, 'y_start': 316, 'y_end': 296, 'color': '#FFC000', 'arrow_only_down': False},
-                'Island & Mining':              {'x': 30, 'y_start': 380, 'y_end': 190, 'color': '#ED7D31', 'arrow_only_down': False},
-                'Alaska railbelt electricity':  {'x': 48, 'y_start': 313, 'y_end': 182, 'color': '#7030A0', 'arrow_only_down': False},
-                'Alaska railbelt generation':   {'x': 60, 'y_start': 166, 'y_end':  62, 'color': '#A6A6A6', 'arrow_only_down': False},
-                'U.S. grid electricity':        {'x': 75, 'y_start': 270, 'y_end':  79, 'color': '#92D050', 'arrow_only_down': False},
-                'U.S. grid generation':         {'x': 88, 'y_start':  55, 'y_end':  29, 'color': '#00B050', 'arrow_only_down': False},
+                'Remote communities': {'x': 2, 'y_start': 400, 'y_end': 290, 'color': '#C00000', 'arrow_only_down': True},
+                'Defense': {'x': 8, 'y_start': 316, 'y_end': 296, 'color': '#FFC000', 'arrow_only_down': False},
+                'Island & Mining': {'x': 30, 'y_start': 380, 'y_end': 190, 'color': '#ED7D31', 'arrow_only_down': False},
+                'Alaska railbelt electricity': {'x': 48, 'y_start': 313, 'y_end': 182, 'color': '#7030A0', 'arrow_only_down': False},
+                'Alaska railbelt generation': {'x': 60, 'y_start': 166, 'y_end': 62, 'color': '#A6A6A6', 'arrow_only_down': False},
+                'U.S. grid electricity': {'x': 75, 'y_start': 270, 'y_end': 79, 'color': '#92D050', 'arrow_only_down': False},
+                'U.S. grid generation': {'x': 88, 'y_start': 55, 'y_end': 29, 'color': '#00B050', 'arrow_only_down': False},
             }
             _bar_widths = {
-                'Remote communities':           4,
-                'Defense':                      4,
-                'Island & Mining':             12,
-                'Alaska railbelt electricity':  8,
-                'Alaska railbelt generation':   8,
-                'U.S. grid electricity':       12,
-                'U.S. grid generation':        10,
+                'Remote communities': 4,
+                'Defense': 4,
+                'Island & Mining': 12,
+                'Alaska railbelt electricity': 8,
+                'Alaska railbelt generation': 8,
+                'U.S. grid electricity': 12,
+                'U.S. grid generation': 10,
             }
             _label_offsets = {
-                'Remote communities':         +8,
-                'Defense':                   +25,
+                'Remote communities': +8,
+                'Defense': +25,
                 'Alaska railbelt generation': -15,
-                'U.S. grid generation':      +20,
+                'U.S. grid generation': +20,
             }
             for _name, _d in _markets.items():
-                _x  = _d['x']
+                _x = _d['x']
                 _ys = min(_d['y_start'], 400)
                 _ye = _d['y_end']
-                _c  = _d['color']
+                _c = _d['color']
                 _down = _d['arrow_only_down']
-                _w  = _bar_widths[_name]
+                _w = _bar_widths[_name]
                 _xa, _xb = _x, _x + _w
                 _xm = _x + _w / 2
 
@@ -3515,9 +3510,9 @@ with streamlit_analytics.track():
                          zorder=6)
 
             _ax.set_xlim(1, 100)
-            # Y-axis sizing — use the 90th-percentile of (mean + std)
+            # Y-axis sizing use the 90th-percentile of (mean + std)
             # rather than max, so a single outlier point doesn't blow
-            # up the y-range and squash the rest of the data.  Hard
+            # up the y-range and squash the rest of the data. Hard
             # cap at $800 so even outliers stay readable.
             if _m_arr.size:
                 _band_vals = _m_arr + _s_arr
@@ -3545,9 +3540,9 @@ with streamlit_analytics.track():
             _fig.tight_layout()
 
             # If the LCOE band sits entirely above the y-axis cap
-            # ($800 max), the band is invisible on the chart.  Warn
+            # ($800 max), the band is invisible on the chart. Warn
             # the user explicitly so they know why nothing is plotted
-            # for the reactor and what to do about it.  Use a custom-
+            # for the reactor and what to do about it. Use a custom-
             # colored markdown box rather than st.warning, which
             # renders white text on yellow (illegible).
             _band_min_visible = (_m_arr - _s_arr).min() if _m_arr.size else 0.0
@@ -3560,11 +3555,11 @@ with streamlit_analytics.track():
                     f'color:#7c2d12;font-size:0.85rem;line-height:1.55;">'
                     f'<strong style="color:#7c2d12;">⚠️ Reactor LCOE off the chart.</strong> '
                     f'The reactor LCOE band ranges roughly '
-                    f'<strong>${_band_lo:,.0f}–${_band_hi:,.0f}/MWh</strong>, which is above '
+                    f'<strong>${_band_lo:,.0f}-${_band_hi:,.0f}/MWh</strong>, which is above '
                     f'the chart\'s <strong>${int(_ymax)}/MWh</strong> ceiling, so the curve is '
                     f'not visible on the plot below. The market benchmarks remain visible for '
                     f'reference. To bring the curve into the chart, try a higher reactor power, '
-                    f'higher enrichment, longer plant lifetime, or a larger NOAK Unit Number — '
+                    f'higher enrichment, longer plant lifetime, or a larger NOAK Unit Number '
                     f'any of those reduces the LCOE.'
                     f'</div>',
                     unsafe_allow_html=True,
@@ -3605,50 +3600,50 @@ with streamlit_analytics.track():
         # Behind-the-meter / Distributed Generation comparison:
         # state-by-state retail electricity price vs FOAK / NOAK LCOE
         # ─────────────────────────────────────────────────────────
-        # EIA "State Electricity Profiles" — 2023 annual average
+        # EIA "State Electricity Profiles" 2023 annual average
         # retail price of electricity to ULTIMATE INDUSTRIAL
-        # CUSTOMERS (Industrial sector).  This is more representative
+        # CUSTOMERS (Industrial sector). This is more representative
         # of the BTM/BYOG customer types listed below than the all-
         # sectors average (industrials typically pay 30-50% less than
         # the all-sectors number, so using the industrial column gives
-        # a more honest competitiveness check).  Source:
-        # https://www.eia.gov/electricity/state/  Table 5.6.A,
+        # a more honest competitiveness check). Source:
+        # https://www.eia.gov/electricity/state/ Table 5.6.A,
         # "Average Retail Price of Electricity to Ultimate Customers
-        # by End-Use Sector — Industrial".  Values in cents/kWh,
+        # by End-Use Sector Industrial". Values in cents/kWh,
         # converted to $/MWh by ×10.
         _STATE_RETAIL_CENTS_PER_KWH_2023 = {
-            'AL':  6.77, 'AK': 18.46, 'AZ':  7.11, 'AR':  6.50,
-            'CA': 18.27, 'CO':  8.10, 'CT': 13.84, 'DE':  8.29,
-            'DC':  8.39, 'FL':  8.97, 'GA':  7.12, 'HI': 33.16,
-            'ID':  7.29, 'IL':  7.64, 'IN':  7.85, 'IA':  6.86,
-            'KS':  8.30, 'KY':  6.27, 'LA':  6.36, 'ME': 11.03,
-            'MD':  8.81, 'MA': 13.28, 'MI':  8.18, 'MN':  8.16,
-            'MS':  6.76, 'MO':  7.40, 'MT':  6.34, 'NE':  8.10,
-            'NV':  7.28, 'NH': 12.59, 'NJ': 11.83, 'NM':  7.39,
-            'NY':  7.34, 'NC':  6.92, 'ND':  8.46, 'OH':  7.13,
-            'OK':  6.40, 'OR':  7.95, 'PA':  7.79, 'RI': 14.13,
-            'SC':  6.86, 'SD':  8.44, 'TN':  6.77, 'TX':  6.97,
-            'UT':  6.80, 'VT':  9.91, 'VA':  7.74, 'WA':  6.10,
-            'WV':  7.54, 'WI':  8.17, 'WY':  6.77,
+            'AL': 6.77, 'AK': 18.46, 'AZ': 7.11, 'AR': 6.50,
+            'CA': 18.27, 'CO': 8.10, 'CT': 13.84, 'DE': 8.29,
+            'DC': 8.39, 'FL': 8.97, 'GA': 7.12, 'HI': 33.16,
+            'ID': 7.29, 'IL': 7.64, 'IN': 7.85, 'IA': 6.86,
+            'KS': 8.30, 'KY': 6.27, 'LA': 6.36, 'ME': 11.03,
+            'MD': 8.81, 'MA': 13.28, 'MI': 8.18, 'MN': 8.16,
+            'MS': 6.76, 'MO': 7.40, 'MT': 6.34, 'NE': 8.10,
+            'NV': 7.28, 'NH': 12.59, 'NJ': 11.83, 'NM': 7.39,
+            'NY': 7.34, 'NC': 6.92, 'ND': 8.46, 'OH': 7.13,
+            'OK': 6.40, 'OR': 7.95, 'PA': 7.79, 'RI': 14.13,
+            'SC': 6.86, 'SD': 8.44, 'TN': 6.77, 'TX': 6.97,
+            'UT': 6.80, 'VT': 9.91, 'VA': 7.74, 'WA': 6.10,
+            'WV': 7.54, 'WI': 8.17, 'WY': 6.77,
         }
         _STATE_FULL_NAMES = {
-            'AL': 'Alabama',        'AK': 'Alaska',         'AZ': 'Arizona',
-            'AR': 'Arkansas',       'CA': 'California',     'CO': 'Colorado',
-            'CT': 'Connecticut',    'DE': 'Delaware',       'DC': 'D.C.',
-            'FL': 'Florida',        'GA': 'Georgia',        'HI': 'Hawaii',
-            'ID': 'Idaho',          'IL': 'Illinois',       'IN': 'Indiana',
-            'IA': 'Iowa',           'KS': 'Kansas',         'KY': 'Kentucky',
-            'LA': 'Louisiana',      'ME': 'Maine',          'MD': 'Maryland',
-            'MA': 'Massachusetts',  'MI': 'Michigan',       'MN': 'Minnesota',
-            'MS': 'Mississippi',    'MO': 'Missouri',       'MT': 'Montana',
-            'NE': 'Nebraska',       'NV': 'Nevada',         'NH': 'New Hampshire',
-            'NJ': 'New Jersey',     'NM': 'New Mexico',     'NY': 'New York',
-            'NC': 'North Carolina', 'ND': 'North Dakota',   'OH': 'Ohio',
-            'OK': 'Oklahoma',       'OR': 'Oregon',         'PA': 'Pennsylvania',
-            'RI': 'Rhode Island',   'SC': 'South Carolina', 'SD': 'South Dakota',
-            'TN': 'Tennessee',      'TX': 'Texas',          'UT': 'Utah',
-            'VT': 'Vermont',        'VA': 'Virginia',       'WA': 'Washington',
-            'WV': 'West Virginia',  'WI': 'Wisconsin',      'WY': 'Wyoming',
+            'AL': 'Alabama', 'AK': 'Alaska', 'AZ': 'Arizona',
+            'AR': 'Arkansas', 'CA': 'California', 'CO': 'Colorado',
+            'CT': 'Connecticut', 'DE': 'Delaware', 'DC': 'D.C.',
+            'FL': 'Florida', 'GA': 'Georgia', 'HI': 'Hawaii',
+            'ID': 'Idaho', 'IL': 'Illinois', 'IN': 'Indiana',
+            'IA': 'Iowa', 'KS': 'Kansas', 'KY': 'Kentucky',
+            'LA': 'Louisiana', 'ME': 'Maine', 'MD': 'Maryland',
+            'MA': 'Massachusetts', 'MI': 'Michigan', 'MN': 'Minnesota',
+            'MS': 'Mississippi', 'MO': 'Missouri', 'MT': 'Montana',
+            'NE': 'Nebraska', 'NV': 'Nevada', 'NH': 'New Hampshire',
+            'NJ': 'New Jersey', 'NM': 'New Mexico', 'NY': 'New York',
+            'NC': 'North Carolina', 'ND': 'North Dakota', 'OH': 'Ohio',
+            'OK': 'Oklahoma', 'OR': 'Oregon', 'PA': 'Pennsylvania',
+            'RI': 'Rhode Island', 'SC': 'South Carolina', 'SD': 'South Dakota',
+            'TN': 'Tennessee', 'TX': 'Texas', 'UT': 'Utah',
+            'VT': 'Vermont', 'VA': 'Virginia', 'WA': 'Washington',
+            'WV': 'West Virginia', 'WI': 'Wisconsin', 'WY': 'Wyoming',
         }
 
         st.markdown('<div style="height:1.2rem"></div>', unsafe_allow_html=True)
@@ -3661,8 +3656,8 @@ with streamlit_analytics.track():
         st.markdown(
             '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;'
             'padding:0.85rem 1.1rem;margin-bottom:0.9rem;font-size:0.82rem;line-height:1.45;color:#334155;">'
-            'For behind-the-meter (BTM) and bring-your-own-generator (BYOG) deployments — '
-            'data centers, industrial loads, mining, defense — a useful '
+            'For behind-the-meter (BTM) and bring-your-own-generator (BYOG) deployments '
+            'data centers, industrial loads, mining, defense a useful '
             '<em>first-order</em> cost benchmark is the average retail electricity price '
             'the customer would otherwise pay. The chart compares the FOAK and NOAK LCOE '
             '(with one-sigma bands) against the 2023 average retail price for the '
@@ -3670,11 +3665,11 @@ with streamlit_analytics.track():
             'Administration. States are color-coded by competitiveness:'
             '<ul style="margin:0.4rem 0 0 1.2rem;">'
             '<li><span style="color:#15803d;font-weight:700;">Green:</span> retail price '
-            'exceeds the FOAK upper band — reactor wins even at FOAK.</li>'
+            'exceeds the FOAK upper band reactor wins even at FOAK.</li>'
             '<li><span style="color:#b45309;font-weight:700;">Yellow:</span> retail price '
-            'between NOAK and FOAK bands — reactor wins only at NOAK scale.</li>'
+            'between NOAK and FOAK bands reactor wins only at NOAK scale.</li>'
             '<li><span style="color:#64748b;font-weight:700;">Gray:</span> retail price '
-            'below the NOAK band — not competitive even at scale.</li>'
+            'below the NOAK band not competitive even at scale.</li>'
             '</ul>'
             '<div style="margin-top:0.5rem;font-size:0.74rem;color:#64748b;line-height:1.45;">'
             '<strong>Caveat:</strong> this is a simplified comparison. Actual avoided cost '
@@ -3704,24 +3699,24 @@ with streamlit_analytics.track():
             _sorted = sorted(_state_prices.items(),
                              key=lambda kv: kv[1], reverse=True)
             _state_codes = [s for s, _ in _sorted]
-            _state_vals  = [v for _, v in _sorted]
+            _state_vals = [v for _, v in _sorted]
 
             # Competitiveness thresholds: use the LOWER edge of each
             # uncertainty band so any state whose retail price falls
             # inside the FOAK or NOAK band counts as competitive.
-            #   - State price >= FOAK_low -> green (potentially wins
-            #     even at FOAK; price intersects or exceeds the FOAK
-            #     band)
-            #   - State price >= NOAK_low -> yellow (potentially wins
-            #     at NOAK; price intersects or exceeds the NOAK band)
-            #   - State price <  NOAK_low -> gray (clearly loses)
+            # - State price >= FOAK_low -> green (potentially wins
+            # even at FOAK; price intersects or exceeds the FOAK
+            # band)
+            # - State price >= NOAK_low -> yellow (potentially wins
+            # at NOAK; price intersects or exceeds the NOAK band)
+            # - State price < NOAK_low -> gray (clearly loses)
             _foak_low = _foak_m_btm - _foak_s_btm
             _noak_low = _noak_m_btm - _noak_s_btm
 
             # Per-state classification + bar colors
-            _GREEN  = '#16a34a'
+            _GREEN = '#16a34a'
             _YELLOW = '#d97706'
-            _GRAY   = '#94a3b8'
+            _GRAY = '#94a3b8'
             _bar_colors = []
             _foak_winners, _noak_winners = [], []
             for s, v in _sorted:
@@ -3735,7 +3730,7 @@ with streamlit_analytics.track():
                 else:
                     _bar_colors.append(_GRAY)
 
-            # Vertical column chart: states on X, price on Y.  Each
+            # Vertical column chart: states on X, price on Y. Each
             # column carries the state's 2-letter code rotated 90°,
             # rendered in white bold so it's legible on every column
             # color (green / yellow / gray).
@@ -3761,7 +3756,7 @@ with streamlit_analytics.track():
             # Y-axis must accommodate the FOAK and NOAK reference
             # bands even when they exceed the highest state retail
             # price (e.g. high-power FOAK at $800+/MWh against a
-            # max state of ~$330/MWh).  Use the larger of (max state
+            # max state of ~$330/MWh). Use the larger of (max state
             # price, FOAK upper band) as the basis.
             _band_top_btm = max(
                 _foak_m_btm + _foak_s_btm,
@@ -3771,19 +3766,19 @@ with streamlit_analytics.track():
             _ymax_chart = _band_top_btm * 1.18
 
             # Place full state name vertically OVERLAPPING each
-            # column.  Anchor just above the x-axis (small positive
+            # column. Anchor just above the x-axis (small positive
             # offset so the label doesn't collide with the baseline)
             # and extend UPWARD with rotation=90 / va='bottom' so the
-            # name reads bottom-to-top.  Each label gets a dark-blue
-            # rounded-rectangle bbox with WHITE bold text — much
+            # name reads bottom-to-top. Each label gets a dark-blue
+            # rounded-rectangle bbox with WHITE bold text much
             # higher contrast than the previous dark-on-light-with-
-            # halo approach.  Long names ("Massachusetts", "North
+            # halo approach. Long names ("Massachusetts", "North
             # Carolina") that exceed the column top extend into the
             # white plot background; the blue pill keeps them
             # crisply legible there too.
             _baseline_offset = _ymax_chart * 0.015
             _label_bbox = dict(
-                facecolor='#1e3a8a',   # deep navy blue
+                facecolor='#1e3a8a', # deep navy blue
                 edgecolor='none',
                 pad=2.2,
                 boxstyle='round,pad=0.18',
@@ -3799,10 +3794,10 @@ with streamlit_analytics.track():
                     zorder=4,
                 )
 
-            _ax_btm.set_xticks([])  # state names are on the columns themselves
+            _ax_btm.set_xticks([]) # state names are on the columns themselves
             _ax_btm.set_xlim(-0.7, len(_state_codes) - 0.3)
             _ax_btm.set_ylim(0, _ymax_chart)
-            _ax_btm.set_ylabel('Average retail price ($/MWh) — EIA 2023, industrial sector',
+            _ax_btm.set_ylabel('Average retail price ($/MWh) EIA 2023, industrial sector',
                                fontsize=11, fontweight='bold')
             _ax_btm.set_xlabel('U.S. States and DC (sorted by retail price, high → low)',
                                fontsize=11, fontweight='bold')
@@ -3851,7 +3846,7 @@ with streamlit_analytics.track():
                 f'</div>'
                 f'<div style="margin-top:0.55rem;font-size:0.72rem;color:#64748b;">'
                 f'Source: U.S. EIA, <em>State Electricity Profiles</em>, 2023 annual '
-                f'average retail price to ultimate customers — industrial sector. '
+                f'average retail price to ultimate customers industrial sector. '
                 f'<a href="https://www.eia.gov/electricity/state/" target="_blank" '
                 f'style="color:#2563eb;">eia.gov/electricity/state</a>'
                 f'</div>'
@@ -3860,13 +3855,13 @@ with streamlit_analytics.track():
             )
 
     # ═══════════════════════════════════════════════════════════════
-    # TAB 2 — PHYSICS & THERMAL
-    # Sections 4–5: How does the neutronics look? · What are the
-    # thermal-hydraulic conditions?  (Section 6 — Transportability —
+    # TAB 2 PHYSICS & THERMAL
+    # Sections 4-5: How does the neutronics look? · What are the
+    # thermal-hydraulic conditions? (Section 6 Transportability 
     # is rendered in the Design & Economics tab.)
     # ═══════════════════════════════════════════════════════════════
     with tab_physics:
-        # Section 4 — Neutronics
+        # Section 4 Neutronics
         st.markdown(
             '<div style="font-size:1.05rem;font-weight:800;color:#1B4F8C;'
             'border-left:4px solid #1B4F8C;padding:0.4rem 0 0.4rem 0.75rem;'
@@ -3893,11 +3888,11 @@ with streamlit_analytics.track():
         for _h in _section_cards.get(4, []):
             st.markdown(_h, unsafe_allow_html=True)
         if not _section_cards.get(4):
-            st.info('No neutronics metrics available — this typically '
+            st.info('No neutronics metrics available this typically '
                     'means the case is subcritical. See the Design & '
                     'Economics tab for the subcritical warning.')
 
-        # Section 5 — Thermal-hydraulics
+        # Section 5 Thermal-hydraulics
         st.markdown(
             '<div style="font-size:1.05rem;font-weight:800;color:#1B4F8C;'
             'border-left:4px solid #1B4F8C;padding:0.4rem 0 0.4rem 0.75rem;'
@@ -3926,7 +3921,7 @@ with streamlit_analytics.track():
             st.info('No thermal-hydraulic metrics available for this case.')
 
     # ═══════════════════════════════════════════════════════════════
-    # TAB 3 — COST DRIVERS
+    # TAB 3 COST DRIVERS
     # ═══════════════════════════════════════════════════════════════
     with tab_drivers:
         _drv = enriched_df[enriched_df['Account'].apply(
@@ -3950,10 +3945,10 @@ with streamlit_analytics.track():
             r2 = r1 + bar_width
 
             matplotlib.rcParams.update({
-                'font.family':    'DejaVu Sans',
-                'font.size':       13,
-                'axes.titlesize':  15,
-                'axes.labelsize':  13,
+                'font.family': 'DejaVu Sans',
+                'font.size': 13,
+                'axes.titlesize': 15,
+                'axes.labelsize': 13,
                 'xtick.labelsize': 12,
                 'ytick.labelsize': 12,
             })
@@ -4014,7 +4009,7 @@ with streamlit_analytics.track():
             st.markdown('---')
             st.markdown(
                 '<p style="color:#64748b;font-size:0.85rem;margin-bottom:1rem;">'
-                '<strong>Detailed cost drivers</strong> — one level deeper than the chart above. '
+                '<strong>Detailed cost drivers</strong> one level deeper than the chart above. '
                 '3-digit sub-accounts are shown where available; otherwise the 2-digit parent is kept.</p>',
                 unsafe_allow_html=True,
             )
@@ -4024,10 +4019,10 @@ with streamlit_analytics.track():
             r2 = r1 + bar_width
 
             matplotlib.rcParams.update({
-                'font.family':    'DejaVu Sans',
-                'font.size':       13,
-                'axes.titlesize':  15,
-                'axes.labelsize':  13,
+                'font.family': 'DejaVu Sans',
+                'font.size': 13,
+                'axes.titlesize': 15,
+                'axes.labelsize': 13,
                 'xtick.labelsize': 12,
                 'ytick.labelsize': 12,
             })
@@ -4080,7 +4075,7 @@ with streamlit_analytics.track():
             matplotlib.rcParams.update(matplotlib.rcParamsDefault)
 
     # ═══════════════════════════════════════════════════════════════
-    # TAB 3 — FULL BREAKDOWN
+    # TAB 3 FULL BREAKDOWN
     # ═══════════════════════════════════════════════════════════════
     with tab_table:
         st.markdown(
@@ -4111,7 +4106,7 @@ with streamlit_analytics.track():
                 return m
             lo = _fmt_table_val(max(0, mn - sd))
             hi = _fmt_table_val(mn + sd)
-            return f'{lo} – {hi}' if lo != hi else lo
+            return f'{lo} {hi}' if lo != hi else lo
 
         def _fmt_lcoe_tab(v):
             try:
@@ -4139,7 +4134,7 @@ with streamlit_analytics.track():
                 return m
             lo = _fmt_lcoe_tab(max(0.0, mn - sd))
             hi = _fmt_lcoe_tab(mn + sd)
-            return lo if lo == hi else f'{lo} – {hi}'
+            return lo if lo == hi else f'{lo} {hi}'
 
         def _fmt_account(x):
             if isinstance(x, str):
@@ -4159,9 +4154,9 @@ with streamlit_analytics.track():
         table_df['NOAK Cost ($)'] = [_pm(m, s) for m, s in zip(display_df[_noak_col], _sn)]
 
         if _have_lcoe:
-            _ei   = display_df.index
-            _e_fl  = enriched_df['FOAK LCOE'].reindex(_ei)
-            _e_nl  = enriched_df['NOAK LCOE'].reindex(_ei)
+            _ei = display_df.index
+            _e_fl = enriched_df['FOAK LCOE'].reindex(_ei)
+            _e_nl = enriched_df['NOAK LCOE'].reindex(_ei)
             _e_fls = enriched_df['FOAK LCOE_std'].reindex(_ei) \
                      if 'FOAK LCOE_std' in enriched_df.columns else pd.Series(np.nan, index=_ei)
             _e_nls = enriched_df['NOAK LCOE_std'].reindex(_ei) \
@@ -4175,7 +4170,7 @@ with streamlit_analytics.track():
             except (ValueError, TypeError):
                 return '-'
             ip = int(v)
-            n  = len(str(ip))
+            n = len(str(ip))
             if n <= 2:
                 return 0 if ip % 10 == 0 else 1
             elif n == 3:
@@ -4183,7 +4178,7 @@ with streamlit_analytics.track():
             return 4
 
         _acct_levels = [_account_level(a) for a in table_df['Account']]
-        _idx_to_pos  = {idx: pos for pos, idx in enumerate(table_df.index)}
+        _idx_to_pos = {idx: pos for pos, idx in enumerate(table_df.index)}
 
         _EM = '\u2003'
         _PREFIX = {'-': '', 0: '', 1: f'{_EM}> ', 2: f'{_EM}{_EM}> ',
@@ -4195,11 +4190,11 @@ with streamlit_analytics.track():
 
         _LEVEL_STYLE = {
             '-': ('background-color:#fef9c3', 'color:#78350f', 'font-weight:700'),
-             0:  ('background-color:#1e3a5f', 'color:#f0f9ff', 'font-weight:700'),
-             1:  ('background-color:#cfe2f3', 'color:#1a2e44', 'font-weight:600'),
-             2:  ('background-color:#eaf4fb', 'color:#1a2e44', 'font-weight:500'),
-             3:  ('background-color:#ffffff', 'color:#374151', 'font-weight:400'),
-             4:  ('background-color:#ffffff', 'color:#374151', 'font-weight:400'),
+             0: ('background-color:#1e3a5f', 'color:#f0f9ff', 'font-weight:700'),
+             1: ('background-color:#cfe2f3', 'color:#1a2e44', 'font-weight:600'),
+             2: ('background-color:#eaf4fb', 'color:#1a2e44', 'font-weight:500'),
+             3: ('background-color:#ffffff', 'color:#374151', 'font-weight:400'),
+             4: ('background-color:#ffffff', 'color:#374151', 'font-weight:400'),
         }
 
         def _row_style(row):
@@ -4222,7 +4217,7 @@ with streamlit_analytics.track():
         )
 
         _col_cfg = {
-            'Account':       st.column_config.TextColumn(width='small'),
+            'Account': st.column_config.TextColumn(width='small'),
             'Account Title': st.column_config.TextColumn(width='medium'),
             'FOAK Cost ($)': st.column_config.TextColumn(width='small'),
             'NOAK Cost ($)': st.column_config.TextColumn(width='small'),
@@ -4243,7 +4238,7 @@ with streamlit_analytics.track():
 
         dl_col, _ = st.columns([1, 3])
         dl_col.download_button(
-            label='⬇  Download Full Excel',
+            label='⬇ Download Full Excel',
             data=buffer.getvalue(),
             file_name=f'MOUSE_cost_estimate_{reactor_type}.xlsx',
             mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

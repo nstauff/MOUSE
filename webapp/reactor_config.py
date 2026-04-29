@@ -1,6 +1,6 @@
 # Copyright 2025, Battelle Energy Alliance, LLC, ALL RIGHTS RESERVED
 """
-reactor_config.py — Builds a fully-populated params dict for LTMR, GCMR, or HPMR
+reactor_config.py Builds a fully-populated params dict for LTMR, GCMR, or HPMR
 without running OpenMC. OpenMC outputs (Fuel Lifetime, Mass U235, Mass U238) are
 interpolated from a pre-computed parametric study CSV keyed by reactor type,
 enrichment, and thermal power.
@@ -34,7 +34,7 @@ from core_design.drums import (
     calculate_reflector_mass_GCMR,
     calculate_moderator_mass_GCMR,
     calculate_reflector_and_moderator_mass_HPMR,
-    calculate_moderator_mass,  # used by LTMR
+    calculate_moderator_mass, # used by LTMR
 )
 from core_design.pins_arrangement import LTMR_pins_arrangement
 from core_design.openmc_template_LTMR import update_ltmr_reflector_geometry_from_drums
@@ -59,7 +59,7 @@ from reactor_engineering_evaluation.tools import (
 from reactor_engineering_evaluation.vessels_calcs import vessels_specs
 
 # ---------------------------------------------------------------------------
-# CSV-based OpenMC results — interpolated from parametric study table
+# CSV-based OpenMC results interpolated from parametric study table
 # ---------------------------------------------------------------------------
 _CSV_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -75,7 +75,7 @@ class SubcriticalError(Exception):
 
 class ShortLifetimeError(Exception):
     """Raised when the estimated fuel lifetime is too short (< 90 days) to be a
-    meaningful design point — cost calculations are skipped."""
+    meaningful design point cost calculations are skipped."""
     pass
 
 
@@ -102,7 +102,7 @@ def interpolate_openmc_results(reactor_type, power_mwt, enrichment):
         2. At each enrichment level, linearly interpolate in power.
         3. Linearly interpolate the two results in enrichment.
       This ensures that if both bracketing power values at a given enrichment are
-      zero, the result is also zero — avoiding the spurious non-zero values that
+      zero, the result is also zero avoiding the spurious non-zero values that
       unstructured triangulation (griddata) can produce across zero-lifetime regions.
     - Fuel Lifetime is clamped to >= 0.
 
@@ -130,10 +130,10 @@ def interpolate_openmc_results(reactor_type, power_mwt, enrichment):
     idx = int(np.searchsorted(enr_unique, enrichment))
 
     if idx == 0:
-        # At or below minimum enrichment — clamp
+        # At or below minimum enrichment clamp
         fl = _fl_at_enr(enr_unique[0])
     elif idx >= len(enr_unique):
-        # At or above maximum enrichment — clamp
+        # At or above maximum enrichment clamp
         fl = _fl_at_enr(enr_unique[-1])
     else:
         enr_lo, enr_hi = enr_unique[idx - 1], enr_unique[idx]
@@ -158,7 +158,7 @@ def _build_ltmr(params):
         Power MWt, Enrichment, Number of Rings per Assembly, Active Height
     All four are pre-set by build_params before this function is called.
     Drum Radius and Radial Reflector Thickness are auto-resolved from N
-    using the LTMR drum-cover rule.  Fuel Lifetime, Mass U235, Mass U238
+    using the LTMR drum-cover rule. Fuel Lifetime, Mass U235, Mass U238
     are derived from the KNN estimator and physics scaling.
     """
 
@@ -193,11 +193,11 @@ def _build_ltmr(params):
     })
     params['Lattice Radius'] = calculate_hex_apothem(params)
     params['Assembly FTF'] = 2 * params['Lattice Radius']
-    params['Fuel Pin Count']      = calculate_pins_in_assembly(params, 'FUEL')
+    params['Fuel Pin Count'] = calculate_pins_in_assembly(params, 'FUEL')
     params['Moderator Pin Count'] = calculate_pins_in_assembly(params, 'MODERATOR')
-    params['Moderator Mass']      = calculate_moderator_mass(params)
+    params['Moderator Mass'] = calculate_moderator_mass(params)
 
-    # Sec 3: Control drums — count fixed at 12 (matches watts_exec_LTMR.py).
+    # Sec 3: Control drums count fixed at 12 (matches watts_exec_LTMR.py).
     # Drum count is not a feature of the KNN fuel-lifetime estimator, so
     # this can be changed without invalidating the lifetime model.
     # Drum Radius is auto-maximised; reflector thickness then auto-set to
@@ -227,9 +227,9 @@ def _build_ltmr(params):
     # (N=12, H=78.4) parametric case has 345,481 g of U total.
     fl = estimate_ltmr_fuel_lifetime(
         n_rings_per_assembly = params['Number of Rings per Assembly'],
-        active_height        = params['Active Height'],
-        enrichment           = params['Enrichment'],
-        power_mwt            = params['Power MWt'],
+        active_height = params['Active Height'],
+        enrichment = params['Enrichment'],
+        power_mwt = params['Power MWt'],
     )
     if fl == 0:
         raise SubcriticalError(
@@ -241,22 +241,22 @@ def _build_ltmr(params):
     if fl < _MIN_USEFUL_LIFETIME_DAYS:
         raise ShortLifetimeError(
             f"Estimated fuel lifetime is only {fl} days "
-            f"({fl / 30.0:.1f} months) — too short for a meaningful "
+            f"({fl / 30.0:.1f} months) too short for a meaningful "
             f"design point. Try increasing the diameter, the height, "
             f"or the enrichment."
         )
 
-    # Total uranium mass per (fuel pin × cm) for LTMR TRIGA fuel.  Derived
+    # Total uranium mass per (fuel pin × cm) for LTMR TRIGA fuel. Derived
     # directly from the parametric-study Excel: every row gives the same
     # value of (Mass U235 + Mass U238) / (Fuel Pin Count × Active Height),
     # confirming the per-pin geometry is fixed across the design space.
-    _U_PER_PIN_CM = 14.6888   # g of total uranium per (fuel pin · cm)
+    _U_PER_PIN_CM = 14.6888 # g of total uranium per (fuel pin · cm)
     total_u_mass = _U_PER_PIN_CM * params['Fuel Pin Count'] * params['Active Height']
 
     params['Fuel Lifetime'] = fl
-    params['Mass U235']     = int(round(total_u_mass * params['Enrichment']))
-    params['Mass U238']     = int(round(total_u_mass * (1.0 - params['Enrichment'])))
-    params['Uranium Mass']  = (params['Mass U235'] + params['Mass U238']) / 1000  # kg
+    params['Mass U235'] = int(round(total_u_mass * params['Enrichment']))
+    params['Mass U238'] = int(round(total_u_mass * (1.0 - params['Enrichment'])))
+    params['Uranium Mass'] = (params['Mass U235'] + params['Mass U238']) / 1000 # kg
     fuel_calculations(params)
 
     # Sec 6: Primary Loop + BoP
@@ -296,32 +296,32 @@ def _build_ltmr(params):
     # All values updated 2026-04-28 with inline references; previous
     # values were on the thin/tight end of plausibility or contained
     # a unit-conversion bug (lower plenum was 2.85 cm, physically
-    # unworkable).  See Botros review for the comparison to literature.
+    # unworkable). See Botros review for the comparison to literature.
     # ----------------------------------------------------------------
     params.update({
         'Vessel Radius': params['Core Radius'] + params['In Vessel Shield Thickness'],
 
-        # Reactor-vessel wall thickness — fixed at 2 cm for the
-        # microreactor 1-60 MWt range.  ASME BPVC Section III, Division 5
+        # Reactor-vessel wall thickness fixed at 2 cm for the
+        # microreactor 1-60 MWt range. ASME BPVC Section III, Division 5
         # (high-temperature components for liquid-metal reactors) requires
         # a thickness compatible with creep + thermal cycling at >500 °C;
         # the pressure-driven thickness for D ~ 1-3 m at ~atmospheric
         # NaK pressure is only ~4 mm, so ASME minimums dominate.
         # Reference points: Oklo Aurora ~2 cm (INL-22/68167), FFTF 3 cm,
-        # EBR-II 3.8 cm.  At microreactor scale the variation across
+        # EBR-II 3.8 cm. At microreactor scale the variation across
         # 1-60 MWt is < 1 mm, so a fixed 2 cm is appropriate.
         'Vessel Thickness': 2,
 
-        # Lower plenum height — fixed at 50 cm.  Reference:
+        # Lower plenum height fixed at 50 cm. Reference:
         # IAEA TECDOC-1908 "Sodium-Cooled Fast Reactors: Status and Trends"
         # reports lower-plenum heights of 0.4-0.8 m across micro-to-medium
         # SFR designs; below ~30 cm the geometry cannot accommodate the
-        # inlet manifold + flow distributor + grid plate.  The previous
-        # value (42.848 - 40 = 2.848 cm) was a unit-conversion bug — a
+        # inlet manifold + flow distributor + grid plate. The previous
+        # value (42.848 - 40 = 2.848 cm) was a unit-conversion bug a
         # 3 cm plenum is physically unworkable.
         'Vessel Lower Plenum Height': 50,
 
-        # Upper plenum height — kept at 47 cm.  By assumption this region
+        # Upper plenum height kept at 47 cm. By assumption this region
         # also includes the cover-gas (argon) headspace above the free
         # liquid surface; LTMR does not currently track a separate
         # 'Vessel Upper Gas Gap'.
@@ -331,7 +331,7 @@ def _build_ltmr(params):
         'Vessel Bottom Depth': 32.129,
         'Vessel Material': 'stainless_steel',
 
-        # Reactor-vessel ↔ guard-vessel gap — fixed at 5 cm.  Reference:
+        # Reactor-vessel ↔ guard-vessel gap fixed at 5 cm. Reference:
         # ASME Section III Division 5 NH-3000 series + OECD/NEA
         # "Sodium-cooled Fast Reactor Vessel Design Guidelines" (2017)
         # recommend 50-150 mm for thermal expansion and leak monitoring.
@@ -340,11 +340,11 @@ def _build_ltmr(params):
         # 2 cm was below ASME-required clearance for SFR-class vessels.
         'Gap Between Vessel And Guard Vessel': 5,
 
-        # Guard-vessel wall thickness — fixed at 1 cm.  Reference:
+        # Guard-vessel wall thickness fixed at 1 cm. Reference:
         # ASME Section III Class 3 minimum-thickness rules for
         # non-pressure-bearing structural shells with D > 1 m specify
         # ≥ 10 mm; IAEA TECDOC-1531 "Fast Reactor Database" reports
-        # 10-20 mm typical for LMR guard vessels.  The previous 0.5 cm
+        # 10-20 mm typical for LMR guard vessels. The previous 0.5 cm
         # was below ASME minimum for a vessel that must contain a
         # primary-coolant leak.
         'Guard Vessel Thickness': 1,
@@ -356,12 +356,12 @@ def _build_ltmr(params):
         'Cooling Vessel Thickness': 0.5,
         'Cooling Vessel Material': 'stainless_steel',
 
-        # Cooling-vessel ↔ intake-vessel gap (RVACS air downcomer) —
-        # fixed at 5 cm.  Reference: Hejzlar & Buongiorno, "Passive
+        # Cooling-vessel ↔ intake-vessel gap (RVACS air downcomer) 
+        # fixed at 5 cm. Reference: Hejzlar & Buongiorno, "Passive
         # Decay Heat Removal in Lead-cooled Fast Reactors", Nuclear
         # Engineering & Design (2007), recommend 50-150 mm for RVACS
         # systems removing 1-3 MWt of decay heat (typical microreactor
-        # range).  The previous 3 cm was below the lower bound for
+        # range). The previous 3 cm was below the lower bound for
         # reliable natural-circulation flow.
         'Gap Between Cooling Vessel And Intake Vessel': 5,
 
@@ -374,8 +374,8 @@ def _build_ltmr(params):
     # Sec 9: Operation
     # Note: Operation Mode, Emergency Shutdowns Per Year, and Startup
     # Duration after Emergency Shutdown are all controlled by the user
-    # via the webapp UI (see _run_estimate in app.py) — they are
-    # intentionally not set here.  'Startup Duration after Refueling'
+    # via the webapp UI (see _run_estimate in app.py) they are
+    # intentionally not set here. 'Startup Duration after Refueling'
     # is also UI-controlled, but a default must be set here because the
     # total_refueling_period calculation below runs before user_overrides
     # are applied; the UI value still wins for downstream consumers.
@@ -391,7 +391,7 @@ def _build_ltmr(params):
     # Creys-Malville: 5,500 t Na for a 3,000 MWt plant -> 1833 kg/MWt).
     # Reference: https://www.edf.fr/sites/default/files/mediatheque/dp_creys_2017.pdf
     params['Onsite Coolant Inventory'] = 1833 * params['Power MWt']
-    params['Replacement Coolant Inventory'] = 0  # NaK is assumed not to require replacement
+    params['Replacement Coolant Inventory'] = 0 # NaK is assumed not to require replacement
 
     total_refueling_period = (params['Fuel Lifetime'] + params['Refueling Period']
                               + params['Startup Duration after Refueling'])
@@ -447,7 +447,7 @@ def _build_ltmr(params):
         'Construction Duration': 12,
         'Debt To Equity Ratio': 1,
     })
-    # ITC/PTC credits are controlled by the user via the webapp — not hardcoded here.
+    # ITC/PTC credits are controlled by the user via the webapp not hardcoded here.
 
 
 def _build_gcmr(params):
@@ -476,7 +476,7 @@ def _build_gcmr(params):
     # 'Assembly Rings', 'Core Rings', 'Active Height' come from build_params.
     params.update({
         'Fuel Pin Materials': ['UCO', 'buffer_graphite', 'PyC', 'SiC', 'PyC'],
-        'Fuel Pin Radii': [0.0250, 0.0350, 0.0390, 0.0425, 0.0465],  # cm — INL ART TRISO Fuel training (2019)
+        'Fuel Pin Radii': [0.0250, 0.0350, 0.0390, 0.0425, 0.0465], # cm INL ART TRISO Fuel training (2019)
         'Compact Fuel Radius': 0.6225,
         'Packing Fraction': 0.3,
         'Coolant Channel Radius': 0.35,
@@ -486,12 +486,12 @@ def _build_gcmr(params):
     params['Assembly FTF'] = params['Lattice Pitch'] * (params['Assembly Rings'] - 1) * np.sqrt(3)
 
     # Compute the per-compact and total TRISO particle counts so the
-    # webapp's materials section can show them.  Uses Compact Fuel
+    # webapp's materials section can show them. Uses Compact Fuel
     # Radius, Active Height, Fuel Pin Radii (TRISO outer), Packing
-    # Fraction, Assembly Rings, Core Rings — all set above.
+    # Fraction, Assembly Rings, Core Rings all set above.
     calculate_total_number_of_TRISO_particles(params)
 
-    # Sec 3: Control drums — GCMR auto-resolution sets Drum Radius,
+    # Sec 3: Control drums GCMR auto-resolution sets Drum Radius,
     # Radial Reflector Thickness, Core Radius, Drum Height inside
     # calculate_drums_volumes_and_masses (drum-cell rule).
     params.update({
@@ -513,14 +513,14 @@ def _build_gcmr(params):
 
     # Sec 5: Fuel lifetime via KNN estimator on the GCMR parametric study.
     # Mass U235 / U238 are derived from the physics scaling formula:
-    #   Total uranium mass = G_PER_VOL_INDEX × F_A × F_C × H
+    # Total uranium mass = G_PER_VOL_INDEX × F_A × F_C × H
     # where F_A = 3(N_A−1)²−3(N_A−1)+1, F_C = 3 N_C²−3 N_C+1.
     fl = estimate_gcmr_fuel_lifetime(
         assembly_rings = params['Assembly Rings'],
-        core_rings     = params['Core Rings'],
-        active_height  = params['Active Height'],
-        enrichment     = params['Enrichment'],
-        power_mwt      = params['Power MWt'],
+        core_rings = params['Core Rings'],
+        active_height = params['Active Height'],
+        enrichment = params['Enrichment'],
+        power_mwt = params['Power MWt'],
     )
     if fl == 0:
         raise SubcriticalError(
@@ -532,12 +532,12 @@ def _build_gcmr(params):
     if fl < _MIN_USEFUL_LIFETIME_DAYS:
         raise ShortLifetimeError(
             f"Estimated fuel lifetime is only {fl} days "
-            f"({fl / 30.0:.1f} months) — too short for a meaningful "
+            f"({fl / 30.0:.1f} months) too short for a meaningful "
             f"design point. Try increasing the diameter, the height, "
             f"or the enrichment."
         )
 
-    _GCMR_G_PER_VOL_INDEX = 0.5776   # g of total uranium per (F_A × F_C × H)
+    _GCMR_G_PER_VOL_INDEX = 0.5776 # g of total uranium per (F_A × F_C × H)
     _na = params['Assembly Rings']
     _nc = params['Core Rings']
     _F_A = 3 * (_na - 1) ** 2 - 3 * (_na - 1) + 1
@@ -545,9 +545,9 @@ def _build_gcmr(params):
     total_u_mass = _GCMR_G_PER_VOL_INDEX * _F_A * _F_C * params['Active Height']
 
     params['Fuel Lifetime'] = fl
-    params['Mass U235']     = int(round(total_u_mass * params['Enrichment']))
-    params['Mass U238']     = int(round(total_u_mass * (1.0 - params['Enrichment'])))
-    params['Uranium Mass']  = (params['Mass U235'] + params['Mass U238']) / 1000  # kg
+    params['Mass U235'] = int(round(total_u_mass * params['Enrichment']))
+    params['Mass U238'] = int(round(total_u_mass * (1.0 - params['Enrichment'])))
+    params['Uranium Mass'] = (params['Mass U235'] + params['Mass U238']) / 1000 # kg
     fuel_calculations(params)
 
     # Sec 6: Primary Loop + BoP
@@ -560,7 +560,7 @@ def _build_gcmr(params):
         'Primary Loop per loop load fraction': 0.5,
         'Primary Loop Inlet Temperature': 300 + 273.15,
         'Primary Loop Outlet Temperature': 550 + 273.15,
-        'Secondary Loop Inlet Temperature': 270 + 273.15,  # cold-end PCHE pinch 30°C with 300°C primary inlet (was 290 -> 10°C pinch, below realistic PCHE design)
+        'Secondary Loop Inlet Temperature': 270 + 273.15, # cold-end PCHE pinch 30°C with 300°C primary inlet (was 290 -> 10°C pinch, below realistic PCHE design)
         'Secondary Loop Outlet Temperature': 500 + 273.15,
         'Primary Loop Pressure Drop': 50e3,
     })
@@ -593,59 +593,59 @@ def _build_gcmr(params):
     params.update({
         'Vessel Radius': params['Core Radius'] + params['In Vessel Shield Thickness'],
 
-        # Reactor-vessel wall thickness — fixed at 3 cm for the GCMR.
+        # Reactor-vessel wall thickness fixed at 3 cm for the GCMR.
         # GCMR primary loop runs at ~4 MPa He (per
-        # reactor_engineering_evaluation/tools.py:79).  ASME Section III
+        # reactor_engineering_evaluation/tools.py:79). ASME Section III
         # Division 1 thin-shell formula: t = P·R/(S·E − 0.6·P) with
         # design pressure 1.1×4 = 4.4 MPa, S = 138 MPa for SA-508 at
         # 350 °C, E = 1.0, plus 3 mm corrosion allowance gives:
-        #   R = 60 cm → ~22 mm
-        #   R = 80 cm → ~29 mm
-        #   R = 100 cm → ~35 mm
+        # R = 60 cm → ~22 mm
+        # R = 80 cm → ~29 mm
+        # R = 100 cm → ~35 mm
         # Reference points: USNC MMR ~5 cm @ 5 MPa; X-energy Xe-100
         # ~15 cm @ 6 MPa; HTR-PM 17.7 cm @ 7 MPa (R≈2.5 m, too large to
-        # scale from).  3 cm is a single conservative value covering
-        # the MOUSE GCMR design space.  Previous 1 cm was below the
+        # scale from). 3 cm is a single conservative value covering
+        # the MOUSE GCMR design space. Previous 1 cm was below the
         # ASME pressure-driven minimum.
         'Vessel Thickness': 3,
 
-        # Lower plenum height — fixed at 30 cm.  GCMR has no liquid
+        # Lower plenum height fixed at 30 cm. GCMR has no liquid
         # plenum; this region houses the He inlet manifold and lower
-        # flow distributor.  Reference: GA MHTGR / HTR-PM-class designs
+        # flow distributor. Reference: GA MHTGR / HTR-PM-class designs
         # use 0.3-0.5 m for the lower distributor region; below ~20 cm
-        # the inlet flow cannot be evened across the core.  Previous
+        # the inlet flow cannot be evened across the core. Previous
         # value (42.848 − 40 = 2.848 cm) was a unit-conversion bug.
         'Vessel Lower Plenum Height': 30,
 
-        # Upper plenum (47 cm) — kept; serves as outlet plenum for
-        # hot-leg gas exit.  No separate cover-gas headspace tracked.
+        # Upper plenum (47 cm) kept; serves as outlet plenum for
+        # hot-leg gas exit. No separate cover-gas headspace tracked.
         'Vessel Upper Plenum Height': 47.152,
         'Vessel Upper Gas Gap': 0,
 
         'Vessel Bottom Depth': 32.129,
         'Vessel Material': 'stainless_steel',
 
-        # Guard vessel intentionally removed for GCMR.  Helium is an
+        # Guard vessel intentionally removed for GCMR. Helium is an
         # inert gas with no chemical-leak hazard (unlike NaK in LTMR);
         # there is no large coolant inventory to contain in a leak
-        # scenario.  Vessel↔guard-vessel gap and guard-vessel thickness
+        # scenario. Vessel↔guard-vessel gap and guard-vessel thickness
         # are therefore set to zero by design.
         'Gap Between Vessel And Guard Vessel': 0,
         'Guard Vessel Thickness': 0,
         'Guard Vessel Material': 'low_alloy_steel',
 
-        # RVACS hot-leg gap — kept at 5 cm.
+        # RVACS hot-leg gap kept at 5 cm.
         'Gap Between Guard Vessel And Cooling Vessel': 5,
 
         'Cooling Vessel Thickness': 0.5,
         'Cooling Vessel Material': 'stainless_steel',
 
-        # Cooling-vessel ↔ intake-vessel gap (RVACS air downcomer) —
-        # fixed at 5 cm.  Reference: Hejzlar & Buongiorno, "Passive
+        # Cooling-vessel ↔ intake-vessel gap (RVACS air downcomer) 
+        # fixed at 5 cm. Reference: Hejzlar & Buongiorno, "Passive
         # Decay Heat Removal in Lead-cooled Fast Reactors", Nuclear
         # Engineering & Design (2007), recommend 50-150 mm for RVACS
         # systems removing 1-3 MWt of decay heat (typical microreactor
-        # range).  Previous 4 cm was below the recommended lower bound.
+        # range). Previous 4 cm was below the recommended lower bound.
         'Gap Between Cooling Vessel And Intake Vessel': 5,
 
         'Intake Vessel Thickness': 0.5,
@@ -657,8 +657,8 @@ def _build_gcmr(params):
     # Sec 9: Operation
     # Note: Operation Mode, Emergency Shutdowns Per Year, and Startup
     # Duration after Emergency Shutdown are all controlled by the user
-    # via the webapp UI (see _run_estimate in app.py) — they are
-    # intentionally not set here.  'Startup Duration after Refueling'
+    # via the webapp UI (see _run_estimate in app.py) they are
+    # intentionally not set here. 'Startup Duration after Refueling'
     # is also UI-controlled, but a default must be set here because the
     # total_refueling_period calculation below runs before user_overrides
     # are applied; the UI value still wins for downstream consumers.
@@ -731,7 +731,7 @@ def _build_gcmr(params):
         'Construction Duration': 12,
         'Debt To Equity Ratio': 1,
     })
-    # ITC/PTC credits are controlled by the user via the webapp — not hardcoded here.
+    # ITC/PTC credits are controlled by the user via the webapp not hardcoded here.
 
 
 def _build_hpmr(params):
@@ -771,33 +771,33 @@ def _build_hpmr(params):
     params['hexagonal Core Edge Length'] = ((params['Assembly FTF'] * (params['Number of Rings per Core'] - 1))
                                             + (params['Assembly FTF'] / 2) + 6.6)
     # NOTE: Radial Reflector Thickness, Core Radius, and Axial
-    # Reflector Thickness are NOT set here.  They are auto-resolved
+    # Reflector Thickness are NOT set here. They are auto-resolved
     # in calculate_drums_volumes_and_masses (Sec 3) so the reflector
     # grows just enough to fully enclose the drums for any N_C.
     # Hardcoding the reflector at 50 cm caused drums to stick out of
-    # the core for N_C ≥ 5 — the HPMR DRUM RADIUS ERROR.
+    # the core for N_C ≥ 5 the HPMR DRUM RADIUS ERROR.
     params['Fuel Pin Count per Assembly'] = calculate_number_fuel_elements_hpmr(params['Number of Rings per Assembly'])
     params['Fuel Assemblies Count'] = ((3 * params['Number of Rings per Core'] ** 2)
                                        - (3 * params['Number of Rings per Core']))
     params['Fuel Pin Count'] = params['Fuel Assemblies Count'] * params['Fuel Pin Count per Assembly']
     number_of_heatpipes_hmpr(params)
 
-    # Sec 3: Control drums.  All four geometry parameters
-    #   Drum Radius, Drum Height, Radial Reflector Thickness, Core Radius
+    # Sec 3: Control drums. All four geometry parameters
+    # Drum Radius, Drum Height, Radial Reflector Thickness, Core Radius
     # are auto-resolved inside calculate_drums_volumes_and_masses to
     # match the parametric study exactly:
-    #   Drum Radius            = _calculate_max_hpmr_drum_radius(params)
-    #                            — largest drum that fits without
-    #                              overlap on the placement ring
-    #   Radial Reflector       = cd_distance + Drum Radius − hex_apothem
-    #   Core Radius            = hex_apothem + Radial Reflector
-    #   Axial Reflector        = Radial Reflector
-    #   Drum Height            = Active Height + 2 × Axial Reflector
+    # Drum Radius = _calculate_max_hpmr_drum_radius(params)
+    # largest drum that fits without
+    # overlap on the placement ring
+    # Radial Reflector = cd_distance + Drum Radius − hex_apothem
+    # Core Radius = hex_apothem + Radial Reflector
+    # Axial Reflector = Radial Reflector
+    # Drum Height = Active Height + 2 × Axial Reflector
     # Verified to reproduce the (Drum Radius, Reflector, Core Radius)
     # values in the parametric study to within float rounding for
     # every (N_A=6, N_C ∈ [3..7]) configuration.
     params.update({
-        'Drum Count': 12,         # allowed: 6, 12, 18, 24
+        'Drum Count': 12, # allowed: 6, 12, 18, 24
         'Drum Absorber Thickness': 1,
     })
     calculate_drums_volumes_and_masses(params)
@@ -819,13 +819,13 @@ def _build_hpmr(params):
     # Uranium mass is derived from the EXACT HPMR-specific physics
     # scaling (constant 1.6116 g per pin per cm × N_pins(N_A, N_C) × H)
     # so off-grid geometry queries produce consistent (lifetime, mass)
-    # pairs.  See webapp/hpmr_fuel_lifetime_estimator.py.
+    # pairs. See webapp/hpmr_fuel_lifetime_estimator.py.
     fl = estimate_hpmr_fuel_lifetime(
         n_rings_per_assembly = params['Number of Rings per Assembly'],
-        n_rings_per_core     = params['Number of Rings per Core'],
-        active_height        = params['Active Height'],
-        enrichment           = params['Enrichment'],
-        power_mwt            = params['Power MWt'],
+        n_rings_per_core = params['Number of Rings per Core'],
+        active_height = params['Active Height'],
+        enrichment = params['Enrichment'],
+        power_mwt = params['Power MWt'],
     )
     if fl == 0:
         raise SubcriticalError(
@@ -838,7 +838,7 @@ def _build_hpmr(params):
     if fl < _MIN_USEFUL_LIFETIME_DAYS:
         raise ShortLifetimeError(
             f"Estimated fuel lifetime is only {fl} days "
-            f"({fl / 30.0:.1f} months) — too short for a meaningful "
+            f"({fl / 30.0:.1f} months) too short for a meaningful "
             f"design point. Try increasing the power, enrichment, "
             f"or core size."
         )
@@ -849,9 +849,9 @@ def _build_hpmr(params):
         params['Active Height'],
     )
     params['Fuel Lifetime'] = fl
-    params['Mass U235']     = int(round(total_u_g * params['Enrichment']))
-    params['Mass U238']     = int(round(total_u_g * (1.0 - params['Enrichment'])))
-    params['Uranium Mass']  = (params['Mass U235'] + params['Mass U238']) / 1000  # kg
+    params['Mass U235'] = int(round(total_u_g * params['Enrichment']))
+    params['Mass U238'] = int(round(total_u_g * (1.0 - params['Enrichment'])))
+    params['Uranium Mass'] = (params['Mass U235'] + params['Mass U238']) / 1000 # kg
     fuel_calculations(params)
 
     # Sec 6: Primary Loop + BoP
@@ -860,9 +860,9 @@ def _build_hpmr(params):
         'Secondary HX Mass': 0,
         'Primary Loop Count': 2,
         # HPMR primary "loop" is the heat-pipe condenser interface to
-        # the HX.  Sodium heat pipes are nearly isothermal (vapor-stream
+        # the HX. Sodium heat pipes are nearly isothermal (vapor-stream
         # ΔT typically 5-20 °C); represent as Tin = Tout = 650 °C to
-        # match watts_exec_HPMR.py and the underlying physics.  The
+        # match watts_exec_HPMR.py and the underlying physics. The
         # previous value (Tin=900, Tout=650) implied a 250 °C sensible-
         # heat drop, which is incorrect for a heat-pipe device.
         'Primary Loop Inlet Temperature': 650 + 273.15,
@@ -876,7 +876,7 @@ def _build_hpmr(params):
         'BoP per loop load fraction': 0.5,
     })
     params['BoP Power kWe'] = 1000 * params['Power MWe'] * params['BoP per loop load fraction']
-    # Note: HPMR uses heat pipes — no primary pump or mass flow rate call
+    # Note: HPMR uses heat pipes no primary pump or mass flow rate call
 
     # Sec 7: Shielding
     params.update({
@@ -893,26 +893,26 @@ def _build_hpmr(params):
     params.update({
         'Vessel Radius': params['Core Radius'] + params['In Vessel Shield Thickness'],
 
-        # Reactor-vessel wall thickness — fixed at 2 cm for HPMR.
+        # Reactor-vessel wall thickness fixed at 2 cm for HPMR.
         # HPMR vessel is at ~atmospheric pressure (heat pipes are
         # individually sealed, primary "coolant" is the heat-pipe
         # working fluid Na inside SS316 cladding, not a bulk pool).
         # Pressure-driven thickness is therefore <1 mm; ASME Section III
         # Division 5 minimum thickness for high-temperature creep
-        # service at >650 °C dominates.  Reference: INL HPMR Design A,
+        # service at >650 °C dominates. Reference: INL HPMR Design A,
         # Westinghouse eVinci, Oklo concepts use ~15-25 mm vessel walls.
         # Previous 1 cm was below the Div 5 high-T minimum.
         'Vessel Thickness': 2,
 
-        # Lower plenum height — fixed at 20 cm.  HPMR has no liquid
+        # Lower plenum height fixed at 20 cm. HPMR has no liquid
         # plenum; this region houses the heat-pipe condenser/evaporator
-        # transition manifold and lower core support.  Reference: INL
+        # transition manifold and lower core support. Reference: INL
         # HPMR Design A and MARVEL designs show 15-25 cm for the lower
-        # heat-pipe header / support region.  Previous value
+        # heat-pipe header / support region. Previous value
         # (42.848 − 40 = 2.848 cm) was a unit-conversion bug.
         'Vessel Lower Plenum Height': 20,
 
-        # Upper plenum (47 cm) — kept; houses heat-pipe condenser
+        # Upper plenum (47 cm) kept; houses heat-pipe condenser
         # interface to the secondary heat exchanger.
         'Vessel Upper Plenum Height': 47.152,
         'Vessel Upper Gas Gap': 0,
@@ -920,29 +920,29 @@ def _build_hpmr(params):
         'Vessel Bottom Depth': 32.129,
         'Vessel Material': 'stainless_steel',
 
-        # Guard vessel intentionally removed for HPMR.  There is no
-        # bulk primary coolant — each heat pipe is individually sealed
+        # Guard vessel intentionally removed for HPMR. There is no
+        # bulk primary coolant each heat pipe is individually sealed
         # (Na in SS316 cladding) and a single failure releases only a
-        # small inventory.  No need for a secondary containment shell
-        # around the entire reactor vessel.  Vessel↔guard-vessel gap
+        # small inventory. No need for a secondary containment shell
+        # around the entire reactor vessel. Vessel↔guard-vessel gap
         # and guard-vessel thickness are therefore set to zero by
         # design.
         'Gap Between Vessel And Guard Vessel': 0,
         'Guard Vessel Thickness': 0,
         'Guard Vessel Material': 'low_alloy_steel',
 
-        # RVACS hot-leg gap — kept at 5 cm.
+        # RVACS hot-leg gap kept at 5 cm.
         'Gap Between Guard Vessel And Cooling Vessel': 5,
 
         'Cooling Vessel Thickness': 0.5,
         'Cooling Vessel Material': 'stainless_steel',
 
-        # Cooling-vessel ↔ intake-vessel gap (RVACS air downcomer) —
-        # fixed at 5 cm.  Reference: Hejzlar & Buongiorno, "Passive
+        # Cooling-vessel ↔ intake-vessel gap (RVACS air downcomer) 
+        # fixed at 5 cm. Reference: Hejzlar & Buongiorno, "Passive
         # Decay Heat Removal in Lead-cooled Fast Reactors", Nuclear
         # Engineering & Design (2007), recommend 50-150 mm for RVACS
         # systems removing 1-3 MWt of decay heat (typical microreactor
-        # range).  Previous 4 cm was below the recommended lower bound.
+        # range). Previous 4 cm was below the recommended lower bound.
         'Gap Between Cooling Vessel And Intake Vessel': 5,
 
         'Intake Vessel Thickness': 0.5,
@@ -954,8 +954,8 @@ def _build_hpmr(params):
     # Sec 9: Operation
     # Note: Operation Mode, Emergency Shutdowns Per Year, and Startup
     # Duration after Emergency Shutdown are all controlled by the user
-    # via the webapp UI (see _run_estimate in app.py) — they are
-    # intentionally not set here.  'Startup Duration after Refueling'
+    # via the webapp UI (see _run_estimate in app.py) they are
+    # intentionally not set here. 'Startup Duration after Refueling'
     # is also UI-controlled, but a default must be set here because the
     # total_refueling_period calculation below runs before user_overrides
     # are applied; the UI value still wins for downstream consumers.
@@ -1044,15 +1044,15 @@ def build_params(reactor_type, power_mwt, enrichment, user_overrides,
     power_mwt : float
         Thermal power in MWt.
     enrichment : float
-        U-235 enrichment fraction (0.05–0.1975).
+        U-235 enrichment fraction (0.05-0.1975).
     user_overrides : dict
         User-supplied values that override defaults (e.g. Interest Rate).
     n_rings_per_assembly : int, optional
         Number of rings per fuel assembly. Required for LTMR (training range
-        6–24); ignored by GCMR/HPMR for now.
+        6-24); ignored by GCMR/HPMR for now.
     active_height : float, optional
         Active core height in cm. Required for LTMR (training range
-        50–180); ignored by GCMR/HPMR for now.
+        50-180); ignored by GCMR/HPMR for now.
 
     Returns
     -------
@@ -1066,7 +1066,7 @@ def build_params(reactor_type, power_mwt, enrichment, user_overrides,
     """
     params = {}
     # Set the user-controlled inputs FIRST so all builder sections can use them.
-    params['Power MWt']  = float(power_mwt)
+    params['Power MWt'] = float(power_mwt)
     params['Enrichment'] = float(enrichment)
 
     if reactor_type == 'LTMR':
@@ -1075,7 +1075,7 @@ def build_params(reactor_type, power_mwt, enrichment, user_overrides,
                 "LTMR requires n_rings_per_assembly and active_height."
             )
         params['Number of Rings per Assembly'] = int(n_rings_per_assembly)
-        params['Active Height']                = float(active_height)
+        params['Active Height'] = float(active_height)
 
     if reactor_type == 'GCMR':
         if n_assembly_rings is None or n_core_rings is None or active_height is None:
@@ -1083,8 +1083,8 @@ def build_params(reactor_type, power_mwt, enrichment, user_overrides,
                 "GCMR requires n_assembly_rings, n_core_rings, and active_height."
             )
         params['Assembly Rings'] = int(n_assembly_rings)
-        params['Core Rings']     = int(n_core_rings)
-        params['Active Height']  = float(active_height)
+        params['Core Rings'] = int(n_core_rings)
+        params['Active Height'] = float(active_height)
 
     if reactor_type == 'HPMR':
         # HPMR uses the same kwargs as GCMR (n_assembly_rings,
@@ -1096,8 +1096,8 @@ def build_params(reactor_type, power_mwt, enrichment, user_overrides,
                 "HPMR requires n_assembly_rings, n_core_rings, and active_height."
             )
         params['Number of Rings per Assembly'] = int(n_assembly_rings)
-        params['Number of Rings per Core']     = int(n_core_rings)
-        params['Active Height']                = float(active_height)
+        params['Number of Rings per Core'] = int(n_core_rings)
+        params['Active Height'] = float(active_height)
 
     builders = {'LTMR': _build_ltmr, 'GCMR': _build_gcmr, 'HPMR': _build_hpmr}
     if reactor_type not in builders:

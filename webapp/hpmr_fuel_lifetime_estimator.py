@@ -11,13 +11,13 @@ For HPMR, the total fuel-pin count and active height are determined
 by `Assembly Rings` (N_A), `Core Rings` (N_C), and the active height H:
 
     N_pins(N_A, N_C) = (3·N_C² − 3·N_C) × f_HPMR(N_A)
-    f_HPMR(N_A)     = total_positions(N_A) − total_positions(ceil(N_A/2))
+    f_HPMR(N_A) = total_positions(N_A) − total_positions(ceil(N_A/2))
 
 `total_positions(r)` is the standard hex-grid count for `r` rings per
 edge (matches `core_design.utils.calculate_number_of_rings`).
 
-Total uranium scales as `M_U = U_per_pin_cm × N_pins × H`.  Calibrated
-from the parametric study at 1.6116 g/(pin·cm) — this constant is
+Total uranium scales as `M_U = U_per_pin_cm × N_pins × H`. Calibrated
+from the parametric study at 1.6116 g/(pin·cm) this constant is
 extraordinarily stable across the 84 training rows (CV < 0.04 %).
 
 The physics-constrained normalised lifetime is
@@ -30,13 +30,13 @@ variation is captured by the K = 4 distance-weighted KNN.
 Training data
 -------------
 `assets/Ref_Results/HPMR_parametric_size_power_enrichment.xlsx`,
-sheet `Sheet1`.  84 rows covering:
-  * Assembly Rings: 6 (single value — NA-extrapolation relies on the
+sheet `Sheet1`. 84 rows covering:
+  * Assembly Rings: 6 (single value NA-extrapolation relies on the
     physics scaling alone)
-  * Core Rings:    [3, 4, 5, 6, 7]
-  * Height:        15 unique values, 136 – 1056 cm
-  * Enrichment:    [0.10, 0.13, 0.16, 0.1975]
-  * Power MWt:     [1, 5, 20, 60]
+  * Core Rings: [3, 4, 5, 6, 7]
+  * Height: 15 unique values, 136 1056 cm
+  * Enrichment: [0.10, 0.13, 0.16, 0.1975]
+  * Power MWt: [1, 5, 20, 60]
   * Fuel Lifetime: 0 to 11,158 days (4 subcritical rows)
 """
 import os
@@ -56,9 +56,9 @@ _XLSX_PATH = os.path.join(
 )
 _SHEET = 'Sheet1'
 
-# Total uranium per (fuel pin · cm).  Derived from the parametric
+# Total uranium per (fuel pin · cm). Derived from the parametric
 # study: M_U / (N_pins × H) is 1.6116 ± 0.0006 across all 84 rows.
-HPMR_U_PER_PIN_CM = 1.6116   # g of total uranium per (fuel pin · cm)
+HPMR_U_PER_PIN_CM = 1.6116 # g of total uranium per (fuel pin · cm)
 
 _K = 4
 _train_df = None
@@ -72,7 +72,7 @@ _feat_max = None
 # ---------------------------------------------------------------------------
 
 def _hex_positions(r):
-    """Total cell positions in an r-ring hex assembly.  Matches
+    """Total cell positions in an r-ring hex assembly. Matches
     core_design.utils.calculate_number_of_rings."""
     r = int(r)
     return 2 * r * (r - 1) + 2 * sum(range(1, r - 1)) + 2 * r - 1
@@ -127,10 +127,10 @@ def _load():
     )
 
     _train_df = df
-    _feat_min = np.array([df['E'].min(),  df['NA'].min(), df['NC'].min(),
-                          df['H'].min(),  df['P'].min()],  dtype=float)
-    _feat_max = np.array([df['E'].max(),  df['NA'].max(), df['NC'].max(),
-                          df['H'].max(),  df['P'].max()],  dtype=float)
+    _feat_min = np.array([df['E'].min(), df['NA'].min(), df['NC'].min(),
+                          df['H'].min(), df['P'].min()], dtype=float)
+    _feat_max = np.array([df['E'].max(), df['NA'].max(), df['NC'].max(),
+                          df['H'].max(), df['P'].max()], dtype=float)
 
 
 # ---------------------------------------------------------------------------
@@ -143,11 +143,11 @@ def estimate_hpmr_fuel_lifetime(n_rings_per_assembly, n_rings_per_core,
 
     Parameters
     ----------
-    n_rings_per_assembly : int  (N_A — number of fuel-pin rings per assembly)
-    n_rings_per_core     : int  (N_C — number of assembly rings per core)
-    active_height        : float (cm)
-    enrichment           : float  (fraction, 0–1)
-    power_mwt            : float  (thermal power, MWt)
+    n_rings_per_assembly : int (N_A number of fuel-pin rings per assembly)
+    n_rings_per_core : int (N_C number of assembly rings per core)
+    active_height : float (cm)
+    enrichment : float (fraction, 0-1)
+    power_mwt : float (thermal power, MWt)
 
     Returns
     -------
@@ -162,8 +162,8 @@ def estimate_hpmr_fuel_lifetime(n_rings_per_assembly, n_rings_per_core,
 
     # KNN distance only over features that vary in the training data.
     # In the current dataset N_A is constant (= 6), so it would
-    # contribute nothing to neighbour selection.  N_C, H, E, P all
-    # vary and feed into the distance.  The physics scaling
+    # contribute nothing to neighbour selection. N_C, H, E, P all
+    # vary and feed into the distance. The physics scaling
     # (L* × N_pins · H · E / P) handles N_A extrapolation by itself.
     feat_idx_active = [i for i in range(5) if _feat_max[i] > _feat_min[i]]
     if not feat_idx_active:
@@ -191,13 +191,13 @@ def estimate_hpmr_fuel_lifetime(n_rings_per_assembly, n_rings_per_core,
     weights = 1.0 / (nb_dists + 1e-9)
     weights /= weights.sum()
 
-    # Subcritical detection — two-pronged:
-    #   (a) Nearest-neighbour rule: if the closest training point is
-    #       subcritical (LT=0) and the query is essentially right on
-    #       top of it (normalised distance < 0.1), declare subcritical.
-    #       Catches the sharp criticality cliff cleanly.
-    #   (b) Majority weight rule: if the distance-weighted share of
-    #       subcritical neighbours is ≥ 50 %, declare subcritical.
+    # Subcritical detection two-pronged:
+    # (a) Nearest-neighbour rule: if the closest training point is
+    # subcritical (LT=0) and the query is essentially right on
+    # top of it (normalised distance < 0.1), declare subcritical.
+    # Catches the sharp criticality cliff cleanly.
+    # (b) Majority weight rule: if the distance-weighted share of
+    # subcritical neighbours is ≥ 50 %, declare subcritical.
     sub_mask = (nb['LT'].values <= 0)
     if sub_mask[0] and nb_dists[0] < 0.1:
         return 0
@@ -223,31 +223,31 @@ def estimate_hpmr_fuel_lifetime(n_rings_per_assembly, n_rings_per_core,
 
 
 def populate_hpmr_lifetime(params):
-    """Convenience wrapper used by the webapp builder.  Reads
+    """Convenience wrapper used by the webapp builder. Reads
     geometry / E / P from params and writes 'Fuel Lifetime'."""
     lifetime = estimate_hpmr_fuel_lifetime(
         n_rings_per_assembly = params.get('Number of Rings per Assembly',
                                           params.get('Assembly Rings')),
-        n_rings_per_core     = params.get('Number of Rings per Core',
+        n_rings_per_core = params.get('Number of Rings per Core',
                                           params.get('Core Rings')),
-        active_height        = params['Active Height'],
-        enrichment           = params['Enrichment'],
-        power_mwt            = params['Power MWt'],
+        active_height = params['Active Height'],
+        enrichment = params['Enrichment'],
+        power_mwt = params['Power MWt'],
     )
     params['Fuel Lifetime'] = lifetime
     return lifetime
 
 
 # ---------------------------------------------------------------------------
-# k_eff(time) curve — same interpolation pattern as the LTMR / GCMR versions
+# k_eff(time) curve same interpolation pattern as the LTMR / GCMR versions
 # ---------------------------------------------------------------------------
 
-_curve_df = None  # cached subset of training rows that carry a k_eff curve
+_curve_df = None # cached subset of training rows that carry a k_eff curve
 
 
 def _parse_curve(raw):
     """Parse a string-formatted list (e.g. '[1.0, 0.99, 0.97, ...]') from a
-    cell into a numpy array of floats.  Returns None for missing / bad cells."""
+    cell into a numpy array of floats. Returns None for missing / bad cells."""
     import ast
     if raw is None:
         return None
@@ -297,12 +297,12 @@ def get_hpmr_keff_curve(n_rings_per_assembly, n_rings_per_core, active_height,
     """Build an interpolated k_eff vs time curve for a given HPMR design point.
 
     Mirrors the LTMR / GCMR versions: distance-weighted average of the K=4
-    nearest training neighbours in normalised feature space.  KNN distance
-    only uses features that vary in the training data — N_A is constant
+    nearest training neighbours in normalised feature space. KNN distance
+    only uses features that vary in the training data N_A is constant
     (=6) in the current parametric study, so it's excluded from the metric
     and only re-enters via the physics scaling on the lifetime axis.
 
-    The curve is truncated at the first crossing of k_eff = 1.  Optional
+    The curve is truncated at the first crossing of k_eff = 1. Optional
     `anchor_lifetime_days` rescales the time axis so that crossing matches
     the externally-estimated fuel lifetime.
 
@@ -316,7 +316,7 @@ def get_hpmr_keff_curve(n_rings_per_assembly, n_rings_per_core, active_height,
     if len(df) == 0:
         return np.array([]), np.array([])
 
-    _load()  # populate _feat_min / _feat_max
+    _load() # populate _feat_min / _feat_max
     feat_idx_active = [i for i in range(5) if _feat_max[i] > _feat_min[i]]
     if not feat_idx_active:
         return np.array([]), np.array([])
@@ -352,7 +352,7 @@ def get_hpmr_keff_curve(n_rings_per_assembly, n_rings_per_core, active_height,
     keffs_out = [keffs[0]]
     for i in range(1, nsteps):
         t_prev, k_prev = times_out[-1], keffs_out[-1]
-        t_cur,  k_cur  = times[i],     keffs[i]
+        t_cur, k_cur = times[i], keffs[i]
         if k_cur >= 1.0:
             times_out.append(t_cur)
             keffs_out.append(k_cur)
@@ -385,7 +385,7 @@ def get_hpmr_keff_curve(n_rings_per_assembly, n_rings_per_core, active_height,
 def _hpmr_knn_scalar(column_name, n_rings_per_assembly, n_rings_per_core,
                      active_height, enrichment, power_mwt):
     """Distance-weighted KNN interpolator for any scalar HPMR
-    parametric-study column.  Uses the K=4 nearest neighbours in the
+    parametric-study column. Uses the K=4 nearest neighbours in the
     same active feature subset as the lifetime estimator (drops
     degenerate-range features so off-grid geometry queries don't get
     swamped by a constant offset)."""
@@ -454,24 +454,24 @@ def get_hpmr_total_leakage_pct(n_rings_per_assembly, n_rings_per_core,
 # ---------------------------------------------------------------------------
 # HPMR is graphite-moderated like GCMR (monolith graphite block),
 # so the migration area and reflector savings are similar to GCMR's
-# values.  M² calibrated against the typical (NA=6, NC=5) HPMR
+# values. M² calibrated against the typical (NA=6, NC=5) HPMR
 # parametric case.
-_HPMR_M_SQUARED_CM2     = 220.0
+_HPMR_M_SQUARED_CM2 = 220.0
 _HPMR_REFLECTOR_SAVINGS = 0.65
 
 
 def _hpmr_physics_leakage(active_radius_cm, active_height_cm,
                           radial_reflector_cm, axial_reflector_cm):
     """Physics-based (axial%, total%) leakage using the one-group
-    migration-area approximation.  Same formula as the GCMR fallback
+    migration-area approximation. Same formula as the GCMR fallback
     with HPMR-calibrated constants."""
     delta_r = _HPMR_REFLECTOR_SAVINGS * radial_reflector_cm
     delta_z = _HPMR_REFLECTOR_SAVINGS * axial_reflector_cm
     R_eff = active_radius_cm + delta_r
     H_eff = active_height_cm + 2.0 * delta_z
     B2_radial = (2.405 / R_eff) ** 2
-    B2_axial  = (np.pi / H_eff) ** 2
-    B2_total  = B2_radial + B2_axial
+    B2_axial = (np.pi / H_eff) ** 2
+    B2_total = B2_radial + B2_axial
     P_NL = 1.0 / (1.0 + _HPMR_M_SQUARED_CM2 * B2_total)
     total_lk = (1.0 - P_NL) * 100.0
     axial_lk = total_lk * (B2_axial / B2_total)
@@ -502,7 +502,7 @@ def _hpmr_h_within_trained_range(n_rings_per_assembly, n_rings_per_core,
 def get_hpmr_leakage(n_rings_per_assembly, n_rings_per_core, active_height,
                      enrichment, power_mwt,
                      active_radius_cm, radial_reflector_cm, axial_reflector_cm):
-    """Return (axial_pct, total_pct, source) for HPMR.  Source is
+    """Return (axial_pct, total_pct, source) for HPMR. Source is
     'interpolated' for in-range queries, 'physics' for out-of-range."""
     if _hpmr_h_within_trained_range(n_rings_per_assembly, n_rings_per_core,
                                     active_height):

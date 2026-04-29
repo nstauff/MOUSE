@@ -1,6 +1,6 @@
 # Copyright 2025, Battelle Energy Alliance, LLC, ALL RIGHTS RESERVED
 """
-LTMR fuel-lifetime estimator — local KNN regression.
+LTMR fuel-lifetime estimator local KNN regression.
 
 Model
 -----
@@ -8,13 +8,13 @@ Model
 
 For each query the K=4 nearest training points are found in the
 (Enrichment, N, H, Power) feature space (raw features normalised to
-[0,1] for the distance calculation).  A1 and A2 are then fitted by
+[0,1] for the distance calculation). A1 and A2 are then fitted by
 simple linear regression of the normalised lifetime
 
     L* = Lifetime × Power / ((3N²−3N+1) × H)
 
-against Enrichment on those K neighbours.  Subcritical cases have
-L*=0 and are included in the training pool — they anchor the local
+against Enrichment on those K neighbours. Subcritical cases have
+L*=0 and are included in the training pool they anchor the local
 fit near the criticality boundary and improve A2 estimation.
 
 Key detail
@@ -26,7 +26,7 @@ the rest of the design space.
 Accuracy (5-fold CV on 247 non-zero training points, subcritical rows anchor boundary)
 -----------------------------------------------------
   Median absolute error : ~110 days
-  Median MAPE           : ~2.6 %   (N≥10 only: ~2–3 %)
+  Median MAPE : ~2.6 % (N≥10 only: ~2-3 %)
 
 Reference data
 --------------
@@ -46,17 +46,17 @@ _XLSX_PATH = os.path.join(
     'assets', 'Ref_Results', 'LTMR_parametric_size_power_enrichment.xlsx',
 )
 
-_K = 4          # nearest neighbours to use for local fit
+_K = 4 # nearest neighbours to use for local fit
 
-_train_df  = None   # cached training data (loaded once)
-_feat_min  = None   # min of each feature — used for [0,1] normalisation
-_feat_max  = None   # max of each feature
+_train_df = None # cached training data (loaded once)
+_feat_min = None # min of each feature used for [0,1] normalisation
+_feat_max = None # max of each feature
 
 
 def _load():
     """Load and cache the training data on first call.
 
-    All rows including subcritical (LT=0) are loaded — they anchor the
+    All rows including subcritical (LT=0) are loaded they anchor the
     local linear fit near the criticality boundary.
     """
     global _train_df, _feat_min, _feat_max
@@ -93,14 +93,14 @@ def estimate_ltmr_fuel_lifetime(n_rings_per_assembly, active_height,
     Parameters
     ----------
     n_rings_per_assembly : int or float
-        Number of rings per fuel assembly (training range: 6–24).
+        Number of rings per fuel assembly (training range: 6-24).
     active_height : float
-        Active core height in cm (training range: 50–180 cm).
+        Active core height in cm (training range: 50-180 cm).
     enrichment : float
         U-235 enrichment fraction, e.g. 0.12 for 12 %
-        (training range: 0.05–0.1975).
+        (training range: 0.05-0.1975).
     power_mwt : float
-        Thermal power in MWt (training range: 1–60 MWt).
+        Thermal power in MWt (training range: 1-60 MWt).
 
     Returns
     -------
@@ -112,7 +112,7 @@ def estimate_ltmr_fuel_lifetime(n_rings_per_assembly, active_height,
 
     df = _train_df
 
-    # Exclude N=6 neighbours when predicting N≥10 — the small-assembly
+    # Exclude N=6 neighbours when predicting N≥10 the small-assembly
     # near-critical regime is physically discontinuous from larger cores.
     if n_rings_per_assembly >= 10:
         df = df[df['N'] != 6]
@@ -135,26 +135,26 @@ def estimate_ltmr_fuel_lifetime(n_rings_per_assembly, active_height,
         return 0
 
     # Fit L* = A1 * E + c by ordinary least squares on the K neighbours
-    E_nb     = nb['E'].values
-    Ls_nb    = nb['L_star'].values
-    E_mean   = E_nb.mean()
-    Ls_mean  = Ls_nb.mean()
-    denom    = ((E_nb - E_mean) ** 2).sum()
+    E_nb = nb['E'].values
+    Ls_nb = nb['L_star'].values
+    E_mean = E_nb.mean()
+    Ls_mean = Ls_nb.mean()
+    denom = ((E_nb - E_mean) ** 2).sum()
 
     if denom == 0:
-        # All neighbours have identical enrichment — use their mean L*
+        # All neighbours have identical enrichment use their mean L*
         L_star_pred = max(0.0, Ls_mean)
     else:
-        slope     = ((E_nb - E_mean) * (Ls_nb - Ls_mean)).sum() / denom
+        slope = ((E_nb - E_mean) * (Ls_nb - Ls_mean)).sum() / denom
         intercept = Ls_mean - slope * E_mean
 
         if slope <= 0:
-            return 0     # model implies no criticality at this enrichment
+            return 0 # model implies no criticality at this enrichment
 
-        A2          = -intercept / slope   # estimated critical enrichment
+        A2 = -intercept / slope # estimated critical enrichment
         L_star_pred = max(0.0, slope * (enrichment - A2))
 
-    n_pins   = 3 * int(n_rings_per_assembly) ** 2 - 3 * int(n_rings_per_assembly) + 1
+    n_pins = 3 * int(n_rings_per_assembly) ** 2 - 3 * int(n_rings_per_assembly) + 1
     lifetime = L_star_pred * n_pins * active_height / power_mwt
 
     return int(round(lifetime))
@@ -172,16 +172,16 @@ def estimate_ltmr_fuel_lifetime_from_params(params):
     """
     lifetime = estimate_ltmr_fuel_lifetime(
         n_rings_per_assembly = params['Number of Rings per Assembly'],
-        active_height        = params['Active Height'],
-        enrichment           = params['Enrichment'],
-        power_mwt            = params['Power MWt'],
+        active_height = params['Active Height'],
+        enrichment = params['Enrichment'],
+        power_mwt = params['Power MWt'],
     )
     params['Fuel Lifetime'] = lifetime
     return lifetime
 
 
 # ---------------------------------------------------------------------------
-# Max Peaking Factor — distance-weighted KNN interpolation
+# Max Peaking Factor distance-weighted KNN interpolation
 # ---------------------------------------------------------------------------
 
 def _ltmr_knn_scalar(column_name, n_rings_per_assembly, active_height,
@@ -235,7 +235,7 @@ def get_ltmr_peaking_factor(n_rings_per_assembly, active_height,
 def get_ltmr_axial_leakage_pct(n_rings_per_assembly, active_height,
                                enrichment, power_mwt):
     """Interpolated BOL axial leakage (%) for an LTMR design point.
-    Geometric — depends mostly on Active Height; weakly on the rest."""
+    Geometric depends mostly on Active Height; weakly on the rest."""
     return _ltmr_knn_scalar('Estimated Axial Leakage (%)',
                             n_rings_per_assembly, active_height,
                             enrichment, power_mwt)
@@ -244,7 +244,7 @@ def get_ltmr_axial_leakage_pct(n_rings_per_assembly, active_height,
 def get_ltmr_total_leakage_pct(n_rings_per_assembly, active_height,
                                enrichment, power_mwt):
     """Interpolated BOL total leakage (%) for an LTMR design point.
-    Geometric — depends on both Active Height and core radius (≈ N)."""
+    Geometric depends on both Active Height and core radius (≈ N)."""
     return _ltmr_knn_scalar('Estimated Total Leakage (%)',
                             n_rings_per_assembly, active_height,
                             enrichment, power_mwt)
@@ -255,9 +255,9 @@ def get_ltmr_total_leakage_pct(n_rings_per_assembly, active_height,
 # ---------------------------------------------------------------------------
 # Migration area calibrated against one mid-range LTMR training case
 # (N=18, H=110, total leakage 11.14 %): see derivation in commit history.
-_LTMR_M_SQUARED_CM2     = 60.0
-# Effective reflector savings — fraction of reflector thickness that
-# extends the diffusion problem ("reflector savings" δ).  Calibrated so
+_LTMR_M_SQUARED_CM2 = 60.0
+# Effective reflector savings fraction of reflector thickness that
+# extends the diffusion problem ("reflector savings" δ). Calibrated so
 # the physics formula reproduces the parametric-study leakage at trained
 # boundary cases to within ~15 %.
 _LTMR_REFLECTOR_SAVINGS = 0.55
@@ -277,12 +277,12 @@ def _ltmr_physics_leakage(active_radius_cm, active_height_cm,
     H_eff = active_height_cm + 2.0 * delta_z
 
     B2_radial = (2.405 / R_eff) ** 2
-    B2_axial  = (np.pi / H_eff) ** 2
-    B2_total  = B2_radial + B2_axial
+    B2_axial = (np.pi / H_eff) ** 2
+    B2_total = B2_radial + B2_axial
 
     P_NL = 1.0 / (1.0 + _LTMR_M_SQUARED_CM2 * B2_total)
     total_lk = (1.0 - P_NL) * 100.0
-    axial_lk = total_lk * (B2_axial / B2_total)    # split by buckling
+    axial_lk = total_lk * (B2_axial / B2_total) # split by buckling
     return axial_lk, total_lk
 
 
@@ -310,7 +310,7 @@ def get_ltmr_leakage(n_rings_per_assembly, active_height, enrichment, power_mwt,
     Return (axial_pct, total_pct, source) for LTMR.
 
     source = 'interpolated' if the user's H is within the trained
-             per-N range, otherwise 'physics' — in which case the
+             per-N range, otherwise 'physics' in which case the
              values come from the migration-area physics formula
              instead of the KNN average (which would saturate at
              the boundary).
@@ -330,7 +330,7 @@ def get_ltmr_leakage(n_rings_per_assembly, active_height, enrichment, power_mwt,
 # ---------------------------------------------------------------------------
 # keff(time) curve loader and interpolator
 # ---------------------------------------------------------------------------
-_curve_df = None   # cached training data with parsed depletion curves
+_curve_df = None # cached training data with parsed depletion curves
 
 
 def _parse_curve(raw):
@@ -388,7 +388,7 @@ def get_ltmr_keff_curve(n_rings_per_assembly, active_height,
 
     For each timestep index i, time[i] and keff[i] are independently
     interpolated as a distance-weighted average over the K=4 nearest
-    training neighbours (in normalised E, N, H, P space — same metric as
+    training neighbours (in normalised E, N, H, P space same metric as
     the lifetime estimator). Only training rows that actually carry a
     keff curve are used. The returned curve is truncated where keff
     drops to 1.0 (the user is not interested in subcritical tail).
@@ -400,7 +400,7 @@ def get_ltmr_keff_curve(n_rings_per_assembly, active_height,
         keff = 1 crossing lands exactly on this value (in days). This
         keeps the keff curve consistent with the separately estimated
         fuel lifetime (the keff interpolation by itself often disagrees
-        with the lifetime estimator by 20–40 %).
+        with the lifetime estimator by 20-40 %).
 
     Returns
     -------
@@ -422,7 +422,7 @@ def get_ltmr_keff_curve(n_rings_per_assembly, active_height,
         return np.array([]), np.array([])
 
     # Normalise features to [0, 1] using training-data range
-    _load()   # ensures _feat_min / _feat_max are populated from full dataset
+    _load() # ensures _feat_min / _feat_max are populated from full dataset
     feat_range = np.where(_feat_max != _feat_min, _feat_max - _feat_min, 1.0)
     q_norm = (np.array([enrichment, n_rings_per_assembly,
                         active_height, power_mwt], dtype=float)
@@ -456,7 +456,7 @@ def get_ltmr_keff_curve(n_rings_per_assembly, active_height,
     keffs_out = [keffs[0]]
     for i in range(1, nsteps):
         t_prev, k_prev = times_out[-1], keffs_out[-1]
-        t_cur,  k_cur  = times[i],     keffs[i]
+        t_cur, k_cur = times[i], keffs[i]
         if k_cur >= 1.0:
             times_out.append(t_cur)
             keffs_out.append(k_cur)
