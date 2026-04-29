@@ -3059,25 +3059,30 @@ with streamlit_analytics.track():
         # state-by-state retail electricity price vs FOAK / NOAK LCOE
         # ─────────────────────────────────────────────────────────
         # EIA "State Electricity Profiles" — 2023 annual average
-        # retail price of electricity to ultimate customers, all
-        # sectors.  Source: https://www.eia.gov/electricity/state/
-        # (Table 5.6.A "Average Retail Price of Electricity to
-        # Ultimate Customers").  Values in cents/kWh, converted to
-        # $/MWh by ×10.
+        # retail price of electricity to ULTIMATE INDUSTRIAL
+        # CUSTOMERS (Industrial sector).  This is more representative
+        # of the BTM/BYOG customer types listed below than the all-
+        # sectors average (industrials typically pay 30-50% less than
+        # the all-sectors number, so using the industrial column gives
+        # a more honest competitiveness check).  Source:
+        # https://www.eia.gov/electricity/state/  Table 5.6.A,
+        # "Average Retail Price of Electricity to Ultimate Customers
+        # by End-Use Sector — Industrial".  Values in cents/kWh,
+        # converted to $/MWh by ×10.
         _STATE_RETAIL_CENTS_PER_KWH_2023 = {
-            'AL': 13.31, 'AK': 23.48, 'AZ': 12.59, 'AR': 10.79,
-            'CA': 24.92, 'CO': 12.07, 'CT': 26.34, 'DE': 13.81,
-            'DC': 14.18, 'FL': 13.42, 'GA': 12.65, 'HI': 38.95,
-            'ID':  9.39, 'IL': 13.40, 'IN': 12.92, 'IA': 10.89,
-            'KS': 12.43, 'KY': 10.61, 'LA':  9.79, 'ME': 22.66,
-            'MD': 15.32, 'MA': 28.13, 'MI': 14.61, 'MN': 11.94,
-            'MS': 12.20, 'MO': 11.04, 'MT': 10.93, 'NE': 10.85,
-            'NV': 11.49, 'NH': 22.71, 'NJ': 17.04, 'NM': 12.45,
-            'NY': 21.07, 'NC': 11.81, 'ND': 10.04, 'OH': 12.42,
-            'OK': 10.39, 'OR': 11.62, 'PA': 14.62, 'RI': 24.48,
-            'SC': 12.84, 'SD': 11.04, 'TN': 10.83, 'TX': 12.05,
-            'UT': 10.04, 'VT': 19.46, 'VA': 12.45, 'WA':  9.69,
-            'WV': 12.41, 'WI': 13.78, 'WY': 10.69,
+            'AL':  6.77, 'AK': 18.46, 'AZ':  7.11, 'AR':  6.50,
+            'CA': 18.27, 'CO':  8.10, 'CT': 13.84, 'DE':  8.29,
+            'DC':  8.39, 'FL':  8.97, 'GA':  7.12, 'HI': 33.16,
+            'ID':  7.29, 'IL':  7.64, 'IN':  7.85, 'IA':  6.86,
+            'KS':  8.30, 'KY':  6.27, 'LA':  6.36, 'ME': 11.03,
+            'MD':  8.81, 'MA': 13.28, 'MI':  8.18, 'MN':  8.16,
+            'MS':  6.76, 'MO':  7.40, 'MT':  6.34, 'NE':  8.10,
+            'NV':  7.28, 'NH': 12.59, 'NJ': 11.83, 'NM':  7.39,
+            'NY':  7.34, 'NC':  6.92, 'ND':  8.46, 'OH':  7.13,
+            'OK':  6.40, 'OR':  7.95, 'PA':  7.79, 'RI': 14.13,
+            'SC':  6.86, 'SD':  8.44, 'TN':  6.77, 'TX':  6.97,
+            'UT':  6.80, 'VT':  9.91, 'VA':  7.74, 'WA':  6.10,
+            'WV':  7.54, 'WI':  8.17, 'WY':  6.77,
         }
 
         st.markdown('<div style="height:1.2rem"></div>', unsafe_allow_html=True)
@@ -3091,10 +3096,11 @@ with streamlit_analytics.track():
             '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;'
             'padding:0.85rem 1.1rem;margin-bottom:0.9rem;font-size:0.82rem;line-height:1.45;color:#334155;">'
             'For behind-the-meter (BTM) and bring-your-own-generator (BYOG) deployments — '
-            'data centers, industrial loads, mining, defense — the relevant cost benchmark '
-            'is the <em>retail</em> electricity price the customer would otherwise pay. '
-            'The chart compares the FOAK and NOAK LCOE (with one-sigma bands) against the '
-            '2023 average retail price by state from the U.S. Energy Information '
+            'data centers, industrial loads, mining, defense — a useful '
+            '<em>first-order</em> cost benchmark is the average retail electricity price '
+            'the customer would otherwise pay. The chart compares the FOAK and NOAK LCOE '
+            '(with one-sigma bands) against the 2023 average retail price for the '
+            '<strong>industrial sector</strong> by state from the U.S. Energy Information '
             'Administration. States are color-coded by competitiveness:'
             '<ul style="margin:0.4rem 0 0 1.2rem;">'
             '<li><span style="color:#15803d;font-weight:700;">Green:</span> retail price '
@@ -3104,6 +3110,13 @@ with streamlit_analytics.track():
             '<li><span style="color:#64748b;font-weight:700;">Gray:</span> retail price '
             'below the NOAK band — not competitive even at scale.</li>'
             '</ul>'
+            '<div style="margin-top:0.5rem;font-size:0.74rem;color:#64748b;line-height:1.45;">'
+            '<strong>Caveat:</strong> this is a simplified comparison. Actual avoided cost '
+            'depends on customer sector, demand charges, standby tariffs, time-of-use '
+            'structure, and ancillary value streams. Defense and remote sites often have '
+            'reliability/security premiums; large data centers commonly have direct PPAs '
+            'rather than retail tariffs.'
+            '</div>'
             '</div>',
             unsafe_allow_html=True,
         )
@@ -3149,37 +3162,55 @@ with streamlit_analytics.track():
                 else:
                     _bar_colors.append(_GRAY)
 
-            _fig_btm, _ax_btm = plt.subplots(
-                figsize=(11, max(6.5, 0.18 * len(_state_codes))),
-            )
-            _y = np.arange(len(_state_codes))
-            _ax_btm.barh(_y, _state_vals, color=_bar_colors,
-                         edgecolor='white', linewidth=0.5, height=0.78)
+            # Vertical column chart: states on X, price on Y.  Each
+            # column carries the state's 2-letter code rotated 90°,
+            # rendered in white bold so it's legible on every column
+            # color (green / yellow / gray).
+            _fig_btm, _ax_btm = plt.subplots(figsize=(15, 6.5))
+            _x = np.arange(len(_state_codes))
+            _bars = _ax_btm.bar(_x, _state_vals, color=_bar_colors,
+                                edgecolor='white', linewidth=0.6, width=0.86)
 
-            # Reference bands for FOAK and NOAK LCOE (±1σ).
-            _ax_btm.axvspan(_foak_m_btm - _foak_s_btm,
+            # Horizontal reference bands for FOAK and NOAK LCOE (±1σ).
+            _ax_btm.axhspan(_foak_m_btm - _foak_s_btm,
                             _foak_m_btm + _foak_s_btm,
-                            color='#dc2626', alpha=0.18, zorder=0)
-            _ax_btm.axvline(_foak_m_btm, color='#dc2626',
-                            linewidth=1.6, linestyle='--', zorder=1,
+                            color='#dc2626', alpha=0.16, zorder=0)
+            _ax_btm.axhline(_foak_m_btm, color='#dc2626',
+                            linewidth=1.8, linestyle='--', zorder=2,
                             label=f'FOAK LCOE ${_foak_m_btm:.0f}/MWh')
-            _ax_btm.axvspan(_noak_m_btm - _noak_s_btm,
+            _ax_btm.axhspan(_noak_m_btm - _noak_s_btm,
                             _noak_m_btm + _noak_s_btm,
-                            color='#1d4ed8', alpha=0.18, zorder=0)
-            _ax_btm.axvline(_noak_m_btm, color='#1d4ed8',
-                            linewidth=1.6, linestyle='--', zorder=1,
+                            color='#1d4ed8', alpha=0.16, zorder=0)
+            _ax_btm.axhline(_noak_m_btm, color='#1d4ed8',
+                            linewidth=1.8, linestyle='--', zorder=2,
                             label=f'NOAK LCOE ${_noak_m_btm:.0f}/MWh')
 
-            _ax_btm.set_yticks(_y)
-            _ax_btm.set_yticklabels(_state_codes, fontsize=8.5)
-            _ax_btm.invert_yaxis()  # highest-priced state at top
-            _ax_btm.set_xlabel('Average retail price ($/MWh) — EIA 2023',
+            # Place state code label vertically inside each column,
+            # near the bottom so it's always visible (even on short
+            # columns).  White bold for legibility on every color.
+            _ymax_chart = max(_state_vals) * 1.08
+            for _i, (_code, _val) in enumerate(zip(_state_codes, _state_vals)):
+                _label_y = min(_val * 0.5, _val - 8) if _val > 18 else _val + 2
+                _ax_btm.text(
+                    _i, _label_y, _code,
+                    rotation=90, ha='center', va='center',
+                    fontsize=10, fontweight='bold',
+                    color=('white' if _val > 18 else '#1e293b'),
+                    zorder=4,
+                )
+
+            _ax_btm.set_xticks([])  # state names are on the columns themselves
+            _ax_btm.set_xlim(-0.7, len(_state_codes) - 0.3)
+            _ax_btm.set_ylim(0, _ymax_chart)
+            _ax_btm.set_ylabel('Average retail price ($/MWh) — EIA 2023, industrial sector',
                                fontsize=11, fontweight='bold')
-            _ax_btm.grid(True, axis='x', alpha=0.3, linestyle='--', linewidth=0.5)
+            _ax_btm.set_xlabel('U.S. States and DC (sorted by retail price, high → low)',
+                               fontsize=11, fontweight='bold')
+            _ax_btm.grid(True, axis='y', alpha=0.3, linestyle='--', linewidth=0.5)
             _ax_btm.set_axisbelow(True)
             _ax_btm.set_facecolor('white')
             _fig_btm.patch.set_facecolor('white')
-            _ax_btm.legend(loc='lower right', fontsize=9, framealpha=0.95,
+            _ax_btm.legend(loc='upper right', fontsize=10, framealpha=0.95,
                            edgecolor='grey')
             _fig_btm.tight_layout()
             st.pyplot(_fig_btm)
@@ -3220,7 +3251,7 @@ with streamlit_analytics.track():
                 f'</div>'
                 f'<div style="margin-top:0.55rem;font-size:0.72rem;color:#64748b;">'
                 f'Source: U.S. EIA, <em>State Electricity Profiles</em>, 2023 annual '
-                f'average retail price, all sectors. '
+                f'average retail price to ultimate customers — industrial sector. '
                 f'<a href="https://www.eia.gov/electricity/state/" target="_blank" '
                 f'style="color:#2563eb;">eia.gov/electricity/state</a>'
                 f'</div>'
