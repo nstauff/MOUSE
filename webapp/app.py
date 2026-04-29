@@ -2776,19 +2776,23 @@ with streamlit_analytics.track():
                          zorder=6)
 
             _ax.set_xlim(0, 100)
-            # Y-axis adapts to whichever is taller: the static market-
-            # benchmark band (0-410) or the actual LCOE band for this
-            # reactor.  Without this, a high-LCOE configuration (e.g.
-            # 1 MWt LTMR) renders entirely off the top of the chart.
+            # Y-axis adapts to the actual LCOE band (computed from the
+            # raw sweep points, NOT the spline — the spline can over-
+            # shoot at boundaries with steep gradients, which would
+            # blow up the y-axis).  Hard cap at $1500 as a sanity
+            # floor against pathological cost computations.
             _band_top = float(np.nanmax(_m_arr + _s_arr)) if _m_arr.size else 0.0
             _ymax = max(410.0, _band_top * 1.10)
+            _ymax = min(_ymax, 1500.0)
             _ax.set_ylim(0, _ymax)
             _ax.set_xlabel('Number of Units Deployed', fontsize=12, fontweight='bold')
             _ax.set_ylabel('LCOE ($/MWh)', fontsize=12, fontweight='bold')
             _ax.set_xticks([0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100])
-            # Y-ticks at sensible round values up to _ymax
-            _tick_step = 50.0 if _ymax <= 600 else (100.0 if _ymax <= 1200 else 200.0)
-            _ax.set_yticks(np.arange(0, _ymax + _tick_step, _tick_step))
+            # Let matplotlib auto-pick the y-ticks (MaxNLocator with a
+            # reasonable max count).  Manual tick generation produced
+            # overlapping labels in some scenarios.
+            from matplotlib.ticker import MaxNLocator
+            _ax.yaxis.set_major_locator(MaxNLocator(nbins=10, integer=True))
             _ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
             _ax.set_axisbelow(True)
             _ax.set_facecolor('white')
