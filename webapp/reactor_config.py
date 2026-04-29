@@ -782,19 +782,22 @@ def _build_hpmr(params):
     params['Fuel Pin Count'] = params['Fuel Assemblies Count'] * params['Fuel Pin Count per Assembly']
     number_of_heatpipes_hmpr(params)
 
-    # Sec 3: Control drums.  Drum Radius fixed at 20 cm (matches the
-    # value the example file produces from 0.4 × 50 cm reflector).
-    # Radial Reflector Thickness, Core Radius, Axial Reflector
-    # Thickness, and Drum Height are all auto-resolved inside
-    # calculate_drums_volumes_and_masses (HPMR auto-resolve block):
-    #   reflector = cd_distance + drum_radius − hex_apothem
-    #   core_R    = hex_apothem + reflector
-    #   axial_R   = reflector
-    #   drum_H    = active_H + 2 × axial_R
-    # so drums always fit by construction.
+    # Sec 3: Control drums.  All four geometry parameters
+    #   Drum Radius, Drum Height, Radial Reflector Thickness, Core Radius
+    # are auto-resolved inside calculate_drums_volumes_and_masses to
+    # match the parametric study exactly:
+    #   Drum Radius            = _calculate_max_hpmr_drum_radius(params)
+    #                            — largest drum that fits without
+    #                              overlap on the placement ring
+    #   Radial Reflector       = cd_distance + Drum Radius − hex_apothem
+    #   Core Radius            = hex_apothem + Radial Reflector
+    #   Axial Reflector        = Radial Reflector
+    #   Drum Height            = Active Height + 2 × Axial Reflector
+    # Verified to reproduce the (Drum Radius, Reflector, Core Radius)
+    # values in the parametric study to within float rounding for
+    # every (N_A=6, N_C ∈ [3..7]) configuration.
     params.update({
         'Drum Count': 12,         # allowed: 6, 12, 18, 24
-        'Drum Radius': 20.0,      # cm
         'Drum Absorber Thickness': 1,
     })
     calculate_drums_volumes_and_masses(params)
