@@ -2228,76 +2228,69 @@ with streamlit_analytics.track():
                                  + float(params.get('Intake Vessel Mass', 0.0)))
 
             # ── Render component table ──
-            # Help-icon tooltips per row explain what's included in each
-            # component's mass/dimensions, and flag any missing-from-MOUSE
-            # items.  Explicit text colors throughout so the table is
-            # readable regardless of Streamlit theme.
+            # Each row carries an always-visible small-font description
+            # under the component name explaining what is included and
+            # what is excluded.  The hover-only title= tooltip approach
+            # was unreliable across browsers/themes, so the notes are
+            # shown inline in the table itself.  Explicit colors
+            # throughout so the table is readable regardless of the
+            # Streamlit theme.
             _CELL = ('padding:0.55rem 0.8rem;color:#1e293b;'
-                     'border-bottom:1px solid #e2e8f0;')
+                     'border-bottom:1px solid #e2e8f0;'
+                     'vertical-align:top;')
             _CELL_C = _CELL + 'text-align:center;'
             _CELL_NAME = _CELL + 'font-weight:600;'
+            _DESC = ('font-size:0.72rem;font-weight:400;color:#64748b;'
+                     'line-height:1.4;margin-top:0.2rem;')
 
-            def _help_icon(tooltip_text):
-                _safe = tooltip_text.replace('"', '“')
-                return (f'<span title="{_safe}" '
-                        'style="cursor:help;color:#fff;background:#0e7490;'
-                        'border-radius:50%;width:15px;height:15px;'
-                        'display:inline-flex;align-items:center;'
-                        'justify-content:center;font-size:0.68rem;'
-                        'font-weight:800;line-height:1;margin-left:0.4rem;'
-                        'vertical-align:middle;">?</span>')
-
-            _reactor_help = (
-                'Reactor (core + reflectors + drums) — includes uranium '
-                '(U235 + U238), moderator (ZrH for LTMR; graphite for '
-                'GCMR/HPMR; ZrH booster for GCMR), radial reflector, '
-                'axial reflector, and the control drums (drum reflector '
-                '+ drum absorber). Cladding mass is small and not '
-                'separately tracked in MOUSE.'
-                + (' HPMR-specific: heat-pipe steel cladding and the Na '
-                   'working fluid are not currently modeled in MOUSE — '
-                   'TODO add later.' if reactor_type == 'HPMR' else '')
+            _reactor_desc = (
+                'Includes: U235 + U238, moderator '
+                '(ZrH for LTMR; graphite ± ZrH booster for GCMR; '
+                'monolith graphite for HPMR), radial + axial reflector, '
+                'control drums. Excludes: fuel cladding (small, not '
+                'tracked in MOUSE).'
+                + (' <span style="color:#b45309;">HPMR — heat-pipe '
+                   'steel cladding and Na working fluid not yet '
+                   'modeled.</span>' if reactor_type == 'HPMR' else '')
             )
-            _rv_help = (
-                'Reactor vessel — the primary pressure boundary. '
-                'Diameter is 2 × (vessel radius + vessel thickness); '
-                'height includes active core, axial reflector, lower '
-                'plenum, upper plenum, and bottom dish. '
-                f'Bottom dish currently uses placeholder Vessel Bottom '
-                f'Depth = {_bottom_depth_cm:.1f} cm; flag for review. '
-                'Top closure dome is not currently modeled in MOUSE — '
-                'TODO add later. Mass is the vessel wall only '
-                '(no internals).'
-                + (' GCMR note: MOUSE labels this as "Guard Vessel" '
-                   'internally because for the GCMR the outer pressure '
-                   'shell is the RPV, not the inner core barrel.'
-                   if reactor_type == 'GCMR' else '')
+            _rv_desc_extra = (
+                ' <span style="color:#0c4a6e;">For GCMR this maps to '
+                'MOUSE\'s internal "Guard Vessel" field (the RPV).</span>'
+                if reactor_type == 'GCMR' else ''
             )
-            _gv_help = (
-                'Guard vessel — secondary containment shell around the '
-                'reactor vessel for primary-coolant leak containment. '
-                'Mass is the guard-vessel wall only.'
+            _rv_desc = (
+                'Diameter = 2 × (vessel radius + thickness). '
+                'Height = active core + axial reflector + lower '
+                f'plenum + upper plenum + bottom dish '
+                f'({_bottom_depth_cm:.1f} cm placeholder, flagged). '
+                '<span style="color:#b45309;">Top closure dome '
+                'not yet modeled.</span> Mass = vessel wall only.'
+                + _rv_desc_extra
             )
-            _gv_na_help = (
-                'Guard vessel intentionally omitted for this reactor '
-                'type. GCMR coolant (helium) is inert with no chemical-'
-                'leak hazard. HPMR has no bulk primary coolant — each '
-                'heat pipe is individually sealed.'
+            _gv_desc = (
+                'Secondary containment shell around the reactor vessel '
+                'for primary-coolant leak containment. Mass = '
+                'guard-vessel wall only (no internals).'
             )
-            _rvacs_help = (
-                'RVACS (Reactor Vessel Auxiliary Cooling System) — '
-                'cooling vessel plus intake vessel combined, treated as '
-                'one shipping envelope. Diameter is 2 × (intake vessel '
-                'outer radius); height is the full external envelope '
-                'including bottom dish. Mass = cooling vessel wall + '
-                'intake vessel wall (no air, no insulation, no support '
-                'structure).'
+            _gv_na_desc = (
+                'Intentionally omitted for this reactor type — He is '
+                'inert (GCMR) and heat pipes are individually sealed '
+                '(HPMR), so neither has a bulk primary coolant '
+                'requiring secondary containment.'
+            )
+            _rvacs_desc = (
+                'Cooling vessel + intake vessel treated as one shipping '
+                'envelope. Diameter = 2 × intake vessel outer radius; '
+                'height is the full external envelope. Mass = cooling-'
+                'vessel wall + intake-vessel wall only (no air, no '
+                'insulation, no support structure).'
             )
 
             _rows_html = []
             _rows_html.append(
                 '<tr style="background:#ffffff;">'
-                f'<td style="{_CELL_NAME}">Reactor (core + reflectors + drums){_help_icon(_reactor_help)}</td>'
+                f'<td style="{_CELL_NAME}">Reactor (core + reflectors + drums)'
+                f'<div style="{_DESC}">{_reactor_desc}</div></td>'
                 f'<td style="{_CELL_C}">{_m1(_reactor_h_cm)}</td>'
                 f'<td style="{_CELL_C}">{_m1(_reactor_dia_cm)}</td>'
                 f'<td style="{_CELL_C}">{_ton_str(_reactor_mass_kg)}</td>'
@@ -2305,7 +2298,8 @@ with streamlit_analytics.track():
             )
             _rows_html.append(
                 '<tr style="background:#fafafa;">'
-                f'<td style="{_CELL_NAME}">Reactor vessel{_help_icon(_rv_help)}</td>'
+                f'<td style="{_CELL_NAME}">Reactor vessel'
+                f'<div style="{_DESC}">{_rv_desc}</div></td>'
                 f'<td style="{_CELL_C}">{_m1(_rv_height_cm)}</td>'
                 f'<td style="{_CELL_C}">{_m1(_rv_dia_cm)}</td>'
                 f'<td style="{_CELL_C}">{_ton_str(_rv_mass_kg)}</td>'
@@ -2314,7 +2308,8 @@ with streamlit_analytics.track():
             if _has_guard:
                 _rows_html.append(
                     '<tr style="background:#ffffff;">'
-                    f'<td style="{_CELL_NAME}">Guard vessel{_help_icon(_gv_help)}</td>'
+                    f'<td style="{_CELL_NAME}">Guard vessel'
+                    f'<div style="{_DESC}">{_gv_desc}</div></td>'
                     f'<td style="{_CELL_C}">{_m1(_gv_height_cm)}</td>'
                     f'<td style="{_CELL_C}">{_m1(_gv_dia_cm)}</td>'
                     f'<td style="{_CELL_C}">{_ton_str(_gv_mass_kg)}</td>'
@@ -2323,13 +2318,15 @@ with streamlit_analytics.track():
             else:
                 _rows_html.append(
                     '<tr style="background:#ffffff;">'
-                    f'<td style="{_CELL_NAME};color:#94a3b8;">Guard vessel{_help_icon(_gv_na_help)}</td>'
+                    f'<td style="{_CELL_NAME};color:#94a3b8;">Guard vessel'
+                    f'<div style="{_DESC}">{_gv_na_desc}</div></td>'
                     f'<td colspan="3" style="{_CELL_C};color:#94a3b8;">N/A — not used for this reactor type</td>'
                     '</tr>'
                 )
             _rows_html.append(
                 '<tr style="background:#fafafa;">'
-                f'<td style="{_CELL_NAME}">RVACS (cooling + intake vessels){_help_icon(_rvacs_help)}</td>'
+                f'<td style="{_CELL_NAME}">RVACS (cooling + intake vessels)'
+                f'<div style="{_DESC}">{_rvacs_desc}</div></td>'
                 f'<td style="{_CELL_C}">{_m1(_rvacs_height_cm)}</td>'
                 f'<td style="{_CELL_C}">{_m1(_rvacs_dia_cm)}</td>'
                 f'<td style="{_CELL_C}">{_ton_str(_rvacs_mass_kg)}</td>'
