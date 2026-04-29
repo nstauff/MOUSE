@@ -41,6 +41,10 @@ from core_design.openmc_template_LTMR import update_ltmr_reflector_geometry_from
 from reactor_engineering_evaluation.fuel_calcs import fuel_calculations
 from webapp.fuel_lifetime_estimator import estimate_ltmr_fuel_lifetime
 from webapp.gcmr_fuel_lifetime_estimator import estimate_gcmr_fuel_lifetime
+from webapp.hpmr_fuel_lifetime_estimator import (
+    estimate_hpmr_fuel_lifetime,
+    hpmr_total_uranium_mass_g,
+)
 # BOP.py re-exports everything from tools.py and adds its own functions
 from reactor_engineering_evaluation.BOP import (
     calculate_heat_exchanger_mass,
@@ -751,13 +755,15 @@ def _build_hpmr(params):
     })
 
     # Sec 2: Geometry
+    # 'Number of Rings per Assembly', 'Number of Rings per Core',
+    # and 'Active Height' come from build_params (user-controlled).
+    # The previous version of this block locked H = 2 × Core Radius;
+    # now H is independent so users can sweep it via the slider.
     params.update({
         'Fuel Pin Materials': ['homog_TRISO', 'Helium'],
         'Fuel Pin Radii': [1.00, 1.05],
         'Heat Pipe Materials': ['heatpipe', 'Helium'],
         'Heat Pipe Radii': [1.10, 1.15],
-        'Number of Rings per Assembly': 6,
-        'Number of Rings per Core': 3,
         'Lattice Pitch': 3.4,
     })
     params['Assembly FTF'] = ((params['Lattice Pitch'] * (params['Number of Rings per Assembly'] - 1)
@@ -767,7 +773,6 @@ def _build_hpmr(params):
     params['Radial Reflector Thickness'] = 50
     params['Core Radius'] = (0.5 * np.sqrt(3) * params['hexagonal Core Edge Length']
                              + params['Radial Reflector Thickness'])
-    params['Active Height'] = 2 * params['Core Radius']
     params['Axial Reflector Thickness'] = params['Radial Reflector Thickness']
     params['Fuel Pin Count per Assembly'] = calculate_number_fuel_elements_hpmr(params['Number of Rings per Assembly'])
     params['Fuel Assemblies Count'] = ((3 * params['Number of Rings per Core'] ** 2)
@@ -796,15 +801,44 @@ def _build_hpmr(params):
     params['Power MWe'] = params['Power MWt'] * params['Thermal Efficiency']
     params['Heat Flux'] = calculate_heat_flux(params)
 
-    # Sec 5: Interpolate OpenMC results from parametric study table
-    _omc = interpolate_openmc_results('HPMR', params['Power MWt'], params['Enrichment'])
-    if _omc['Fuel Lifetime'] == 0:
+    # Sec 5: Fuel lifetime via KNN estimator on the HPMR parametric
+    # study (XLSX, 104 rows over (N_C, H, E, P) at fixed N_A = 6).
+    # Uranium mass is derived from the EXACT HPMR-specific physics
+    # scaling (constant 1.6116 g per pin per cm × N_pins(N_A, N_C) × H)
+    # so off-grid geometry queries produce consistent (lifetime, mass)
+    # pairs.  See webapp/hpmr_fuel_lifetime_estimator.py.
+    fl = estimate_hpmr_fuel_lifetime(
+        n_rings_per_assembly = params['Number of Rings per Assembly'],
+        n_rings_per_core     = params['Number of Rings per Core'],
+        active_height        = params['Active Height'],
+        enrichment           = params['Enrichment'],
+        power_mwt            = params['Power MWt'],
+    )
+    if fl == 0:
         raise SubcriticalError(
-            f"Fuel lifetime is zero for HPMR at Power={params['Power MWt']} MWt, "
-            f"Enrichment={params['Enrichment']:.4f}. The reactor is subcritical."
+            f"Reactor is subcritical for HPMR at "
+            f"N_a={params['Number of Rings per Assembly']}, "
+            f"N_c={params['Number of Rings per Core']}, "
+            f"H={params['Active Height']:.1f} cm, "
+            f"E={params['Enrichment']:.4f}, P={params['Power MWt']} MWt."
         )
-    params.update(_omc)
-    params['Uranium Mass'] = (params['Mass U235'] + params['Mass U238']) / 1000  # kg
+    if fl < _MIN_USEFUL_LIFETIME_DAYS:
+        raise ShortLifetimeError(
+            f"Estimated fuel lifetime is only {fl} days "
+            f"({fl / 30.0:.1f} months) — too short for a meaningful "
+            f"design point. Try increasing the power, enrichment, "
+            f"or core size."
+        )
+
+    total_u_g = hpmr_total_uranium_mass_g(
+        params['Number of Rings per Assembly'],
+        params['Number of Rings per Core'],
+        params['Active Height'],
+    )
+    params['Fuel Lifetime'] = fl
+    params['Mass U235']     = int(round(total_u_g * params['Enrichment']))
+    params['Mass U238']     = int(round(total_u_g * (1.0 - params['Enrichment'])))
+    params['Uranium Mass']  = (params['Mass U235'] + params['Mass U238']) / 1000  # kg
     fuel_calculations(params)
 
     # Sec 6: Primary Loop + BoP
@@ -1038,6 +1072,19 @@ def build_params(reactor_type, power_mwt, enrichment, user_overrides,
         params['Assembly Rings'] = int(n_assembly_rings)
         params['Core Rings']     = int(n_core_rings)
         params['Active Height']  = float(active_height)
+
+    if reactor_type == 'HPMR':
+        # HPMR uses the same kwargs as GCMR (n_assembly_rings,
+        # n_core_rings, active_height) but the builder reads them
+        # under HPMR-style key names ('Number of Rings per Assembly',
+        # 'Number of Rings per Core').
+        if n_assembly_rings is None or n_core_rings is None or active_height is None:
+            raise ValueError(
+                "HPMR requires n_assembly_rings, n_core_rings, and active_height."
+            )
+        params['Number of Rings per Assembly'] = int(n_assembly_rings)
+        params['Number of Rings per Core']     = int(n_core_rings)
+        params['Active Height']                = float(active_height)
 
     builders = {'LTMR': _build_ltmr, 'GCMR': _build_gcmr, 'HPMR': _build_hpmr}
     if reactor_type not in builders:

@@ -326,6 +326,42 @@ GCMR_DIAMETER_LABEL_TO_PAIR = {
 GCMR_G_PER_VOLUME_INDEX = 0.5776
 
 
+# HPMR — Active core diameter per N_C, with N_A locked to 6 (the only
+# value present in the HPMR parametric study).
+#   Active diameter = 2 × Active radius  (excludes reflector)
+#   Active radius   = (sqrt(3)/2) × hex_edge
+#   hex_edge        = Assembly_FTF × (N_C - 1) + Assembly_FTF/2 + 6.6
+#   Assembly_FTF    = (Lattice_Pitch × (N_A - 1) + 1.4 × R_pin) × sqrt(3)
+# At N_A=6, Lattice_Pitch=3.4, R_pin=1.05 → Assembly_FTF ≈ 31.99 cm.
+HPMR_NA_FIXED = 6
+_HPMR_LATTICE_PITCH = 3.4
+_HPMR_FUEL_PIN_OUTER_R = 1.05
+
+
+def _hpmr_assembly_ftf():
+    return (_HPMR_LATTICE_PITCH * (HPMR_NA_FIXED - 1)
+            + 1.4 * _HPMR_FUEL_PIN_OUTER_R) * _math.sqrt(3.0)
+
+
+def _hpmr_active_radius(n_c):
+    ftf = _hpmr_assembly_ftf()
+    hex_edge = ftf * (n_c - 1) + ftf / 2.0 + 6.6
+    return 0.5 * _math.sqrt(3.0) * hex_edge
+
+
+HPMR_NC_VALUES = [3, 4, 5, 6, 7]
+HPMR_NC_TO_DIAMETER_CM = {
+    nc: int(round(2 * _hpmr_active_radius(nc))) for nc in HPMR_NC_VALUES
+}
+HPMR_DIAMETER_LABELS = [
+    f"{HPMR_NC_TO_DIAMETER_CM[nc]} cm  (N_C={nc})"
+    for nc in HPMR_NC_VALUES
+]
+HPMR_DIAMETER_LABEL_TO_NC = {
+    label: nc for label, nc in zip(HPMR_DIAMETER_LABELS, HPMR_NC_VALUES)
+}
+
+
 @st.cache_data(show_spinner=False)
 def _run_estimate(reactor_type, power_mwt, enrichment, interest_rate, discount_rate,
                   construction_duration, debt_to_equity, operation_mode,
@@ -1230,10 +1266,10 @@ with streamlit_analytics.track():
             help='Thermal power output. Affects power-dependent params and fuel lifetime via interpolation.',
         )
 
-        # LTMR / GCMR: extra geometry inputs (diameter + active height).
+        # LTMR / GCMR / HPMR: extra geometry inputs (diameter + active height).
         n_rings_per_assembly = None  # LTMR only
-        n_assembly_rings     = None  # GCMR only
-        n_core_rings         = None  # GCMR only
+        n_assembly_rings     = None  # GCMR (varies) and HPMR (locked at 6)
+        n_core_rings         = None  # GCMR / HPMR
         active_height        = None
         if reactor_type == 'LTMR':
             # Default to N=12 (95 cm), a mid-range trained geometry.
@@ -1306,6 +1342,49 @@ with streamlit_analytics.track():
                       f'(H / D, where D is the active core diameter) between '
                       f'{ASPECT_RATIO_MIN} and {ASPECT_RATIO_MAX}. For this geometry '
                       f'the active core diameter is {_ad_gcmr:.0f} cm.'),
+            )
+
+        elif reactor_type == 'HPMR':
+            # HPMR's parametric study has N_A locked at 6, so the
+            # active diameter slider varies only N_C.  H is then
+            # selected independently with H/D in [0.5, 3.0] (the
+            # parametric study covers H/D up to ~2.8).
+            _default_label = next(
+                lbl for lbl in HPMR_DIAMETER_LABELS
+                if HPMR_DIAMETER_LABEL_TO_NC[lbl] == 5
+            )
+            _diameter_label = st.select_slider(
+                'Active Core Diameter',
+                options=HPMR_DIAMETER_LABELS,
+                value=_default_label,
+                key='hpmr_diameter',
+                help=('Active core diameter (does NOT include the radial '
+                      'reflector). Discrete values mapped to Core Rings '
+                      '(N_C); Assembly Rings (N_A) is locked at 6 in the '
+                      'HPMR parametric study.'),
+            )
+            n_assembly_rings = HPMR_NA_FIXED   # always 6
+            n_core_rings     = HPMR_DIAMETER_LABEL_TO_NC[_diameter_label]
+
+            _ar_hpmr   = _hpmr_active_radius(n_core_rings)
+            _ad_hpmr   = 2.0 * _ar_hpmr
+            _hpmr_aspect_min = 0.5
+            _hpmr_aspect_max = 3.0
+            _h_min     = max(50, int(round(_hpmr_aspect_min * _ad_hpmr)))
+            _h_max     = int(round(_hpmr_aspect_max * _ad_hpmr))
+            _h_default = int(round(2.0 * _ar_hpmr))  # natural H/D = 2 (H=2R)
+
+            active_height = st.slider(
+                'Active Height (cm)',
+                min_value=_h_min,
+                max_value=_h_max,
+                value=_h_default,
+                step=1,
+                key=f'hpmr_active_height_{n_core_rings}',
+                help=(f'Active fuel height in cm. Bounds correspond to aspect '
+                      f'ratio (H / D) between {_hpmr_aspect_min:.1f} and '
+                      f'{_hpmr_aspect_max:.1f}. For this geometry the active '
+                      f'core diameter is {_ad_hpmr:.0f} cm.'),
             )
 
         st.divider()
