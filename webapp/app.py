@@ -2784,9 +2784,15 @@ with streamlit_analytics.track():
         _mid_diag_params = {}
         with st.spinner('Computing intermediate LCOE anchor (N=10)…'):
             try:
+                # CRITICAL: interest_rate / 100 and discount_rate / 100
+                # to convert UI percent to fraction.  Headline call
+                # does the same conversion at line ~1537; the N=10
+                # helper has to mirror it or the cost engine treats
+                # 7 as 700% interest and explodes the IDC / TCI.
                 _mid_m, _mid_s, _mid_diag_df, _mid_diag_params = _lcoe_at_noak_unit(
                     reactor_type, power_mwt, enrichment,
-                    interest_rate, discount_rate, construction_duration,
+                    interest_rate / 100.0, discount_rate / 100.0,
+                    construction_duration,
                     debt_to_equity, operation_mode, emergency_shutdowns,
                     startup_duration, startup_duration_refueling,
                     tax_credit_type, tax_credit_value, plant_lifetime,
