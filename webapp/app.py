@@ -449,26 +449,25 @@ def _run_lcoe_sweep(reactor_type, power_mwt, enrichment, interest_rate, discount
                          n_assembly_rings=n_assembly_rings,
                          n_core_rings=n_core_rings)
         raw_df = bottom_up_cost_estimate('cost/Cost_Database.xlsx', p)
-        enriched_df, _ = cost_drivers_estimate(raw_df, p)
-        # Read the 'LCOE' summary row's NOAK value directly from the
-        # enriched dataframe, BEFORE transform_dataframe processes it.
-        # The cost engine writes the LCOE row's value (in $/MWh) into
-        # whichever column get_estimated_cost_column resolves for the
-        # NOAK side (e.g. 'NOAK Estimated Cost ($2025M)').
+        # Read the 'LCOE' summary row directly from the raw cost-engine
+        # output. The LCOE row is written by energy_cost_levelized inside
+        # bottom_up_cost_estimate, so cost_drivers_estimate is not needed
+        # here — skipping it removes one full dataframe-enrichment pass
+        # per sweep point.
         try:
             from cost.code_of_account_processing import get_estimated_cost_column as _gecc
-            _noak_col = _gecc(enriched_df, 'N')
-            _noak_std_col = _gecc(enriched_df, 'N std')
+            _noak_col = _gecc(raw_df, 'N')
+            _noak_std_col = _gecc(raw_df, 'N std')
         except Exception:
             _noak_col = None
             _noak_std_col = None
         if (_noak_col is None
-                or 'Account' not in enriched_df.columns
-                or _noak_col not in enriched_df.columns):
+                or 'Account' not in raw_df.columns
+                or _noak_col not in raw_df.columns):
             means.append(float('nan'))
             stds.append(float('nan'))
             continue
-        _row = enriched_df[enriched_df['Account'] == lcoe_account]
+        _row = raw_df[raw_df['Account'] == lcoe_account]
         if _row.empty:
             means.append(float('nan'))
             stds.append(float('nan'))
@@ -477,7 +476,7 @@ def _run_lcoe_sweep(reactor_type, power_mwt, enrichment, interest_rate, discount
             m = float(_row[_noak_col].iloc[0])
         except (TypeError, ValueError):
             m = float('nan')
-        if _noak_std_col and _noak_std_col in enriched_df.columns:
+        if _noak_std_col and _noak_std_col in raw_df.columns:
             try:
                 s = float(_row[_noak_std_col].iloc[0])
             except (TypeError, ValueError):
@@ -538,18 +537,20 @@ def _lcoe_at_noak_unit(reactor_type, power_mwt, enrichment, interest_rate, disco
                      n_assembly_rings=n_assembly_rings,
                      n_core_rings=n_core_rings)
     raw_df = bottom_up_cost_estimate('cost/Cost_Database.xlsx', p)
-    enriched_df, _ = cost_drivers_estimate(raw_df, p)
-    display_df = transform_dataframe(enriched_df)
-    m, s = _get_mean_std(display_df, lcoe_account, 'NOAK')
+    # Read mean / std directly from the cost engine's raw output.
+    # cost_drivers_estimate enriches with per-account LCOE columns we
+    # don't use here, and transform_dataframe only int-truncates floats —
+    # both are skipped to save one full enrichment pass per anchor.
+    m, s = _get_mean_std(raw_df, lcoe_account, 'NOAK')
 
     # Build a tidy per-account diagnostic frame. Pulls 'Account',
     # 'Account Title', and any column starting with 'FOAK Estimated
     # Cost (' / 'NOAK Estimated Cost ('.
-    _foak_cols = [c for c in display_df.columns if c.startswith('FOAK Estimated Cost (')]
-    _noak_cols = [c for c in display_df.columns if c.startswith('NOAK Estimated Cost (')]
+    _foak_cols = [c for c in raw_df.columns if c.startswith('FOAK Estimated Cost (')]
+    _noak_cols = [c for c in raw_df.columns if c.startswith('NOAK Estimated Cost (')]
     _keep = [c for c in (['Account', 'Account Title']
-                         + _foak_cols + _noak_cols) if c in display_df.columns]
-    diag_df = display_df[_keep].copy() if _keep else None
+                         + _foak_cols + _noak_cols) if c in raw_df.columns]
+    diag_df = raw_df[_keep].copy() if _keep else None
 
     # Also pull a snapshot of the key params actually used for this
     # cost-engine call. Reveals whether Construction Duration,
