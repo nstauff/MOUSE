@@ -323,6 +323,21 @@ update_params({
 # To disable ITC, remove or comment out this parameter.
 params['ITC credit level'] = 0.30  # fraction — assumes prevailing wage requirements are met
 
+# --- IRA Sunset: Number of Units Claiming ITC/PTC ---
+# Under the IRA, ITC and PTC eligibility ends at a sunset year. Once the sunset
+# is reached, units placed in service after that point cannot claim the credit.
+# This parameter caps how many units in the deployment sequence may avail the
+# credit. A unit is eligible only if its position is <= this cutoff:
+#   - FOAK column = unit 1 (always eligible if cutoff >= 1)
+#   - NOAK column = unit 'NOAK Unit Number' (eligible only if NOAK Unit Number <= cutoff)
+# When a unit is past the cutoff, the ITC/PTC-adjusted outputs fall back to the
+# un-subsidized values, producing a step in the LCOE-vs-deployment-scale curve
+# at the sunset point.
+# Typical value: a fleet-size estimate consistent with deployments before the
+# IRA sunset (e.g. 50, 100). Set very high to keep the original behavior of
+# applying the credit to every unit.
+params['Number of Units Claiming ITC/PTC'] = 10
+
 # **************************************************************************************************************************
 #                                           Sec. 11: Post Processing
 # **************************************************************************************************************************

@@ -1989,6 +1989,14 @@ PARAMS_REGISTRY = {
         'description': 'IRA stackable bonus for siting the plant in a designated energy community (+10% on base PTC)',
         'source': 'User Input', 'hidden': False, 'array_mode': None},
 
+    'Number of Units Claiming ITC/PTC': {
+        'group': 'Tax Credits', 'units': '',
+        'description': 'Number of units in the order book that may claim ITC or PTC before the IRA sunset. '
+                       'A unit is eligible only if its position in the deployment sequence is <= this cutoff. '
+                       'FOAK is unit 1; the NOAK column represents unit "NOAK Unit Number". '
+                       'When a unit is past the cutoff, ITC/PTC-adjusted outputs fall back to the un-subsidized values.',
+        'source': 'User Input', 'hidden': False, 'array_mode': None},
+
     # =========================================================
     # Debug / Intermediate Values
     # =========================================================

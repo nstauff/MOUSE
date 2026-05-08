@@ -344,6 +344,16 @@ update_params({
 # Typical values: 0.21 (federal only), 0.27 (federal + average state)
 # params['Tax Rate'] = 0.21  # fraction
 
+# --- IRA Sunset: Number of Units Claiming ITC/PTC ---
+# Caps how many units in the deployment sequence may avail the credit. A unit
+# is eligible only if its position is <= this cutoff. FOAK = unit 1; the NOAK
+# column = unit 'NOAK Unit Number'. When a unit is past the cutoff, the
+# ITC/PTC-adjusted outputs fall back to the un-subsidized values, producing
+# a step in the LCOE-vs-deployment-scale curve at the sunset point.
+# Only applies when ITC or PTC is enabled above. Defaults to effectively
+# infinite when omitted (every unit claims the credit).
+# params['Number of Units Claiming ITC/PTC'] = 10
+
 # **************************************************************************************************************************
 #                                           Sec. 11: Post Processing
 # **************************************************************************************************************************

@@ -280,6 +280,11 @@ update_params({
 # This example does not apply any ITC or PTC tax credits.
 # To apply ITC, add: params['ITC credit level'] = 0.30  (see watts_exec_LTMR.py for full details)
 # To apply PTC, add: params['PTC credit value'] = 15.0  (see watts_exec_GCMR.py for full details)
+# When ITC/PTC is enabled, optionally cap how many units may claim the credit
+# under the IRA sunset:
+#     params['Number of Units Claiming ITC/PTC'] = 10
+# (FOAK = unit 1; NOAK column = unit 'NOAK Unit Number'. Units past the cutoff
+# fall back to the un-subsidized values.)
 # Note: ITC and PTC are mutually exclusive — only one can be selected per project.
 
 # **************************************************************************************************************************

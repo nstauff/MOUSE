@@ -404,7 +404,8 @@ def _run_estimate(reactor_type, power_mwt, enrichment, interest_rate, discount_r
                   emergency_shutdowns, startup_duration, startup_duration_refueling,
                   tax_credit_type, tax_credit_value, plant_lifetime,
                   n_rings_per_assembly=None, active_height=None,
-                  n_assembly_rings=None, n_core_rings=None):
+                  n_assembly_rings=None, n_core_rings=None,
+                  tax_credit_units=None):
     overrides = {
         'Interest Rate': interest_rate,
         'Discount Rate': discount_rate,
@@ -423,6 +424,8 @@ def _run_estimate(reactor_type, power_mwt, enrichment, interest_rate, discount_r
         overrides['Tax Rate'] = 0.21
     elif tax_credit_type == 'ITC':
         overrides['ITC credit level'] = tax_credit_value
+    if tax_credit_type in ('PTC', 'ITC') and tax_credit_units is not None:
+        overrides['Number of Units Claiming ITC/PTC'] = int(tax_credit_units)
 
     p = build_params(reactor_type, power_mwt, enrichment, overrides,
                      n_rings_per_assembly=n_rings_per_assembly,
@@ -447,7 +450,8 @@ def _lcoe_at_noak_unit(reactor_type, power_mwt, enrichment, interest_rate, disco
                        tax_credit_type, tax_credit_value, plant_lifetime,
                        n_rings_per_assembly=None, active_height=None,
                        n_assembly_rings=None, n_core_rings=None,
-                       noak_unit_number=10):
+                       noak_unit_number=10,
+                       tax_credit_units=None):
     """Returns (mean, std, per_account_df) for one NOAK Unit Number.
 
     The per_account_df includes Account, Account Title, FOAK and NOAK
@@ -477,6 +481,8 @@ def _lcoe_at_noak_unit(reactor_type, power_mwt, enrichment, interest_rate, disco
         lcoe_account = 'LCOE (ITC-adjusted)'
     else:
         lcoe_account = 'LCOE'
+    if tax_credit_type in ('PTC', 'ITC') and tax_credit_units is not None:
+        overrides['Number of Units Claiming ITC/PTC'] = int(tax_credit_units)
     p = build_params(reactor_type, power_mwt, enrichment, overrides,
                      n_rings_per_assembly=n_rings_per_assembly,
                      active_height=active_height,
@@ -1541,6 +1547,30 @@ with streamlit_analytics.track():
                 ),
             )
 
+        # IRA sunset cutoff — only relevant when a credit is selected.
+        # FOAK = unit 1, NOAK column = unit 'NOAK Unit Number'. A unit
+        # qualifies only if its position in the deployment sequence is
+        # <= this cutoff. Past the cutoff, ITC/PTC-adjusted outputs
+        # fall back to the un-subsidized values.
+        tax_credit_units = None
+        if tax_credit_type in ('PTC', 'ITC'):
+            tax_credit_units = st.number_input(
+                f'Number of Units Claiming {tax_credit_type}',
+                min_value=1,
+                max_value=50,
+                value=10,
+                step=1,
+                help=(
+                    f"Number of units in the order book that may claim the selected "
+                    f"{tax_credit_type} before the IRA sunset year is reached. A unit is "
+                    f"eligible only if its position in the deployment sequence is "
+                    f"≤ this cutoff.\n\n"
+                    f"When a unit is past the cutoff, the {tax_credit_type}-adjusted metrics "
+                    f"fall back to the un-subsidized values, producing a step in "
+                    f"the LCOE-vs-deployment-scale curve at the sunset point."
+                ),
+            )
+
         st.divider()
         run_button = st.button('⚡ Run Cost Estimate', type='primary', use_container_width=True)
         if run_button:
@@ -1568,6 +1598,7 @@ with streamlit_analytics.track():
                 'plant_lifetime': plant_lifetime,
                 'tax_credit_type': tax_credit_type,
                 'tax_credit_value': tax_credit_value,
+                'tax_credit_units': tax_credit_units,
             }
 
         st.divider()
@@ -1741,6 +1772,7 @@ with streamlit_analytics.track():
         'plant_lifetime': plant_lifetime,
         'tax_credit_type': tax_credit_type,
         'tax_credit_value': tax_credit_value,
+        'tax_credit_units': tax_credit_units,
     }
     if _current_inputs != _committed:
         st.markdown(
@@ -1775,6 +1807,7 @@ with streamlit_analytics.track():
     plant_lifetime = _committed['plant_lifetime']
     tax_credit_type = _committed['tax_credit_type']
     tax_credit_value = _committed['tax_credit_value']
+    tax_credit_units = _committed.get('tax_credit_units')
 
     # ── Show single progress banner covering BOTH the basic estimate
     # and the NOAK deployment-scale sweep that follows. ─────────────────────
@@ -1802,6 +1835,7 @@ with streamlit_analytics.track():
             active_height=active_height,
             n_assembly_rings=n_assembly_rings,
             n_core_rings=n_core_rings,
+            tax_credit_units=tax_credit_units,
         )
     except SubcriticalError as exc:
         _precompute_slot.empty()
@@ -1928,6 +1962,7 @@ with streamlit_analytics.track():
                 n_assembly_rings=n_assembly_rings,
                 n_core_rings=n_core_rings,
                 noak_unit_number=_N,
+                tax_credit_units=tax_credit_units,
             )
             _mid_results[_N] = (_m_i, _s_i)
         except Exception as _e:
@@ -1935,12 +1970,20 @@ with streamlit_analytics.track():
     _precompute_slot.empty()
 
     # ── Result hero banner (rendered AFTER all computation finishes) ────────
+    _badge_style = ('background:#eff6ff;border:1px solid #bfdbfe;color:#1B4F8C;'
+                    'border-radius:999px;font-size:0.85rem;font-weight:600;'
+                    'padding:0.2rem 0.7rem;letter-spacing:0.06em;margin-left:0.6rem;')
     if tax_credit_type == 'PTC':
-        _credit_badge = f'<span style="background:#eff6ff;border:1px solid #bfdbfe;color:#1B4F8C;border-radius:999px;font-size:0.85rem;font-weight:600;padding:0.2rem 0.7rem;letter-spacing:0.06em;margin-left:0.6rem;">PTC ${tax_credit_value}/MWh</span>'
+        _units_text = f' (for the first {int(tax_credit_units)} units)' if tax_credit_units is not None else ''
+        _credit_badge = f'<span style="{_badge_style}">PTC ${tax_credit_value}/MWh{_units_text}</span>'
     elif tax_credit_type == 'ITC':
-        _credit_badge = f'<span style="background:#eff6ff;border:1px solid #bfdbfe;color:#1B4F8C;border-radius:999px;font-size:0.85rem;font-weight:600;padding:0.2rem 0.7rem;letter-spacing:0.06em;margin-left:0.6rem;">ITC {int(tax_credit_value*100)}%</span>'
+        _units_text = f' (for the first {int(tax_credit_units)} units)' if tax_credit_units is not None else ''
+        _credit_badge = f'<span style="{_badge_style}">ITC {int(tax_credit_value*100)}%{_units_text}</span>'
     else:
-        _credit_badge = '<span style="background:#f1f3f5;border:1px solid #cbd5e1;color:#64748b;border-radius:999px;font-size:0.85rem;font-weight:600;padding:0.2rem 0.7rem;letter-spacing:0.06em;margin-left:0.6rem;">No Tax Credit</span>'
+        _credit_badge = ('<span style="background:#f1f3f5;border:1px solid #cbd5e1;'
+                         'color:#64748b;border-radius:999px;font-size:0.85rem;'
+                         'font-weight:600;padding:0.2rem 0.7rem;letter-spacing:0.06em;'
+                         'margin-left:0.6rem;">No Tax Credit</span>')
 
     st.markdown(
         f'''<div style="background:#f1f3f5;border:1px solid #94a3b8;
