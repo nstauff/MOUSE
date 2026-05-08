@@ -1353,9 +1353,9 @@ with streamlit_analytics.track():
 
         elif reactor_type == 'HPMR':
             # HPMR's parametric study has N_A locked at 6, so the
-            # active diameter slider varies only N_C. H is then
-            # selected independently with H/D in [0.5, 3.0] (the
-            # parametric study covers H/D up to ~2.8).
+            # active diameter slider varies only N_C. H is selected
+            # independently with H/D in [ASPECT_RATIO_MIN, ASPECT_RATIO_MAX],
+            # matching LTMR / GCMR.
             _default_label = next(
                 lbl for lbl in HPMR_DIAMETER_LABELS
                 if HPMR_DIAMETER_LABEL_TO_NC[lbl] == 5
@@ -1374,12 +1374,10 @@ with streamlit_analytics.track():
             n_core_rings = HPMR_DIAMETER_LABEL_TO_NC[_diameter_label]
 
             _ar_hpmr = _hpmr_active_radius(n_core_rings)
-            _ad_hpmr = 2.0 * _ar_hpmr
-            _hpmr_aspect_min = 0.5
-            _hpmr_aspect_max = 3.0
-            _h_min = max(50, int(round(_hpmr_aspect_min * _ad_hpmr)))
-            _h_max = int(round(_hpmr_aspect_max * _ad_hpmr))
-            _h_default = int(round(2.0 * _ar_hpmr)) # natural H/D = 2 (H=2R)
+            _ad_hpmr = 2.0 * _ar_hpmr # active diameter
+            _h_min = max(1, int(round(ASPECT_RATIO_MIN * _ad_hpmr)))
+            _h_max = int(round(ASPECT_RATIO_MAX * _ad_hpmr))
+            _h_default = int(round(_ad_hpmr)) # H/D = 1.0
 
             active_height = st.slider(
                 'Active Height (cm)',
@@ -1389,9 +1387,9 @@ with streamlit_analytics.track():
                 step=1,
                 key=f'hpmr_active_height_{n_core_rings}',
                 help=(f'Active fuel height in cm. Bounds correspond to aspect '
-                      f'ratio (H / D) between {_hpmr_aspect_min:.1f} and '
-                      f'{_hpmr_aspect_max:.1f}. For this geometry the active '
-                      f'core diameter is {_ad_hpmr:.0f} cm.'),
+                      f'ratio (H / D, where D is the active core diameter) '
+                      f'between {ASPECT_RATIO_MIN} and {ASPECT_RATIO_MAX}. For '
+                      f'this geometry the active core diameter is {_ad_hpmr:.0f} cm.'),
             )
 
         st.divider()
