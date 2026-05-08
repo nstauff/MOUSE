@@ -546,14 +546,14 @@ def _lcoe_at_noak_unit(reactor_type, power_mwt, enrichment, interest_rate, disco
                        n_rings_per_assembly=None, active_height=None,
                        n_assembly_rings=None, n_core_rings=None,
                        noak_unit_number=10):
-    import time
-    _t_total = time.perf_counter()
     """Returns (mean, std, per_account_df) for one NOAK Unit Number.
 
     The per_account_df includes Account, Account Title, FOAK and NOAK
     columns for all rows useful for diagnosing which account drives
     a wild LCOE value.
     """
+    import time
+    _t_total = time.perf_counter()
     overrides = {
         'Interest Rate': interest_rate,
         'Discount Rate': discount_rate,
