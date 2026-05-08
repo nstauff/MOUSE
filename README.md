@@ -1,3 +1,11 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="./assets/logos/MOUSE-logo_R1_white.png">
+    <source media="(prefers-color-scheme: light)" srcset="./assets/logos/MOUSE-logo_R1_black.png">
+    <img alt="MOUSE logo" src="./assets/logos/MOUSE-logo_R1_black.png" width="500">
+  </picture>
+</p>
+
 # Microreactor Optimization Using Simulation and Economics (MOUSE) 
 ## Motivation
 The rising interest in nuclear microreactors has highlighted the need for comprehensive technoeconomic assessments. However, the scarcity of publicly available designs and cost data has posed significant challenges. The Microreactor Optimization Using Simulation and Economics (MOUSE) tool addresses this gap by integrating nuclear microreactor design with reactor economics.
