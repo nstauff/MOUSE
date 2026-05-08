@@ -176,9 +176,37 @@ def estimate_hpmr_fuel_lifetime(n_rings_per_assembly, n_rings_per_core,
                        float(n_rings_per_core),
                        float(active_height),
                        float(power_mwt)], dtype=float)
+    train_full = df[['E', 'NA', 'NC', 'H', 'P']].values.astype(float)
+
+    # Power-independent subcritical pre-check. k_eff depends on
+    # geometry/E only — not on operating power — so subcriticality must
+    # not depend on P. Including P in the neighbour metric caused two
+    # queries identical in (NA, NC, H, E) but different in P to disagree
+    # on the verdict (P=1 → 0 days, P=60 → small positive days). Drop P
+    # (column index 4) from the distance metric for this check.
+    P_IDX = 4
+    crit_idx = [i for i in feat_idx_active if i != P_IDX]
+    if crit_idx:
+        crit_range = feat_range[crit_idx]
+        q_norm_crit = (q_full[crit_idx] - _feat_min[crit_idx]) / crit_range
+        train_norm_crit = ((train_full[:, crit_idx]
+                            - _feat_min[crit_idx]) / crit_range)
+        dists_crit = np.sqrt(((train_norm_crit - q_norm_crit) ** 2).sum(axis=1))
+        k_idx_crit = np.argsort(dists_crit)[:_K]
+        nb_crit = df.iloc[k_idx_crit]
+        nb_dists_crit = dists_crit[k_idx_crit]
+        sub_mask_crit = (nb_crit['LT'].values <= 0)
+        weights_crit = 1.0 / (nb_dists_crit + 1e-9)
+        weights_crit = weights_crit / weights_crit.sum()
+        # (a) Nearest-neighbour rule on geometry/E.
+        if sub_mask_crit[0] and nb_dists_crit[0] < 0.1:
+            return 0
+        # (b) Majority-weight rule on geometry/E.
+        if sub_mask_crit.any() and float(weights_crit[sub_mask_crit].sum()) >= 0.5:
+            return 0
+
     q_norm = (q_full[feat_idx_active]
               - _feat_min[feat_idx_active]) / feat_range_active
-    train_full = df[['E', 'NA', 'NC', 'H', 'P']].values.astype(float)
     train_norm = ((train_full[:, feat_idx_active]
                    - _feat_min[feat_idx_active]) / feat_range_active)
     dists = np.sqrt(((train_norm - q_norm) ** 2).sum(axis=1))

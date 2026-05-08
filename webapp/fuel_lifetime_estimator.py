@@ -119,12 +119,38 @@ def estimate_ltmr_fuel_lifetime(n_rings_per_assembly, active_height,
 
     # Normalise features to [0, 1] using training-data range
     feat_range = np.where(_feat_max != _feat_min, _feat_max - _feat_min, 1.0)
-    q_norm = (np.array([enrichment, n_rings_per_assembly,
-                        active_height, power_mwt], dtype=float)
-              - _feat_min) / feat_range
+    q_full = np.array([enrichment, n_rings_per_assembly,
+                       active_height, power_mwt], dtype=float)
+    train_full = df[['E', 'N', 'H', 'P']].values.astype(float)
 
-    train_norm = (df[['E', 'N', 'H', 'P']].values.astype(float)
-                  - _feat_min) / feat_range
+    # Power-independent subcritical pre-check. k_eff doesn't depend on
+    # operating power, so dropping P (column index 3) from the distance
+    # metric makes subcriticality consistent across P. Otherwise queries
+    # identical in (N, H, E) but different in P could disagree on the
+    # verdict.
+    P_IDX = 3
+    crit_idx = [i for i in range(len(_feat_min)) if i != P_IDX]
+    crit_range = feat_range[crit_idx]
+    q_norm_crit = (q_full[crit_idx] - _feat_min[crit_idx]) / crit_range
+    train_norm_crit = ((train_full[:, crit_idx]
+                        - _feat_min[crit_idx]) / crit_range)
+    dists_crit = np.sqrt(((train_norm_crit - q_norm_crit) ** 2).sum(axis=1))
+    k_idx_crit = np.argsort(dists_crit)[:_K]
+    nb_crit = df.iloc[k_idx_crit]
+    nb_dists_crit = dists_crit[k_idx_crit]
+    if len(nb_crit) > 0:
+        sub_mask_crit = (nb_crit['LT'].values <= 0)
+        weights_crit = 1.0 / (nb_dists_crit + 1e-9)
+        weights_crit = weights_crit / weights_crit.sum()
+        # (a) Nearest-neighbour rule on geometry/E.
+        if sub_mask_crit[0] and nb_dists_crit[0] < 0.1:
+            return 0
+        # (b) Majority-weight rule on geometry/E.
+        if sub_mask_crit.any() and float(weights_crit[sub_mask_crit].sum()) >= 0.5:
+            return 0
+
+    q_norm = (q_full - _feat_min) / feat_range
+    train_norm = (train_full - _feat_min) / feat_range
 
     # Find K nearest neighbours by Euclidean distance
     dists = np.sqrt(((train_norm - q_norm) ** 2).sum(axis=1))
