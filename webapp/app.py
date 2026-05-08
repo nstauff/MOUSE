@@ -1600,6 +1600,30 @@ with streamlit_analytics.track():
         run_button = st.button('⚡ Run Cost Estimate', type='primary', use_container_width=True)
         if run_button:
             st.session_state.has_run = True
+            # Snapshot every input the downstream compute / render reads.
+            # Sidebar widgets keep updating as the user tinkers, but results
+            # are frozen to whatever was committed on the last click — so
+            # tweaking a slider no longer auto-triggers a recompute.
+            st.session_state.committed_inputs = {
+                'reactor_type': reactor_type,
+                'enrichment': enrichment,
+                'power_mwt': power_mwt,
+                'n_rings_per_assembly': n_rings_per_assembly,
+                'active_height': active_height,
+                'n_assembly_rings': n_assembly_rings,
+                'n_core_rings': n_core_rings,
+                'operation_mode': operation_mode,
+                'emergency_shutdowns': emergency_shutdowns,
+                'startup_duration': startup_duration,
+                'startup_duration_refueling': startup_duration_refueling,
+                'debt_to_equity': debt_to_equity,
+                'interest_rate': interest_rate,
+                'discount_rate': discount_rate,
+                'construction_duration': construction_duration,
+                'plant_lifetime': plant_lifetime,
+                'tax_credit_type': tax_credit_type,
+                'tax_credit_value': tax_credit_value,
+            }
 
         st.divider()
         st.markdown('**💬 Feedback**')
@@ -1747,6 +1771,29 @@ with streamlit_analytics.track():
     # from the previous rerun so only the computing banner is visible
     # during the long computation.
     welcome_slot.empty()
+
+    # Restore inputs committed on the last Run click. The sidebar widgets
+    # may have changed since (the user tinkering), but results stay frozen
+    # to the last commit until the user clicks Run again.
+    _committed = st.session_state.committed_inputs
+    reactor_type = _committed['reactor_type']
+    enrichment = _committed['enrichment']
+    power_mwt = _committed['power_mwt']
+    n_rings_per_assembly = _committed['n_rings_per_assembly']
+    active_height = _committed['active_height']
+    n_assembly_rings = _committed['n_assembly_rings']
+    n_core_rings = _committed['n_core_rings']
+    operation_mode = _committed['operation_mode']
+    emergency_shutdowns = _committed['emergency_shutdowns']
+    startup_duration = _committed['startup_duration']
+    startup_duration_refueling = _committed['startup_duration_refueling']
+    debt_to_equity = _committed['debt_to_equity']
+    interest_rate = _committed['interest_rate']
+    discount_rate = _committed['discount_rate']
+    construction_duration = _committed['construction_duration']
+    plant_lifetime = _committed['plant_lifetime']
+    tax_credit_type = _committed['tax_credit_type']
+    tax_credit_value = _committed['tax_credit_value']
 
     # ── Show single progress banner covering BOTH the basic estimate
     # and the NOAK deployment-scale sweep that follows. ─────────────────────
