@@ -1772,10 +1772,46 @@ with streamlit_analytics.track():
     # during the long computation.
     welcome_slot.empty()
 
-    # Restore inputs committed on the last Run click. The sidebar widgets
-    # may have changed since (the user tinkering), but results stay frozen
-    # to the last commit until the user clicks Run again.
+    # Compare live sidebar widgets against the last committed snapshot.
+    # If anything has changed since the last Run click, blank the results
+    # area and prompt the user to click Run again. This is what makes the
+    # results disappear the moment a slider moves.
     _committed = st.session_state.committed_inputs
+    _current_inputs = {
+        'reactor_type': reactor_type,
+        'enrichment': enrichment,
+        'power_mwt': power_mwt,
+        'n_rings_per_assembly': n_rings_per_assembly,
+        'active_height': active_height,
+        'n_assembly_rings': n_assembly_rings,
+        'n_core_rings': n_core_rings,
+        'operation_mode': operation_mode,
+        'emergency_shutdowns': emergency_shutdowns,
+        'startup_duration': startup_duration,
+        'startup_duration_refueling': startup_duration_refueling,
+        'debt_to_equity': debt_to_equity,
+        'interest_rate': interest_rate,
+        'discount_rate': discount_rate,
+        'construction_duration': construction_duration,
+        'plant_lifetime': plant_lifetime,
+        'tax_credit_type': tax_credit_type,
+        'tax_credit_value': tax_credit_value,
+    }
+    if _current_inputs != _committed:
+        st.markdown(
+            '<div style="background:#eff6ff;border:1px solid #cbd5e1;'
+            'border-left:4px solid #1B4F8C;border-radius:8px;'
+            'padding:1rem 1.4rem;margin-top:1rem;margin-bottom:1rem;'
+            'font-size:1.15rem;font-weight:600;color:#1B4F8C;">'
+            '👈 Inputs changed. Click <strong>⚡ Run Cost Estimate</strong> '
+            'in the sidebar to update results.'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+        st.stop()
+
+    # Inputs match the snapshot — restore from committed to be explicit
+    # about which values drive the compute / render below.
     reactor_type = _committed['reactor_type']
     enrichment = _committed['enrichment']
     power_mwt = _committed['power_mwt']
