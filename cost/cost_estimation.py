@@ -19,29 +19,37 @@ from cost.cost_drivers import cost_drivers_estimate
 
 def calculate_high_level_accounts_cost(df, target_level, option, FOAK_or_NOAK):
     cost_column = get_estimated_cost_column(df, FOAK_or_NOAK)
-    # print(f"Updating costs of the level {target_level} accounts for the {cost_column}")
 
     if option == "base":
         valid_prefixes = ('1', '2')
     elif option == "other":
         valid_prefixes = ('3', '4', '5')
-    elif option == "finance": 
-        valid_prefixes = ('6')  
-    elif option == "annual": 
-        valid_prefixes = ('7', '8')      
+    elif option == "finance":
+        valid_prefixes = ('6')
+    elif option == "annual":
+        valid_prefixes = ('7', '8')
     else:
         raise ValueError("Invalid option. Choose 'base' or 'other' or 'finance' or 'annual'.")
 
-    for index, row in df.iterrows():
-        if str(row["Account"]).startswith(valid_prefixes):
-            if row["Level"] == target_level and pd.isna(row[cost_column]):
-                children_accounts = row["Children Accounts"]
-                if not pd.isna(children_accounts):
-                    children_accounts_list = children_accounts.split(",")
-                    total_sum = 0
-                    for row_idx in children_accounts_list:
-                        total_sum += df.loc[int(row_idx), cost_column]
-                    df.at[index, cost_column] = total_sum
+    # Replace per-row iterrows with a vectorized eligibility mask. Only
+    # the rows that actually need updating (typically a handful) enter
+    # the Python loop — and even there the children sum uses pandas
+    # vectorized .sum() instead of a per-child Python add.
+    accounts_str = df['Account'].astype(str)
+    mask = (
+        accounts_str.str.startswith(valid_prefixes)
+        & (df['Level'] == target_level)
+        & df[cost_column].isna()
+        & df['Children Accounts'].notna()
+    )
+
+    if not mask.any():
+        return df
+
+    children_col = df['Children Accounts']
+    for index in df.index[mask]:
+        children_idxs = [int(x) for x in children_col.at[index].split(',')]
+        df.at[index, cost_column] = df.loc[children_idxs, cost_column].sum()
 
     return df
 
@@ -71,14 +79,25 @@ def update_high_level_costs(scaled_cost, option, sample):
         df_updated = calculate_high_level_accounts_cost(df_with_children_accounts, level, option, 'F')
         df_updated_2 = calculate_high_level_accounts_cost(df_updated, level, option, 'N')
 
-        for index, row in df_updated_2.iterrows():
-            if str(row["Account"]).startswith(valid_prefixes):
-                if row['Level'] == level and pd.isna(row[foak_col]) and pd.isna(row['Children Accounts']):
-                    df_updated_2.at[index, foak_col] = 0
-                    no_subaccounts_list.append(row['Account'])
-                if row['Level'] == level and pd.isna(row[noak_col]) and pd.isna(row['Children Accounts']):
-                    df_updated_2.at[index, noak_col] = 0
-                    no_subaccounts_list.append(row['Account'])
+        # Vectorized replacement for the per-row iterrows loop. Build masks
+        # for FOAK and NOAK separately, then use bulk df.loc[mask, col] = 0
+        # writes. Both masks read the same pre-mutation state so order is
+        # irrelevant.
+        accounts_str = df_updated_2['Account'].astype(str)
+        common_mask = (
+            accounts_str.str.startswith(valid_prefixes)
+            & (df_updated_2['Level'] == level)
+            & df_updated_2['Children Accounts'].isna()
+        )
+        foak_mask = common_mask & df_updated_2[foak_col].isna()
+        noak_mask = common_mask & df_updated_2[noak_col].isna()
+
+        if foak_mask.any():
+            df_updated_2.loc[foak_mask, foak_col] = 0
+            no_subaccounts_list.extend(df_updated_2.loc[foak_mask, 'Account'].tolist())
+        if noak_mask.any():
+            df_updated_2.loc[noak_mask, noak_col] = 0
+            no_subaccounts_list.extend(df_updated_2.loc[noak_mask, 'Account'].tolist())
     
     if sample == 0:
         if no_subaccounts_list:
