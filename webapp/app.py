@@ -109,6 +109,7 @@ _materials_db_mod.collect_materials_data = _cached_collect_materials_data
 # ---------------------------------------------------------------------------
 # Standard imports (after stubs are in place)
 # ---------------------------------------------------------------------------
+import base64
 import html
 import io
 import math
@@ -1204,6 +1205,13 @@ st.set_page_config(
     layout='wide',
 )
 
+
+@st.cache_data(show_spinner=False)
+def _load_logo_b64(path):
+    """Read a PNG and return its base64-encoded string for inline embedding."""
+    with open(path, 'rb') as f:
+        return base64.b64encode(f.read()).decode('ascii')
+
 cookies = _get_cookie_manager()
 if not cookies.ready():
     st.stop()
@@ -1220,12 +1228,16 @@ with streamlit_analytics.track():
 
     # ── Sidebar inputs ──────────────────────────────────────────────────────
     with st.sidebar:
+        # MOUSE logo in the sidebar header. Uses the black PNG since
+        # Streamlit's sidebar background is light grey by default.
         st.markdown(
-            '<div style="text-align:center;padding:0.5rem 0 1rem 0;">'
-            '<div style="color:#0a2540;font-weight:700;font-size:1.15rem;letter-spacing:0.05em;">MOUSE</div>'
-            '<div style="color:#64748b;font-size:0.85rem;letter-spacing:0.06em;text-transform:uppercase;line-height:1.4;">'
-            'Microreactor Optimization<br>Using Simulation &amp; Economics</div>'
-            '</div>',
+            f'<div style="text-align:center;padding:0.5rem 0 1rem 0;">'
+            f'<img src="data:image/png;base64,{_load_logo_b64("assets/logos/MOUSE-logo_R1_black.png")}" '
+            f'alt="MOUSE" style="max-width:100%;height:auto;">'
+            f'<div style="color:#64748b;font-size:0.85rem;letter-spacing:0.06em;'
+            f'text-transform:uppercase;line-height:1.4;margin-top:0.6rem;">'
+            f'Microreactor Optimization<br>Using Simulation &amp; Economics</div>'
+            f'</div>',
             unsafe_allow_html=True,
         )
 
@@ -1642,9 +1654,9 @@ with streamlit_analytics.track():
                    <strong style="color:#0a2540;">Contributions via pull requests are welcome:</strong>
                    new reactor designs, improved cost data, or feature enhancements.
                  </p>
-                 <h1 style="font-size:2.25rem;font-weight:700;margin:0 0 0.25rem;color:#0a2540;line-height:1.15;">
-                   MOUSE
-                 </h1>
+                 <img src="data:image/png;base64,{_load_logo_b64("assets/logos/MOUSE-logo_R1_black.png")}"
+                      alt="MOUSE"
+                      style="height:64px;width:auto;display:block;margin:0 0 0.4rem;">
                  <div style="font-size:1rem;font-weight:600;color:#64748b;margin-bottom:0.7rem;">
                    Microreactor Optimization Using Simulation and Economics
                  </div>
