@@ -77,6 +77,36 @@ for _mod in ['openmc', 'openmc.deplete', 'openmc.mgxs']:
 sys.modules['watts'] = MagicMock()
 
 # ---------------------------------------------------------------------------
+# Cache the OpenMC materials database build. collect_materials_data is
+# called dozens of times per Run (drums.py alone calls it 7 times per
+# cost-engine run, and we have ~8 cost-engine runs). It only reads 6
+# params keys — caching on those keys turns every repeat call into a
+# dict lookup. Patch must run BEFORE reactor_config / core_design
+# templates are imported, so their `from ... import collect_materials_data`
+# binds to the cached version.
+# ---------------------------------------------------------------------------
+import core_design.openmc_materials_database as _materials_db_mod
+
+_orig_collect_materials_data = _materials_db_mod.collect_materials_data
+
+_MATERIALS_PARAM_KEYS = (
+    'Enrichment', 'H_Zr_ratio', 'er_wo', 'U_met_wo',
+    'Common Temperature', 'UO2 atom fraction',
+)
+_materials_cache = {}
+
+def _cached_collect_materials_data(params):
+    key = tuple((k, params.get(k)) for k in _MATERIALS_PARAM_KEYS)
+    cached = _materials_cache.get(key)
+    if cached is not None:
+        return cached
+    result = _orig_collect_materials_data(params)
+    _materials_cache[key] = result
+    return result
+
+_materials_db_mod.collect_materials_data = _cached_collect_materials_data
+
+# ---------------------------------------------------------------------------
 # Standard imports (after stubs are in place)
 # ---------------------------------------------------------------------------
 import html
