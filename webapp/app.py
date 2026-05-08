@@ -1788,7 +1788,7 @@ with streamlit_analytics.track():
         '<div style="font-size:1.15rem;font-weight:700;margin-bottom:0.4rem;'
         'letter-spacing:0.02em;">⏳ Computing all results...</div>'
         '<div style="font-size:1rem;font-weight:500;line-height:1.5;">'
-        'Roughly <strong>15-25 seconds</strong>. All results will appear at once when finished.'
+        'Roughly <strong>10-15 seconds</strong>. All results will appear at once when finished.'
         '</div></div>',
         unsafe_allow_html=True,
     )
