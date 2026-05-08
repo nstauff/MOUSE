@@ -405,6 +405,8 @@ def _run_estimate(reactor_type, power_mwt, enrichment, interest_rate, discount_r
                   tax_credit_type, tax_credit_value, plant_lifetime,
                   n_rings_per_assembly=None, active_height=None,
                   n_assembly_rings=None, n_core_rings=None):
+    import time
+    _t_total = time.perf_counter()
     overrides = {
         'Interest Rate': interest_rate,
         'Discount Rate': discount_rate,
@@ -424,13 +426,20 @@ def _run_estimate(reactor_type, power_mwt, enrichment, interest_rate, discount_r
     elif tax_credit_type == 'ITC':
         overrides['ITC credit level'] = tax_credit_value
 
+    _t = time.perf_counter()
     p = build_params(reactor_type, power_mwt, enrichment, overrides,
                      n_rings_per_assembly=n_rings_per_assembly,
                      active_height=active_height,
                      n_assembly_rings=n_assembly_rings,
                      n_core_rings=n_core_rings)
+    print(f"[timing] _run_estimate build_params: {time.perf_counter() - _t:.2f}s")
+    _t = time.perf_counter()
     raw_df = bottom_up_cost_estimate('cost/Cost_Database.xlsx', p)
+    print(f"[timing] _run_estimate bottom_up_cost_estimate: {time.perf_counter() - _t:.2f}s")
+    _t = time.perf_counter()
     enriched_df, detailed_sorted_df = cost_drivers_estimate(raw_df, p)
+    print(f"[timing] _run_estimate cost_drivers_estimate: {time.perf_counter() - _t:.2f}s")
+    print(f"[timing] _run_estimate TOTAL: {time.perf_counter() - _t_total:.2f}s")
     return transform_dataframe(enriched_df), enriched_df, detailed_sorted_df, p
 
 
@@ -446,6 +455,8 @@ def _run_lcoe_sweep(reactor_type, power_mwt, enrichment, interest_rate, discount
                     n_rings_per_assembly=None, active_height=None,
                     n_assembly_rings=None, n_core_rings=None,
                     units_tuple=(1, 5, 20, 50, 100)):
+    import time
+    _t_total = time.perf_counter()
     base_overrides = {
         'Interest Rate': interest_rate,
         'Discount Rate': discount_rate,
@@ -471,6 +482,7 @@ def _run_lcoe_sweep(reactor_type, power_mwt, enrichment, interest_rate, discount
 
     means, stds = [], []
     for N in units_tuple:
+        _t_iter = time.perf_counter()
         overrides = dict(base_overrides)
         overrides['NOAK Unit Number'] = int(N)
         p = build_params(reactor_type, power_mwt, enrichment, overrides,
@@ -479,6 +491,7 @@ def _run_lcoe_sweep(reactor_type, power_mwt, enrichment, interest_rate, discount
                          n_assembly_rings=n_assembly_rings,
                          n_core_rings=n_core_rings)
         raw_df = bottom_up_cost_estimate('cost/Cost_Database.xlsx', p)
+        print(f"[timing] _run_lcoe_sweep N={N}: {time.perf_counter() - _t_iter:.2f}s")
         # Read the 'LCOE' summary row directly from the raw cost-engine
         # output. The LCOE row is written by energy_cost_levelized inside
         # bottom_up_cost_estimate, so cost_drivers_estimate is not needed
@@ -515,6 +528,7 @@ def _run_lcoe_sweep(reactor_type, power_mwt, enrichment, interest_rate, discount
             s = 0.0
         means.append(m)
         stds.append(s)
+    print(f"[timing] _run_lcoe_sweep TOTAL: {time.perf_counter() - _t_total:.2f}s")
     return list(units_tuple), means, stds
 
 
@@ -532,6 +546,8 @@ def _lcoe_at_noak_unit(reactor_type, power_mwt, enrichment, interest_rate, disco
                        n_rings_per_assembly=None, active_height=None,
                        n_assembly_rings=None, n_core_rings=None,
                        noak_unit_number=10):
+    import time
+    _t_total = time.perf_counter()
     """Returns (mean, std, per_account_df) for one NOAK Unit Number.
 
     The per_account_df includes Account, Account Title, FOAK and NOAK
@@ -599,6 +615,7 @@ def _lcoe_at_noak_unit(reactor_type, power_mwt, enrichment, interest_rate, disco
         'Annual Electricity Production': p.get('Annual Electricity Production'),
     }
 
+    print(f"[timing] _lcoe_at_noak_unit N={noak_unit_number}: {time.perf_counter() - _t_total:.2f}s")
     return (float(m) if m == m else float('nan'),
             float(s) if s == s else 0.0,
             diag_df,
