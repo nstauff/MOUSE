@@ -320,92 +320,37 @@ def bottom_up_cost_estimate(cost_database_filename, params):
     # Validate tax credit params early — before any simulation or cost calculation runs.
     # This catches cases where a user accidentally defines both ITC and PTC,
     # which are mutually exclusive under the IRA.
-    import time
-    _t_total = time.perf_counter()
     validate_tax_credit_params(params)
 
-    _t = time.perf_counter()
     escalated_cost = escalate_cost_database(cost_database_filename, params['Escalation Year'], params)
-    print(f"[timing][bottom_up] escalate_cost_database: {time.perf_counter() - _t:.2f}s")
-    _t = time.perf_counter()
     escalated_cost_cleaned = remove_irrelevant_account(escalated_cost, params)
-    print(f"[timing][bottom_up] remove_irrelevant_account: {time.perf_counter() - _t:.2f}s")
-    _t = time.perf_counter()
     reactor_operation(params)
-    print(f"[timing][bottom_up] reactor_operation: {time.perf_counter() - _t:.2f}s")
 
-    _t_scale = 0.0
-    _t_scale_red = 0.0
-    _t_foak2noak = 0.0
-    _t_uhlc = 0.0
-    _t_acc31 = 0.0
-    _t_decom = 0.0
-    _t_capital = 0.0
-    _t_tci = 0.0
-    _t_energy = 0.0
-
-    _t_loop = time.perf_counter()
     COA_list = []
     for i in range(params['Number of Samples']):
         if (i + 1) % 100 == 0:
             print(f"\n\nSample # {i+1}")
 
-        _ts = time.perf_counter()
         scaled_cost = scale_cost(escalated_cost_cleaned, params)
-        _t_scale += time.perf_counter() - _ts
-        _ts = time.perf_counter()
         scaled_cost = scale_redundant_BOP_and_primary_loop(scaled_cost, params)
-        _t_scale_red += time.perf_counter() - _ts
-        _ts = time.perf_counter()
         NOAK_COA = FOAK_to_NOAK(scaled_cost, params)
-        _t_foak2noak += time.perf_counter() - _ts
 
-        _ts = time.perf_counter()
         updated_cost = update_high_level_costs(scaled_cost, 'base', i)
-        _t_uhlc += time.perf_counter() - _ts
-        _ts = time.perf_counter()
         updated_cost_with_indirect_cost = calculate_accounts_31_32_75_82_cost(updated_cost, params)
-        _t_acc31 += time.perf_counter() - _ts
-        _ts = time.perf_counter()
         cost_with_decommissioning = calculate_decommissioning_cost(updated_cost_with_indirect_cost, params)
-        _t_decom += time.perf_counter() - _ts
-        _ts = time.perf_counter()
         updated_accounts_10_40 = update_high_level_costs(cost_with_decommissioning, 'other', i)
-        _t_uhlc += time.perf_counter() - _ts
-        _ts = time.perf_counter()
         high_Level_capital_cost = calculate_high_level_capital_costs(updated_accounts_10_40, params)
-        _t_capital += time.perf_counter() - _ts
 
-        _ts = time.perf_counter()
         updated_accounts_10_60 = update_high_level_costs(high_Level_capital_cost, 'finance', i)
-        _t_uhlc += time.perf_counter() - _ts
-        _ts = time.perf_counter()
         TCI = calculate_TCI(updated_accounts_10_60, params)
-        _t_tci += time.perf_counter() - _ts
-        _ts = time.perf_counter()
         updated_accounts_70_80 = update_high_level_costs(TCI, 'annual', i)
-        _t_uhlc += time.perf_counter() - _ts
-        _ts = time.perf_counter()
         Final_COA = energy_cost_levelized(params, updated_accounts_70_80)
-        _t_energy += time.perf_counter() - _ts
         FOAK_column = get_estimated_cost_column(Final_COA, 'F')
         NOAK_column = get_estimated_cost_column(Final_COA, 'N')
         Final_COA = Final_COA[['Account', 'Account Title', FOAK_column, NOAK_column]]
 
         COA_list.append(Final_COA)
 
-    print(f"[timing][bottom_up] sample_loop_total: {time.perf_counter() - _t_loop:.2f}s  (N={params['Number of Samples']})")
-    print(f"[timing][bottom_up]   scale_cost: {_t_scale:.2f}s")
-    print(f"[timing][bottom_up]   scale_redundant_BOP: {_t_scale_red:.2f}s")
-    print(f"[timing][bottom_up]   FOAK_to_NOAK: {_t_foak2noak:.2f}s")
-    print(f"[timing][bottom_up]   update_high_level_costs (4x): {_t_uhlc:.2f}s")
-    print(f"[timing][bottom_up]   calculate_accounts_31_32_75_82: {_t_acc31:.2f}s")
-    print(f"[timing][bottom_up]   calculate_decommissioning: {_t_decom:.2f}s")
-    print(f"[timing][bottom_up]   calculate_high_level_capital: {_t_capital:.2f}s")
-    print(f"[timing][bottom_up]   calculate_TCI: {_t_tci:.2f}s")
-    print(f"[timing][bottom_up]   energy_cost_levelized: {_t_energy:.2f}s")
-
-    _t = time.perf_counter()
     concatenated_df = pd.concat(COA_list)
     numeric_columns = concatenated_df.select_dtypes(include='number').columns
     mean_df = concatenated_df[numeric_columns].groupby(concatenated_df.index).mean()
@@ -421,8 +366,6 @@ def bottom_up_cost_estimate(cost_database_filename, params):
     non_numeric_columns = concatenated_df.select_dtypes(exclude='number').groupby(concatenated_df.index).first()
     result_df = mean_df.join(non_numeric_columns)
     reordered_df = reorder_dataframe(result_df)
-    print(f"[timing][bottom_up] post_loop_aggregation: {time.perf_counter() - _t:.2f}s")
-    print(f"[timing][bottom_up] TOTAL: {time.perf_counter() - _t_total:.2f}s")
     return reordered_df
 
 

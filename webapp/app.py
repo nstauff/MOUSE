@@ -405,8 +405,6 @@ def _run_estimate(reactor_type, power_mwt, enrichment, interest_rate, discount_r
                   tax_credit_type, tax_credit_value, plant_lifetime,
                   n_rings_per_assembly=None, active_height=None,
                   n_assembly_rings=None, n_core_rings=None):
-    import time
-    _t_total = time.perf_counter()
     overrides = {
         'Interest Rate': interest_rate,
         'Discount Rate': discount_rate,
@@ -426,110 +424,14 @@ def _run_estimate(reactor_type, power_mwt, enrichment, interest_rate, discount_r
     elif tax_credit_type == 'ITC':
         overrides['ITC credit level'] = tax_credit_value
 
-    _t = time.perf_counter()
     p = build_params(reactor_type, power_mwt, enrichment, overrides,
                      n_rings_per_assembly=n_rings_per_assembly,
                      active_height=active_height,
                      n_assembly_rings=n_assembly_rings,
                      n_core_rings=n_core_rings)
-    print(f"[timing] _run_estimate build_params: {time.perf_counter() - _t:.2f}s")
-    _t = time.perf_counter()
     raw_df = bottom_up_cost_estimate('cost/Cost_Database.xlsx', p)
-    print(f"[timing] _run_estimate bottom_up_cost_estimate: {time.perf_counter() - _t:.2f}s")
-    _t = time.perf_counter()
     enriched_df, detailed_sorted_df = cost_drivers_estimate(raw_df, p)
-    print(f"[timing] _run_estimate cost_drivers_estimate: {time.perf_counter() - _t:.2f}s")
-    print(f"[timing] _run_estimate TOTAL: {time.perf_counter() - _t_total:.2f}s")
     return transform_dataframe(enriched_df), enriched_df, detailed_sorted_df, p
-
-
-# Sweep NOAK Unit Number across a list of deployment scales for the
-# "Costs in perspective" plot. Each call to bottom_up_cost_estimate uses
-# the same Number of Samples (10 set inside reactor_config.py) as the
-# headline LCOE card. Cached on every input that influences cost.
-@st.cache_data(show_spinner=False, max_entries=64)
-def _run_lcoe_sweep(reactor_type, power_mwt, enrichment, interest_rate, discount_rate,
-                    construction_duration, debt_to_equity, operation_mode,
-                    emergency_shutdowns, startup_duration, startup_duration_refueling,
-                    tax_credit_type, tax_credit_value, plant_lifetime,
-                    n_rings_per_assembly=None, active_height=None,
-                    n_assembly_rings=None, n_core_rings=None,
-                    units_tuple=(1, 5, 20, 50, 100)):
-    import time
-    _t_total = time.perf_counter()
-    base_overrides = {
-        'Interest Rate': interest_rate,
-        'Discount Rate': discount_rate,
-        'Construction Duration': construction_duration,
-        'Debt To Equity Ratio': debt_to_equity,
-        'Escalation Year': ESCALATION_YEAR,
-        'Operation Mode': operation_mode,
-        'Emergency Shutdowns Per Year': emergency_shutdowns,
-        'Startup Duration after Emergency Shutdown': startup_duration,
-        'Startup Duration after Refueling': startup_duration_refueling,
-        'Levelization Period': plant_lifetime,
-    }
-    if tax_credit_type == 'PTC':
-        base_overrides['PTC credit value'] = tax_credit_value
-        base_overrides['PTC credit period'] = 10
-        base_overrides['Tax Rate'] = 0.21
-        lcoe_account = 'LCOE with PTC'
-    elif tax_credit_type == 'ITC':
-        base_overrides['ITC credit level'] = tax_credit_value
-        lcoe_account = 'LCOE (ITC-adjusted)'
-    else:
-        lcoe_account = 'LCOE'
-
-    means, stds = [], []
-    for N in units_tuple:
-        _t_iter = time.perf_counter()
-        overrides = dict(base_overrides)
-        overrides['NOAK Unit Number'] = int(N)
-        p = build_params(reactor_type, power_mwt, enrichment, overrides,
-                         n_rings_per_assembly=n_rings_per_assembly,
-                         active_height=active_height,
-                         n_assembly_rings=n_assembly_rings,
-                         n_core_rings=n_core_rings)
-        raw_df = bottom_up_cost_estimate('cost/Cost_Database.xlsx', p)
-        print(f"[timing] _run_lcoe_sweep N={N}: {time.perf_counter() - _t_iter:.2f}s")
-        # Read the 'LCOE' summary row directly from the raw cost-engine
-        # output. The LCOE row is written by energy_cost_levelized inside
-        # bottom_up_cost_estimate, so cost_drivers_estimate is not needed
-        # here — skipping it removes one full dataframe-enrichment pass
-        # per sweep point.
-        try:
-            from cost.code_of_account_processing import get_estimated_cost_column as _gecc
-            _noak_col = _gecc(raw_df, 'N')
-            _noak_std_col = _gecc(raw_df, 'N std')
-        except Exception:
-            _noak_col = None
-            _noak_std_col = None
-        if (_noak_col is None
-                or 'Account' not in raw_df.columns
-                or _noak_col not in raw_df.columns):
-            means.append(float('nan'))
-            stds.append(float('nan'))
-            continue
-        _row = raw_df[raw_df['Account'] == lcoe_account]
-        if _row.empty:
-            means.append(float('nan'))
-            stds.append(float('nan'))
-            continue
-        try:
-            m = float(_row[_noak_col].iloc[0])
-        except (TypeError, ValueError):
-            m = float('nan')
-        if _noak_std_col and _noak_std_col in raw_df.columns:
-            try:
-                s = float(_row[_noak_std_col].iloc[0])
-            except (TypeError, ValueError):
-                s = 0.0
-        else:
-            s = 0.0
-        means.append(m)
-        stds.append(s)
-    print(f"[timing] _run_lcoe_sweep TOTAL: {time.perf_counter() - _t_total:.2f}s")
-    return list(units_tuple), means, stds
 
 
 # Single-point cost-engine call for the Costs-in-Perspective plot.
@@ -552,8 +454,6 @@ def _lcoe_at_noak_unit(reactor_type, power_mwt, enrichment, interest_rate, disco
     columns for all rows useful for diagnosing which account drives
     a wild LCOE value.
     """
-    import time
-    _t_total = time.perf_counter()
     overrides = {
         'Interest Rate': interest_rate,
         'Discount Rate': discount_rate,
@@ -615,7 +515,6 @@ def _lcoe_at_noak_unit(reactor_type, power_mwt, enrichment, interest_rate, disco
         'Annual Electricity Production': p.get('Annual Electricity Production'),
     }
 
-    print(f"[timing] _lcoe_at_noak_unit N={noak_unit_number}: {time.perf_counter() - _t_total:.2f}s")
     return (float(m) if m == m else float('nan'),
             float(s) if s == s else 0.0,
             diag_df,
