@@ -1598,6 +1598,8 @@ with streamlit_analytics.track():
 
         st.divider()
         run_button = st.button('⚡ Run Cost Estimate', type='primary', use_container_width=True)
+        if run_button:
+            st.session_state.has_run = True
 
         st.divider()
         st.markdown('**💬 Feedback**')
@@ -1619,7 +1621,7 @@ with streamlit_analytics.track():
     # computation, alongside the new "Computing all results" banner.
     welcome_slot = st.empty()
 
-    if not run_button:
+    if not st.session_state.get('has_run', False):
       with welcome_slot.container():
         # ── INL / repository credit (rendered ABOVE the welcome banner
         # so the repo link is the first thing the user sees) ──────────
@@ -1741,7 +1743,7 @@ with streamlit_analytics.track():
         )
         st.stop()
 
-    # When run_button=True, force-clear any leftover welcome content
+    # When has_run=True, force-clear any leftover welcome content
     # from the previous rerun so only the computing banner is visible
     # during the long computation.
     welcome_slot.empty()
