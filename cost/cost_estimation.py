@@ -61,17 +61,23 @@ def update_high_level_costs(scaled_cost, option, sample):
     else:
         raise ValueError("Invalid option. Choose 'base' or 'other' or 'finance' or 'annual'.")
 
+    # Hoist column-name lookups out of the inner row loop — they were
+    # being called 4× per row × ~100 rows × 5 levels = ~2000 redundant
+    # column-name searches per update_high_level_costs call.
+    foak_col = get_estimated_cost_column(df_with_children_accounts, 'F')
+    noak_col = get_estimated_cost_column(df_with_children_accounts, 'N')
+
     for level in range(4, -1, -1):
         df_updated = calculate_high_level_accounts_cost(df_with_children_accounts, level, option, 'F')
         df_updated_2 = calculate_high_level_accounts_cost(df_updated, level, option, 'N')
-        
+
         for index, row in df_updated_2.iterrows():
             if str(row["Account"]).startswith(valid_prefixes):
-                if row['Level'] == level and pd.isna(row[get_estimated_cost_column(df_updated_2, 'F')]) and pd.isna(row['Children Accounts']):
-                    df_updated_2.at[index, get_estimated_cost_column(df_updated_2, 'F')] = 0
+                if row['Level'] == level and pd.isna(row[foak_col]) and pd.isna(row['Children Accounts']):
+                    df_updated_2.at[index, foak_col] = 0
                     no_subaccounts_list.append(row['Account'])
-                if row['Level'] == level and pd.isna(row[get_estimated_cost_column(df_updated_2, 'N')]) and pd.isna(row['Children Accounts']):
-                    df_updated_2.at[index, get_estimated_cost_column(df_updated_2, 'N')] = 0
+                if row['Level'] == level and pd.isna(row[noak_col]) and pd.isna(row['Children Accounts']):
+                    df_updated_2.at[index, noak_col] = 0
                     no_subaccounts_list.append(row['Account'])
     
     if sample == 0:

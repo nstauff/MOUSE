@@ -45,27 +45,31 @@ def find_children_accounts(df):
     # Find the column name that starts with "Estimated Cost"
     estimated_cost_column = [col for col in df.columns if col.startswith("FOAK Estimated Cost")][0]
 
-    # Initialize a list for children accounts
-    children_accounts = [None] * len(df)
-    
+    # Pull columns once into numpy arrays. df.iloc[i][col] in a nested loop
+    # is dominated by per-call overhead — numpy indexing on a flat array
+    # is 10–50× faster for the same logic.
+    levels = df['Level'].to_numpy()
+    is_nan_cost = pd.isna(df[estimated_cost_column].to_numpy())
+    index_strs = [str(idx) for idx in df.index]
+    n = len(df)
+
+    children_accounts = [None] * n
+
     for target_level in range(4, -1, -1):
         source_level = target_level + 1
-        # Iterate over the dataframe
-        for i in range(len(df)):
-            if df.iloc[i]['Level'] == target_level and pd.isna(df.iloc[i][estimated_cost_column]):
+        for i in range(n):
+            if levels[i] == target_level and is_nan_cost[i]:
                 children = []
-                for j in range(i + 1, len(df)):
-                    if df.iloc[j]['Level'] == source_level:
-                        children.append(str(df.index[j]))  # Store pandas row index (unique even when account numbers repeat)
-                    elif df.iloc[j]['Level'] < source_level:
+                for j in range(i + 1, n):
+                    lvl_j = levels[j]
+                    if lvl_j == source_level:
+                        children.append(index_strs[j])
+                    elif lvl_j < source_level:
                         break
-                # Convert the list to a comma-separated string
-                children_str = ','.join(children) if children else None
-                children_accounts[i] = children_str
+                children_accounts[i] = ','.join(children) if children else None
 
-    # Assign the list to the DataFrame
     df['Children Accounts'] = children_accounts
-    return df    
+    return df
 
 
 def get_estimated_cost_column(df, option):
