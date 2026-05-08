@@ -9,5 +9,5 @@ output*.xlsx
 *.png
 .DS_Store
 webapp/.venv/
-webapp/.streamlit/
+webapp/.streamlit/secrets.toml
 webapp/analytics.db
