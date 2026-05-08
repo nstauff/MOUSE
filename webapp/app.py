@@ -115,6 +115,7 @@ import math
 import sqlite3
 import uuid
 import warnings
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -1895,8 +1896,27 @@ with streamlit_analytics.track():
     )
 
     # ── Run cost estimate ───────────────────────────────────────────────────
-    try:
-        display_df, enriched_df, detailed_sorted_df, params = _run_estimate(
+    # Fire the headline + the two NOAK anchors (N=2, N=10) in parallel.
+    # Pandas/numpy release the GIL on most heavy ops, so threading on
+    # Streamlit Cloud's single vCPU still cuts wall-clock substantially.
+    # The anchors are submitted speculatively before we know the user's
+    # NOAK Unit Number; whichever isn't needed gets discarded later.
+    _N_mids_pre = [2, 10]
+    _executor = ThreadPoolExecutor(max_workers=3)
+    _headline_future = _executor.submit(
+        _run_estimate,
+        reactor_type, power_mwt, enrichment,
+        interest_rate / 100.0, discount_rate / 100.0, construction_duration, debt_to_equity,
+        operation_mode, emergency_shutdowns, startup_duration, startup_duration_refueling,
+        tax_credit_type, tax_credit_value, plant_lifetime,
+        n_rings_per_assembly=n_rings_per_assembly,
+        active_height=active_height,
+        n_assembly_rings=n_assembly_rings,
+        n_core_rings=n_core_rings,
+    )
+    _anchor_futures = {
+        _N: _executor.submit(
+            _lcoe_at_noak_unit,
             reactor_type, power_mwt, enrichment,
             interest_rate / 100.0, discount_rate / 100.0, construction_duration, debt_to_equity,
             operation_mode, emergency_shutdowns, startup_duration, startup_duration_refueling,
@@ -1905,8 +1925,15 @@ with streamlit_analytics.track():
             active_height=active_height,
             n_assembly_rings=n_assembly_rings,
             n_core_rings=n_core_rings,
+            noak_unit_number=_N,
         )
+        for _N in _N_mids_pre
+    }
+
+    try:
+        display_df, enriched_df, detailed_sorted_df, params = _headline_future.result()
     except SubcriticalError as exc:
+        _executor.shutdown(wait=False)
         _precompute_slot.empty()
         st.error('### ⚠ Reactor is Subcritical')
         st.warning(str(exc))
@@ -1927,6 +1954,7 @@ with streamlit_analytics.track():
         )
         st.stop()
     except ShortLifetimeError as exc:
+        _executor.shutdown(wait=False)
         _precompute_slot.empty()
         # Extract the estimated lifetime in days from the message ("only N days")
         import re
@@ -1954,6 +1982,7 @@ with streamlit_analytics.track():
         )
         st.stop()
     except Exception as exc:
+        _executor.shutdown(wait=False)
         _precompute_slot.empty()
         st.error(f'Cost estimation failed: {exc}')
         import traceback
@@ -2004,37 +2033,22 @@ with streamlit_analytics.track():
     lcoh_n, lcoh_n_std = _get_mean_std(display_df, 'LCOH', 'NOAK')
     lcof_n, lcof_n_std = _get_lcof(enriched_df, 'NOAK')
 
-    # ── Pre-compute the slow cost-engine sweep BEFORE rendering any
-    # tab, so all results show up at once when the spinner clears.
-    # Without this, the user sees half the tab populate, then a long
-    # gap, then the rest as the LCOE sweep finishes (15-25s on a
-    # cold cache).  Re-using _mid_results below in the Costs in
-    # Perspective block keeps the cost-engine call count the same.
+    # Collect the anchor results that were submitted in parallel above.
+    # By the time we get here, the early rendering has been running while
+    # the anchors compute, so they're typically already done.
     _N_user_pre = int(round(float(params.get('NOAK Unit Number', 100))))
     if _N_user_pre < 2:
         _N_user_pre = 100
-    _N_mids_pre = [2, 10]
     _mid_results = {}
     for _N in _N_mids_pre:
         if _N <= 1 or _N >= _N_user_pre:
             continue
         try:
-            _m_i, _s_i, _, _ = _lcoe_at_noak_unit(
-                reactor_type, power_mwt, enrichment,
-                interest_rate / 100.0, discount_rate / 100.0,
-                construction_duration,
-                debt_to_equity, operation_mode, emergency_shutdowns,
-                startup_duration, startup_duration_refueling,
-                tax_credit_type, tax_credit_value, plant_lifetime,
-                n_rings_per_assembly=n_rings_per_assembly,
-                active_height=active_height,
-                n_assembly_rings=n_assembly_rings,
-                n_core_rings=n_core_rings,
-                noak_unit_number=_N,
-            )
+            _m_i, _s_i, _, _ = _anchor_futures[_N].result()
             _mid_results[_N] = (_m_i, _s_i)
         except Exception as _e:
             st.warning(f'Could not compute N={_N} anchor: {_e}')
+    _executor.shutdown(wait=False)
     _precompute_slot.empty()
 
     # ── Result hero banner (rendered AFTER all computation finishes) ────────
