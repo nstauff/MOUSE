@@ -269,7 +269,7 @@ LTMR_N_TO_DIAMETER_CM = {
 
 def _ltmr_diameter_label(n, d):
     star = '' if n in LTMR_TRAINED_N else ' *'
-    return f"{d} cm (N={n}){star}"
+    return f"{d} cm{star}"
 
 
 LTMR_DIAMETER_LABELS = [_ltmr_diameter_label(n, d)
@@ -315,7 +315,7 @@ GCMR_PAIR_TO_DIAMETER_CM = dict(sorted(GCMR_PAIR_TO_DIAMETER_CM.items(),
 
 def _gcmr_diameter_label(na, nc, d):
     star = '' if (na, nc) in GCMR_TRAINED_PAIRS else ' *'
-    return f"{d} cm (N_A={na}, N_C={nc}){star}"
+    return f"{d} cm{star}"
 
 
 GCMR_DIAMETER_LABELS = [_gcmr_diameter_label(na, nc, d)
@@ -360,7 +360,7 @@ HPMR_NC_TO_DIAMETER_CM = {
     nc: int(round(2 * _hpmr_active_radius(nc))) for nc in HPMR_NC_VALUES
 }
 HPMR_DIAMETER_LABELS = [
-    f"{HPMR_NC_TO_DIAMETER_CM[nc]} cm (N_C={nc})"
+    f"{HPMR_NC_TO_DIAMETER_CM[nc]} cm"
     for nc in HPMR_NC_VALUES
 ]
 HPMR_DIAMETER_LABEL_TO_NC = {
@@ -779,7 +779,7 @@ def _fmt_cost(mean, std):
         return f'${m}M'
     lo = round((mean - std) / 1e6)
     hi = round((mean + std) / 1e6)
-    return f'${lo}M ${hi}M'
+    return f'${lo}M - ${hi}M'
 
 
 def _fmt_lcoe(mean, std):
@@ -790,7 +790,7 @@ def _fmt_lcoe(mean, std):
         return f'${m}/MW<sub>e</sub>h'
     lo = int(round(mean - std))
     hi = int(round(mean + std))
-    return f'${lo} ${hi}/MW<sub>e</sub>h'
+    return f'${lo} - ${hi}/MW<sub>e</sub>h'
 
 
 def _fmt_lcoh(mean, std):
@@ -801,7 +801,7 @@ def _fmt_lcoh(mean, std):
         return f'${m}/MW<sub>t</sub>h'
     lo = int(round(mean - std))
     hi = int(round(mean + std))
-    return f'${lo} ${hi}/MW<sub>t</sub>h'
+    return f'${lo} - ${hi}/MW<sub>t</sub>h'
 
 
 def _get_lcof(df, which='FOAK'):
@@ -857,23 +857,23 @@ _CARD_COLORS = {
 
 def _kpi_card(col, title, foak_val, noak_val, color='#1B4F8C'):
     col.markdown(
-        f'''<div style="background:white;border-radius:14px;padding:1.1rem 1.25rem;
-                        box-shadow:0 2px 12px rgba(0,0,0,0.07);border-top:3px solid {color};
+        f'''<div style="background:white;border-radius:8px;padding:1.1rem 1.25rem;
+                        border:1px solid #bfdbfe;
                         min-height:110px;">
-              <div style="font-size:0.68rem;font-weight:700;color:#9ca3af;
+              <div style="font-size:0.85rem;font-weight:600;color:#64748b;
                           text-transform:uppercase;letter-spacing:0.09em;margin-bottom:0.65rem;">{title}</div>
               <div style="display:flex;align-items:baseline;gap:0.45rem;margin-bottom:0.45rem;">
-                <span style="background:#fff3ed;color:#c84b1e;font-size:0.6rem;font-weight:800;
+                <span style="background:#fff3ed;color:#c84b1e;font-size:0.85rem;font-weight:700;
                              padding:0.12rem 0.38rem;border-radius:4px;letter-spacing:0.05em;
                              flex-shrink:0;">FOAK</span>
-                <span style="font-size:1rem;font-weight:700;color:#111827;">{foak_val}</span>
+                <span style="font-size:1rem;font-weight:600;color:#0a2540;">{foak_val}</span>
               </div>
-              <div style="height:1px;background:#f3f4f6;margin:0.3rem 0;"></div>
+              <div style="height:1px;background:#f1f3f5;margin:0.3rem 0;"></div>
               <div style="display:flex;align-items:baseline;gap:0.45rem;margin-top:0.45rem;">
-                <span style="background:#eff6ff;color:#1d4ed8;font-size:0.6rem;font-weight:800;
+                <span style="background:#eff6ff;color:#1B4F8C;font-size:0.85rem;font-weight:700;
                              padding:0.12rem 0.38rem;border-radius:4px;letter-spacing:0.05em;
                              flex-shrink:0;">NOAK</span>
-                <span style="font-size:1rem;font-weight:700;color:#111827;">{noak_val}</span>
+                <span style="font-size:1rem;font-weight:600;color:#0a2540;">{noak_val}</span>
               </div>
             </div>''',
         unsafe_allow_html=True,
@@ -1025,21 +1025,21 @@ def _materials_section(reactor_type, params):
 
     body = ''.join(
         f'<tr>'
-        f'<td style="padding:0.32rem 1rem 0.32rem 0;color:#475569;font-weight:600;'
+        f'<td style="padding:0.32rem 1rem 0.32rem 0;color:#3c4257;font-weight:600;'
         f'white-space:nowrap;">{k}</td>'
-        f'<td style="padding:0.32rem 0;color:#0f172a;font-weight:500;">{v}</td>'
+        f'<td style="padding:0.32rem 0;color:#0a2540;font-weight:500;">{v}</td>'
         f'</tr>'
         for k, v in rows
     )
     st.markdown(
-        '<div style="font-size:0.7rem;font-weight:700;color:#64748b;text-transform:uppercase;'
+        '<div style="font-size:0.85rem;font-weight:600;color:#64748b;text-transform:uppercase;'
         'letter-spacing:0.09em;margin-bottom:0.45rem;">Materials &amp; Components</div>',
         unsafe_allow_html=True,
     )
     st.markdown(
-        f'''<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:14px;
+        f'''<div style="background:#f7f8fa;border:1px solid #bfdbfe;border-radius:8px;
                         padding:0.9rem 1.15rem;margin-bottom:0.85rem;">
-              <table style="width:100%;font-size:0.86rem;border-collapse:collapse;">
+              <table style="width:100%;font-size:0.85rem;border-collapse:collapse;">
                 <tbody>{body}</tbody>
               </table>
             </div>''',
@@ -1047,14 +1047,14 @@ def _materials_section(reactor_type, params):
     )
 
 
-def _info_card(col, title, value, subtitle='', accent='#16a34a', bg='#f0fdf4', border='#bbf7d0'):
-    sub_html = f'<div style="font-size:0.7rem;color:#6b7280;margin-top:0.2rem;">{subtitle}</div>' if subtitle else ''
+def _info_card(col, title, value, subtitle='', accent='#64748b', bg='white', border='#bfdbfe'):
+    sub_html = f'<div style="font-size:0.85rem;color:#64748b;margin-top:0.2rem;">{subtitle}</div>' if subtitle else ''
     col.markdown(
-        f'''<div style="background:{bg};border:1px solid {border};border-radius:14px;
-                        padding:1.1rem 1.25rem;box-shadow:0 2px 8px rgba(0,0,0,0.04);min-height:80px;">
-              <div style="font-size:0.68rem;font-weight:700;color:{accent};
+        f'''<div style="background:{bg};border:1px solid {border};border-radius:8px;
+                        padding:1.1rem 1.25rem;min-height:80px;">
+              <div style="font-size:0.85rem;font-weight:600;color:{accent};
                           text-transform:uppercase;letter-spacing:0.09em;margin-bottom:0.35rem;">{title}</div>
-              <div style="font-size:1.35rem;font-weight:800;color:#111827;line-height:1.2;">{value}</div>
+              <div style="font-size:1.5rem;font-weight:700;color:#0a2540;line-height:1.2;">{value}</div>
               {sub_html}
             </div>''',
         unsafe_allow_html=True,
@@ -1072,7 +1072,7 @@ html, body, [class*="css"] {
 }
 
 /* ── App background ── */
-.stApp { background: #eef2f8 !important; }
+.stApp { background: #f7f8fa !important; }
 
 /* ── Hide Streamlit chrome ── */
 #MainMenu { visibility: hidden; }
@@ -1084,59 +1084,91 @@ footer { visibility: hidden; }
 
 /* ── Sidebar ── */
 section[data-testid="stSidebar"] > div:first-child {
-    background: linear-gradient(175deg, #0b1f3a 0%, #1a3d66 100%);
-    border-right: 1px solid rgba(255,255,255,0.06);
+    background: #f1f3f5;
+    border-right: 4px solid #1B4F8C;
 }
 section[data-testid="stSidebar"] .stMarkdown strong {
-    color: #93c5fd !important;
-    font-size: 0.75rem;
+    color: #1B4F8C !important;
+    font-size: 0.85rem;
     text-transform: uppercase;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.1em;
 }
 section[data-testid="stSidebar"] .stMarkdown p {
-    color: #94a3b8 !important;
+    color: #64748b !important;
 }
 section[data-testid="stSidebar"] label,
 section[data-testid="stSidebar"] [data-testid="stWidgetLabel"] p {
-    color: #cbd5e1 !important;
+    color: #3c4257 !important;
     font-weight: 500 !important;
-    font-size: 0.82rem !important;
+    font-size: 0.85rem !important;
 }
 section[data-testid="stSidebar"] .stCaption p {
-    color: #475569 !important;
+    color: #64748b !important;
 }
 section[data-testid="stSidebar"] hr {
-    border-color: rgba(255,255,255,0.08) !important;
+    border-color: #bfdbfe !important;
     margin: 0.6rem 0 !important;
 }
-section[data-testid="stSidebar"] .stTooltipHoverTarget svg.icon {
-    stroke: #93c5fd !important;
-    stroke-width: 2.25 !important;
+/* Help icons (?) in sidebar — filled INL blue circle with white question mark */
+section[data-testid="stSidebar"] [data-testid="stTooltipHoverTarget"],
+section[data-testid="stSidebar"] .stTooltipHoverTarget {
+    background: #1B4F8C !important;
+    border-radius: 50% !important;
+    width: 1.15rem !important;
+    height: 1.15rem !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    position: relative !important;
     opacity: 1 !important;
 }
-section[data-testid="stSidebar"] .stButton > button {
-    background: linear-gradient(135deg, #e05c2b 0%, #b84520 100%) !important;
+section[data-testid="stSidebar"] [data-testid="stTooltipHoverTarget"] svg,
+section[data-testid="stSidebar"] .stTooltipHoverTarget svg {
+    display: none !important;
+}
+section[data-testid="stSidebar"] [data-testid="stTooltipHoverTarget"]::after,
+section[data-testid="stSidebar"] .stTooltipHoverTarget::after {
+    content: '?' !important;
     color: white !important;
     font-weight: 700 !important;
+    font-size: 0.85rem !important;
+    line-height: 1 !important;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+}
+section[data-testid="stSidebar"] .stButton > button {
+    background: #e05c2b !important;
+    color: white !important;
+    font-weight: 600 !important;
     border: none !important;
-    border-radius: 10px !important;
+    border-radius: 8px !important;
     padding: 0.65rem 1rem !important;
-    font-size: 0.95rem !important;
-    box-shadow: 0 4px 15px rgba(224,92,43,0.35) !important;
+    font-size: 1rem !important;
     letter-spacing: 0.02em !important;
     width: 100%;
 }
 section[data-testid="stSidebar"] .stButton > button:hover {
-    background: linear-gradient(135deg, #f06a35 0%, #c9531e 100%) !important;
-    box-shadow: 0 6px 20px rgba(224,92,43,0.5) !important;
+    background: #c9531e !important;
     transform: translateY(-1px);
+}
+
+/* ── Sidebar inputs (force white bg + visible border on the gray sidebar) ── */
+section[data-testid="stSidebar"] [data-baseweb="select"] > div,
+section[data-testid="stSidebar"] [data-baseweb="input"],
+section[data-testid="stSidebar"] [data-baseweb="input"] > div,
+section[data-testid="stSidebar"] [data-testid="stNumberInput"] input,
+section[data-testid="stSidebar"] [data-testid="stTextInput"] input,
+section[data-testid="stSidebar"] [data-testid="stNumberInput"] button,
+section[data-testid="stSidebar"] input[type="text"],
+section[data-testid="stSidebar"] input[type="number"] {
+    background: white !important;
+    border: 1px solid #cbd5e1 !important;
 }
 
 /* ── Tabs ── */
 .stTabs [data-baseweb="tab-list"] {
     background: transparent;
     gap: 0.25rem;
-    border-bottom: 2px solid #dde3ee;
+    border-bottom: 1px solid #1B4F8C;
 }
 .stTabs [data-baseweb="tab"] {
     background: transparent;
@@ -1144,29 +1176,29 @@ section[data-testid="stSidebar"] .stButton > button:hover {
     border-radius: 8px 8px 0 0;
     color: #64748b;
     font-weight: 600;
-    font-size: 0.88rem;
+    font-size: 1rem;
     padding: 0.55rem 1.2rem;
-    margin-bottom: -2px;
+    margin-bottom: -1px;
 }
 .stTabs [aria-selected="true"] {
     background: white !important;
     color: #1B4F8C !important;
-    border-top: 1px solid #dde3ee !important;
-    border-left: 1px solid #dde3ee !important;
-    border-right: 1px solid #dde3ee !important;
-    border-bottom: 2px solid white !important;
+    border-top: 1px solid #1B4F8C !important;
+    border-left: 1px solid #1B4F8C !important;
+    border-right: 1px solid #1B4F8C !important;
+    border-bottom: 1px solid white !important;
 }
 .stTabs [data-baseweb="tab-panel"] {
     background: white;
-    border-radius: 0 12px 12px 12px;
+    border-radius: 0 8px 8px 8px;
     padding: 1.5rem 1.75rem;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+    border: 1px solid #1B4F8C;
 }
 
 /* ── Expander ── */
 [data-testid="stExpander"] {
-    border: 1px solid #e2e8f0 !important;
-    border-radius: 10px !important;
+    border: 1px solid #bfdbfe !important;
+    border-radius: 8px !important;
     background: white;
 }
 /* The summary row is the clickable label. Streamlit defaults render
@@ -1185,23 +1217,21 @@ section[data-testid="stSidebar"] .stButton > button:hover {
 [data-testid="stExpander"] summary:hover,
 [data-testid="stExpander"] details > summary:hover,
 [data-testid="stExpander"] [role="button"]:hover {
-    background: #f1f5f9 !important;
+    background: #f1f3f5 !important;
     text-decoration: underline !important;
     cursor: pointer !important;
 }
 
 /* ── Download button ── */
 .stDownloadButton > button {
-    background: linear-gradient(135deg, #1B4F8C, #1565c0) !important;
+    background: #1B4F8C !important;
     color: white !important;
     border: none !important;
     border-radius: 8px !important;
     font-weight: 600 !important;
-    box-shadow: 0 3px 10px rgba(27,79,140,0.3) !important;
 }
 .stDownloadButton > button:hover {
-    background: linear-gradient(135deg, #1565c0, #1976d2) !important;
-    box-shadow: 0 5px 15px rgba(27,79,140,0.45) !important;
+    background: #0a2540 !important;
 }
 
 /* ── Spinner ── */
@@ -1210,7 +1240,7 @@ section[data-testid="stSidebar"] .stButton > button:hover {
 }
 
 /* ── Dataframe ── */
-[data-testid="stDataFrame"] { border-radius: 10px; overflow: hidden; }
+[data-testid="stDataFrame"] { border-radius: 8px; overflow: hidden; }
 """
 
 # ---------------------------------------------------------------------------
@@ -1218,7 +1248,6 @@ section[data-testid="stSidebar"] .stButton > button:hover {
 # ---------------------------------------------------------------------------
 st.set_page_config(
     page_title='MOUSE Microreactor Cost Estimator',
-    page_icon='⚛',
     layout='wide',
 )
 
@@ -1240,9 +1269,8 @@ with streamlit_analytics.track():
     with st.sidebar:
         st.markdown(
             '<div style="text-align:center;padding:0.5rem 0 1rem 0;">'
-            '<span style="font-size:2.2rem;">⚛</span>'
-            '<div style="color:white;font-weight:800;font-size:1.1rem;letter-spacing:0.05em;margin-top:0.2rem;">MOUSE</div>'
-            '<div style="color:#64748b;font-size:0.65rem;letter-spacing:0.06em;text-transform:uppercase;line-height:1.4;">'
+            '<div style="color:#0a2540;font-weight:700;font-size:1.15rem;letter-spacing:0.05em;">MOUSE</div>'
+            '<div style="color:#64748b;font-size:0.85rem;letter-spacing:0.06em;text-transform:uppercase;line-height:1.4;">'
             'Microreactor Optimization<br>Using Simulation &amp; Economics</div>'
             '</div>',
             unsafe_allow_html=True,
@@ -1279,23 +1307,23 @@ with streamlit_analytics.track():
             step=0.0025,
             format='%.4f',
             key=f'enrichment_{reactor_type}',
-            help=('U-235 enrichment fraction. Affects uranium masses and '
-                  'fuel lifetime via interpolation. Range tied to each '
-                  'reactor\'s parametric study coverage.'),
+            help=('U-235 enrichment fraction. Affects uranium masses and fuel '
+                  'lifetime. Higher enrichment means more SWU and higher cost; an '
+                  'SWU premium multiplier of 1.15 is applied above 10% enrichment. '
+                  'Down-blending (diluting higher-enriched U) is not considered.'),
         )
-        st.caption(f'{enrichment * 100:.2f}% enriched')
 
         _power_defaults = {'LTMR': 20, 'GCMR': 15, 'HPMR': 5}
         _power_max = {'LTMR': 64, 'GCMR': 50, 'HPMR': 60}
 
         power_mwt = st.slider(
-            'Thermal Power (MWt)',
+            'Thermal Power (MWₜ)',
             min_value=1,
             max_value=_power_max[reactor_type],
             value=_power_defaults[reactor_type],
             step=1,
             key=f'power_{reactor_type}',
-            help='Thermal power output. Affects power-dependent params and fuel lifetime via interpolation.',
+            help='Thermal power output.',
         )
 
         # LTMR / GCMR / HPMR: extra geometry inputs (diameter + active height).
@@ -1422,69 +1450,76 @@ with streamlit_analytics.track():
         st.divider()
         st.markdown('**B Operation Parameters**')
 
-        _OPERATION_MODE_LABELS = {
-            'Remotely Monitored': 'Autonomous',
-            'On-Site Staffed': 'Non-Autonomous',
-        }
-        operation_mode_label = st.selectbox(
+        operation_mode = st.selectbox(
             'Operation Mode',
-            options=list(_OPERATION_MODE_LABELS.keys()),
+            options=['Remotely Monitored', 'On-Site Staffed'],
             help=(
                 '**Remotely Monitored:** Operators monitor the reactor remotely and are '
                 'required on-site only for emergencies or shutdown.\n\n'
                 '**On-Site Staffed:** Operators must be physically present in the control room 24/7.'
             ),
         )
-        operation_mode = _OPERATION_MODE_LABELS[operation_mode_label]
-        emergency_shutdowns = st.number_input(
-            'Emergency Shutdowns per Year',
-            min_value=0.0, max_value=10.0, value=2.0, step=0.1, format='%.1f',
-            help='Expected number of unplanned emergency shutdowns per year.',
+        emergency_shutdowns = st.slider(
+            'Number of emergency shutdowns per year',
+            min_value=0.1, max_value=10.0, value=2.0, step=0.1, format='%.1f',
+            help=('Average number of unplanned shutdowns per year. Often higher '
+                  'early in operation and decreases as operating experience accumulates.'),
         )
-        startup_duration = st.number_input(
+        startup_duration = st.slider(
             'Startup Duration after Emergency Shutdown (days)',
             min_value=1, max_value=365, value=21, step=1,
-            help='Days required to restart the reactor after an emergency shutdown.',
+            help=('Days the reactor is offline after an unplanned emergency shutdown. '
+                  'Varies by event; this is a rough average.'),
         )
-        startup_duration_refueling = st.number_input(
+        startup_duration_refueling = st.slider(
             'Startup Duration after Refueling (days)',
-            min_value=1, max_value=365, value=14, step=1,
-            help='Days required to restart the reactor after a scheduled refueling outage.',
+            min_value=1, max_value=30, value=14, step=1,
+            help=('Planned days to bring the reactor back to full power after a '
+                  'refueling shutdown at end of fuel lifetime.'),
         )
 
         st.divider()
         st.markdown('**C Economic Parameters**')
 
-        interest_rate = st.number_input(
-            'Interest Rate (%)',
-            min_value=2.0, max_value=15.0, value=7.0, step=0.5, format='%.1f',
-            help=(
-                'Annual cost of debt the rate at which the project borrows money to finance construction. '
-                'Used only to calculate interest expenses during construction (Account 62). '
-                'Typical range: 2-15%. Nuclear projects commonly use 5-12%.'
-            ),
-        )
-        discount_rate = st.number_input(
-            'Discount Rate (%)',
-            min_value=3.0, max_value=15.0, value=7.0, step=0.5, format='%.1f',
-            help=(
-                'Annual discount rate (Weighted Average Cost of Capital, WACC) reflects the '
-                'opportunity cost of capital and the time value of money. Used for LCOE/LCOH '
-                'levelization and cost annualization. Should be >= interest rate. '
-                'Typical range: 3-15%. Government/public projects: 3-7%; private nuclear: 8-15%.'
-            ),
-        )
-        construction_duration = st.number_input(
-            'Construction Duration (months)',
-            min_value=1, max_value=120, value=12, step=1,
-            help='Number of months from ground-break to commercial operation.',
-        )
         debt_to_equity = st.slider(
             'Debt-to-Equity Ratio',
             min_value=0.0, max_value=5.0, value=1.0, step=0.1, format='%.1f',
             help='Ratio of debt to equity financing (e.g. 1.0 = equal debt and equity).',
         )
-        plant_lifetime = st.number_input(
+        interest_rate = st.slider(
+            'Interest Rate (%)',
+            min_value=0.0, max_value=20.0, value=7.0, step=0.5, format='%.1f',
+            help=(
+                "Annual interest rate on the loan used to build the reactor (the project's "
+                "cost of debt). Used only to compute Interest During Construction (IDC, "
+                "Account 62): only the debt-financed portion of the OCC (set via "
+                "Debt-to-Equity Ratio) accrues this interest, accumulating over the "
+                "construction period. Higher rate means larger IDC and higher Total "
+                "Capital Investment. Does NOT appear in LCOE. Typical range: 5% to 12% "
+                "for nuclear projects."
+            ),
+        )
+        discount_rate = st.slider(
+            'Discount Rate (%)',
+            min_value=3.0, max_value=15.0, value=7.0, step=0.5, format='%.1f',
+            help=(
+                "Annual rate used to convert future cash flows into present value. This "
+                "is the project's Weighted Average Cost of Capital (WACC), the blended "
+                "return required by debt and equity investors. Applied to the LCOE/LCOH "
+                "calculation (discounting future revenues and costs) and to Capital "
+                "Recovery Factors (annualizing replacements and fuel costs). A higher "
+                "rate makes near-term costs weigh more and far-future revenues weigh "
+                "less, raising LCOE. Should be greater than or equal to the Interest "
+                "Rate. Typical: 3% to 7% (public or government) or 8% to 15% (private "
+                "nuclear)."
+            ),
+        )
+        construction_duration = st.slider(
+            'Construction Duration (months)',
+            min_value=1, max_value=120, value=12, step=1,
+            help='Number of months from ground-break to commercial operation.',
+        )
+        plant_lifetime = st.slider(
             'Plant Lifetime (years)',
             min_value=10, max_value=100, value=60, step=1,
             help=(
@@ -1498,8 +1533,15 @@ with streamlit_analytics.track():
         tax_credit_type = st.selectbox(
             'Tax Credit',
             options=['None', 'PTC', 'ITC'],
-            index=0,
-            help='None: no credit. PTC: Production Tax Credit (reduces LCOE). ITC: Investment Tax Credit (reduces OCC).',
+            index=2,
+            help=(
+                "**None:** no tax credit applied.\n\n"
+                "**PTC (Production Tax Credit):** a per-MWh credit earned for "
+                "each MWh of electricity sold during the credit period. Reduces LCOE.\n\n"
+                "**ITC (Investment Tax Credit):** a one-time credit applied to "
+                "the Overnight Capital Cost (OCC) of the plant. Reduces OCC.\n\n"
+                "Note: ITC and PTC are mutually exclusive; only one can be selected per project."
+            ),
         )
         tax_credit_value = None
         if tax_credit_type == 'PTC':
@@ -1508,7 +1550,28 @@ with streamlit_analytics.track():
                 options=[3.0, 3.3, 3.6, 15.0, 16.5, 18.0],
                 index=3,
                 format_func=lambda x: f'${x:.1f}/MWh',
-                help='Total PTC value including any applicable IRA bonus multipliers.',
+                help=(
+                    "The Production Tax Credit (PTC) is a per-MWh credit earned for every "
+                    "MWh of electricity produced and sold during the credit period "
+                    "(typically 10 years). Under the Inflation Reduction Act (IRA, "
+                    "Section 45Y), advanced nuclear facilities placed in service after "
+                    "December 31, 2024 may qualify for the Clean Electricity PTC.\n\n"
+                    "**Base credit rate:**\n"
+                    "* **$3/MWh:** when prevailing wage requirements are NOT met.\n"
+                    "* **$15/MWh:** when prevailing wage and apprenticeship requirements "
+                    "ARE met (5x multiplier).\n\n"
+                    "**Optional stackable bonuses (added on top of the base rate):**\n"
+                    "* **+10%** for domestic content (US-made iron, steel, manufactured products).\n"
+                    "* **+10%** for siting in an 'energy community' (areas affected by coal "
+                    "plant closures or fossil fuel employment decline).\n\n"
+                    "**Typical values to choose from:**\n"
+                    "* **$3.0/MWh:** base, no bonuses, no prevailing wage.\n"
+                    "* **$3.3/MWh:** base + one 10% bonus.\n"
+                    "* **$3.6/MWh:** base + both bonuses.\n"
+                    "* **$15.0/MWh:** prevailing wage met, no bonuses.\n"
+                    "* **$16.5/MWh:** prevailing wage + one 10% bonus.\n"
+                    "* **$18.0/MWh:** prevailing wage + both bonuses."
+                ),
             )
         elif tax_credit_type == 'ITC':
             tax_credit_value = st.selectbox(
@@ -1516,7 +1579,21 @@ with streamlit_analytics.track():
                 options=[0.06, 0.30, 0.40, 0.50],
                 index=1,
                 format_func=lambda x: f'{x*100:.0f}%',
-                help='ITC as a fraction of overnight capital cost (OCC).',
+                help=(
+                    "The Investment Tax Credit (ITC) is a one-time credit that reduces "
+                    "the Overnight Capital Cost (OCC) of the plant. Under the Inflation "
+                    "Reduction Act (IRA, Section 48E), advanced nuclear facilities placed "
+                    "in service after December 31, 2024 may qualify for the Clean "
+                    "Electricity ITC.\n\n"
+                    "**The level you can claim depends on which requirements your project meets:**\n"
+                    "* **6%:** base rate, when prevailing wage requirements are NOT met.\n"
+                    "* **30%:** when prevailing wage and apprenticeship requirements ARE met.\n"
+                    "* **40%:** 30% + 10% bonus for domestic content (US-made iron, steel, "
+                    "manufactured products).\n"
+                    "* **50%:** 30% + 10% domestic content + 10% bonus for siting in an "
+                    "'energy community' (areas affected by coal plant closures or fossil "
+                    "fuel employment decline)."
+                ),
             )
 
         st.divider()
@@ -1536,85 +1613,81 @@ with streamlit_analytics.track():
             _render_analytics_sidebar(analytics_conn)
 
     # ── Welcome banner ──────────────────────────────────────────────────────
+    # Wrap all welcome content in a single slot so we can explicitly
+    # clear it when the user clicks Run; otherwise Streamlit can leave
+    # the previous rerun's welcome content visible during the long
+    # computation, alongside the new "Computing all results" banner.
+    welcome_slot = st.empty()
+
     if not run_button:
+      with welcome_slot.container():
         # ── INL / repository credit (rendered ABOVE the welcome banner
         # so the repo link is the first thing the user sees) ──────────
         st.markdown(
-            '''<div style="background:#f8fafc;border:1px solid #cbd5e1;border-radius:14px;
-                           padding:2.2rem 2.4rem;margin-bottom:1.5rem;
-                           font-size:2rem;line-height:1.5;color:#0f172a;">
-                 This webapp is built on the
-                 <strong>MOUSE</strong> tool published by
-                 <strong>Idaho National Laboratory</strong> at
-                 <a href="https://github.com/IdahoLabResearch/MOUSE" target="_blank"
-                    style="color:#1B4F8C;font-weight:700;text-decoration:none;">
-                   github.com/IdahoLabResearch/MOUSE</a>.
-                 The webapp is designed for
-                 <strong>accessibility and ease of use</strong>;
-                 the underlying MOUSE repository gives full control to
-                 define custom geometries, swap materials, build new
-                 reactor types, and run more sophisticated analyses.
-                 Users who need that flexibility are encouraged to
-                 use and contribute to the repository directly.
-               </div>''',
-            unsafe_allow_html=True,
-        )
-
-        st.markdown(
-            f'''<div style="background:linear-gradient(135deg,#0b1f3a 0%,#1B4F8C 55%,#1e6fa8 100%);
-                           border-radius:18px;padding:3rem 3rem 2.8rem;color:white;
-                           margin-bottom:1.5rem;position:relative;overflow:hidden;">
-                 <div style="position:absolute;top:-60px;right:-60px;width:300px;height:300px;
-                             border-radius:50%;background:rgba(255,255,255,0.04);"></div>
-                 <div style="position:absolute;right:3rem;top:50%;transform:translateY(-50%);
-                             font-size:7rem;opacity:0.1;line-height:1;">⚛</div>
-                 <h1 style="font-size:2.4rem;font-weight:800;margin:0 0 0.3rem;color:white;line-height:1.15;">
+            f'''<div style="background:#f1f3f5;border:1px solid #94a3b8;
+                           border-left:4px solid #1B4F8C;border-radius:8px;
+                           padding:1.6rem 2rem 1.6rem;color:#3c4257;
+                           margin-bottom:1.5rem;">
+                 <p style="font-size:1rem;line-height:1.55;margin:0 0 1.1rem;color:#3c4257;
+                           padding-bottom:1.1rem;border-bottom:1px solid #93c5fd;">
+                   This webapp is built on the <strong style="color:#0a2540;">MOUSE</strong> tool by
+                   <strong style="color:#0a2540;">Idaho National Laboratory</strong> at
+                   <a href="https://github.com/IdahoLabResearch/MOUSE" target="_blank"
+                      style="color:#1B4F8C;font-weight:600;text-decoration:none;">
+                     github.com/IdahoLabResearch/MOUSE</a>, designed for
+                   <strong style="color:#0a2540;">accessibility and ease of use</strong>. Use the repository
+                   directly for full control over custom geometries, materials, and advanced analyses.
+                   <strong style="color:#0a2540;">Contributions via pull requests are welcome:</strong>
+                   new reactor designs, improved cost data, or feature enhancements.
+                 </p>
+                 <h1 style="font-size:2.25rem;font-weight:700;margin:0 0 0.25rem;color:#0a2540;line-height:1.15;">
                    MOUSE
                  </h1>
-                 <div style="font-size:1rem;font-weight:600;opacity:0.85;margin-bottom:0.9rem;color:white;">
+                 <div style="font-size:1rem;font-weight:600;color:#64748b;margin-bottom:0.7rem;">
                    Microreactor Optimization Using Simulation and Economics
                  </div>
-                 <p style="font-size:0.92rem;opacity:0.75;margin:0 0 1.8rem;max-width:620px;color:white;line-height:1.6;">
-                   MOUSE bridges nuclear microreactor design and economics by integrating core physics
-                   simulations (OpenMC), simplified balance-of-plant calculations, and detailed bottom-up
-                   cost estimation enabling parametric optimization studies and uncertainty analysis
-                   for both <strong style="color:white;">First-of-a-Kind (FOAK)</strong> and
-                   <strong style="color:white;">Nth-of-a-Kind (NOAK)</strong> deployments.
-                   Cost estimation correlations derive from the MARVEL project and supplementary literature.
-                   All costs in <strong style="color:white;">{ESCALATION_YEAR} USD</strong>.
+                 <p style="font-size:1rem;margin:0 0 1.1rem;max-width:780px;color:#3c4257;line-height:1.55;">
+                   MOUSE bridges microreactor design and economics by integrating core physics
+                   simulations (OpenMC), simplified balance-of-plant calculations, and bottom-up
+                   cost estimation for both <strong style="color:#0a2540;">First-of-a-Kind (FOAK)</strong> and
+                   <strong style="color:#0a2540;">Nth-of-a-Kind (NOAK)</strong> deployments. Cost correlations derive from
+                   the MARVEL project and supplementary literature; all costs in <strong style="color:#0a2540;">{ESCALATION_YEAR} USD</strong>.
                  </p>
-                 <div style="display:flex;gap:1.5rem;flex-wrap:wrap;">
-                   <div style="background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.2);
-                               border-radius:10px;padding:0.7rem 1.2rem;">
-                     <div style="font-size:0.62rem;text-transform:uppercase;letter-spacing:0.1em;
-                                 opacity:0.6;margin-bottom:0.2rem;">Reactor Types</div>
-                     <div style="font-weight:700;font-size:0.88rem;">LTMR · GCMR · HPMR</div>
-                     <div style="font-size:0.62rem;opacity:0.65;margin-top:0.2rem;">Liquid Metal · Gas Cooled · Heat Pipe</div>
+                 <div style="display:flex;gap:1rem;flex-wrap:wrap;">
+                   <div style="background:white;border:1px solid #bfdbfe;border-radius:8px;padding:0.85rem 1.2rem;">
+                     <div style="font-size:0.85rem;text-transform:uppercase;letter-spacing:0.1em;
+                                 font-weight:700;color:#1B4F8C;margin-bottom:0.3rem;">Reactor Types</div>
+                     <div style="font-weight:600;font-size:1rem;color:#0a2540;">LTMR · GCMR · HPMR</div>
+                     <div style="font-size:0.85rem;color:#64748b;margin-top:0.25rem;">Liquid Metal · Gas Cooled · Heat Pipe</div>
                    </div>
-                   <div style="background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.2);
-                               border-radius:10px;padding:0.7rem 1.2rem;">
-                     <div style="font-size:0.62rem;text-transform:uppercase;letter-spacing:0.1em;
-                                 opacity:0.6;margin-bottom:0.2rem;">Power Range</div>
-                     <div style="font-weight:700;font-size:0.88rem;">1 - 60 MW<sub>t</sub></div>
+                   <div style="background:white;border:1px solid #bfdbfe;border-radius:8px;padding:0.85rem 1.2rem;">
+                     <div style="font-size:0.85rem;text-transform:uppercase;letter-spacing:0.1em;
+                                 font-weight:700;color:#1B4F8C;margin-bottom:0.3rem;">Costs</div>
+                     <div style="font-weight:600;font-size:1rem;color:#0a2540;">OCC · TCI · LCOE · LCOH · LCOF</div>
+                     <div style="font-size:0.85rem;color:#64748b;margin-top:0.25rem;">Bottom-up estimation · Cost drivers · IRA credits</div>
                    </div>
-                   <div style="background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.2);
-                               border-radius:10px;padding:0.7rem 1.2rem;">
-                     <div style="font-size:0.62rem;text-transform:uppercase;letter-spacing:0.1em;
-                                 opacity:0.6;margin-bottom:0.2rem;">Enrichment</div>
-                     <div style="font-weight:700;font-size:0.88rem;">5 19.75%</div>
+                   <div style="background:white;border:1px solid #bfdbfe;border-radius:8px;padding:0.85rem 1.2rem;">
+                     <div style="font-size:0.85rem;text-transform:uppercase;letter-spacing:0.1em;
+                                 font-weight:700;color:#1B4F8C;margin-bottom:0.3rem;">Neutronics &amp; Thermal Hydraulics at a glance</div>
+                     <div style="font-weight:600;font-size:1rem;color:#0a2540;">Peaking Factor · Leakage · Power Density · Coolant Inventory</div>
+                     <div style="font-size:0.85rem;color:#64748b;margin-top:0.25rem;">first-order scoping</div>
                    </div>
-                   <div style="background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.2);
-                               border-radius:10px;padding:0.7rem 1.2rem;">
-                     <div style="font-size:0.62rem;text-transform:uppercase;letter-spacing:0.1em;
-                                 opacity:0.6;margin-bottom:0.2rem;">Outputs</div>
-                     <div style="font-weight:700;font-size:0.88rem;">OCC · TCI · LCOE · LCOH · LCOF</div>
-                     <div style="font-size:0.62rem;opacity:0.65;margin-top:0.2rem;">Capital Cost · Capital Investment · Cost of Energy · Cost of Heat · Cost of Fuel</div>
+                   <div style="background:white;border:1px solid #bfdbfe;border-radius:8px;padding:0.85rem 1.2rem;">
+                     <div style="font-size:0.85rem;text-transform:uppercase;letter-spacing:0.1em;
+                                 font-weight:700;color:#1B4F8C;margin-bottom:0.3rem;">Fuel Cycle</div>
+                     <div style="font-weight:600;font-size:1rem;color:#0a2540;">U-235 / U-238 Mass · Lifetime · Discharge Burnup</div>
                    </div>
-                   <div style="background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.2);
-                               border-radius:10px;padding:0.7rem 1.2rem;">
-                     <div style="font-size:0.62rem;text-transform:uppercase;letter-spacing:0.1em;
-                                 opacity:0.6;margin-bottom:0.2rem;">Analysis</div>
-                     <div style="font-weight:700;font-size:0.88rem;">Parametric · Uncertainty · IRA Credits</div>
+                   <div style="background:white;border:1px solid #bfdbfe;border-radius:8px;padding:0.85rem 1.2rem;">
+                     <div style="font-size:0.85rem;text-transform:uppercase;letter-spacing:0.1em;
+                                 font-weight:700;color:#1B4F8C;margin-bottom:0.3rem;">Transportability</div>
+                     <div style="font-weight:600;font-size:1rem;color:#0a2540;">Component Dims · Mass · Truck · Rail · Sea</div>
+                     <div style="font-size:0.85rem;color:#64748b;margin-top:0.25rem;">first-order scoping</div>
+                   </div>
+                   <div style="background:white;border:1px solid #bfdbfe;border-radius:8px;padding:0.85rem 1.2rem;">
+                     <div style="font-size:0.85rem;text-transform:uppercase;letter-spacing:0.1em;
+                                 font-weight:700;color:#1B4F8C;margin-bottom:0.3rem;">Costs in Perspective</div>
+                     <div style="font-weight:600;font-size:1rem;color:#0a2540;">NOAK LCOE vs. market benchmarks</div>
+                     <div style="font-size:0.85rem;color:#64748b;margin-top:0.25rem;">vs. wholesale and retail electricity prices</div>
                    </div>
                  </div>
                </div>''',
@@ -1622,18 +1695,17 @@ with streamlit_analytics.track():
         )
 
         st.markdown(
-            '''<div style="background:#fffbeb;border:1.5px solid #f59e0b;border-radius:12px;
+            '''<div style="background:#fffbeb;border:1px solid #fcd34d;
+                           border-left:4px solid #f59e0b;border-radius:8px;
                            padding:1.2rem 1.5rem;margin-bottom:1rem;">
                  <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem;">
-                   <span style="font-size:1.2rem;">⚠️</span>
-                   <span style="font-size:0.82rem;font-weight:800;color:#92400e;
+                   <span style="font-size:1.15rem;">⚠️</span>
+                   <span style="font-size:1rem;font-weight:700;color:#92400e;
                                 text-transform:uppercase;letter-spacing:0.07em;">
                      Important Caveats Please Read Before Use
                    </span>
                  </div>
-                 <ul style="margin:0;padding-left:1.2rem;color:#78350f;font-size:0.84rem;line-height:1.75;">
-                   <li><strong>Work in progress:</strong> This application is still under active development.
-                       Features, results, and interfaces may change without notice.</li>
+                 <ul style="margin:0;padding-left:1.2rem;color:#92400e;font-size:1rem;line-height:1.75;">
                    <li><strong>Pre-conceptual designs:</strong> The three reactor designs (LTMR, GCMR, HPMR)
                        are pre-conceptual. They have not been fully optimized and do not represent
                        final or licensed configurations.</li>
@@ -1648,11 +1720,20 @@ with streamlit_analytics.track():
             unsafe_allow_html=True,
         )
 
-        st.info('Configure your reactor in the sidebar, then click **⚡ Run Cost Estimate** to begin.')
+        st.markdown(
+            '''<div style="background:#eff6ff;border:1px solid #cbd5e1;
+                           border-left:4px solid #1B4F8C;border-radius:8px;
+                           padding:1rem 1.4rem;margin-top:1rem;margin-bottom:1rem;
+                           font-size:1.15rem;font-weight:600;color:#1B4F8C;">
+                 👈 How to use: configure your reactor in the sidebar on the left,
+                 then click <strong>⚡ Run Cost Estimate</strong> at the bottom of the sidebar.
+               </div>''',
+            unsafe_allow_html=True,
+        )
 
         st.markdown(
             """
-            <div style='text-align: center; font-size: 0.9rem; color: gray; padding-top: 2rem; padding-bottom: 1rem;'>
+            <div style='text-align: center; font-size: 1rem; color: #64748b; padding-top: 2rem; padding-bottom: 1rem;'>
                 © 2025 Battelle Energy Alliance, LLC. MOUSE is released under the MIT License.
             </div>
             """,
@@ -1660,78 +1741,100 @@ with streamlit_analytics.track():
         )
         st.stop()
 
+    # When run_button=True, force-clear any leftover welcome content
+    # from the previous rerun so only the computing banner is visible
+    # during the long computation.
+    welcome_slot.empty()
+
+    # ── Show single progress banner covering BOTH the basic estimate
+    # and the NOAK deployment-scale sweep that follows. ─────────────────────
+    _precompute_slot = st.empty()
+    _precompute_slot.markdown(
+        '<div style="background:#fffbeb;'
+        'border:2px solid #f59e0b;border-radius:8px;padding:1.4rem 1.6rem;'
+        'margin-bottom:1rem;color:#92400e;text-align:center;">'
+        '<div style="font-size:1.15rem;font-weight:700;margin-bottom:0.4rem;'
+        'letter-spacing:0.02em;">⏳ Computing all results...</div>'
+        '<div style="font-size:1rem;font-weight:500;line-height:1.5;">'
+        'Roughly <strong>15-25 seconds</strong>. All results will appear at once when finished.'
+        '</div></div>',
+        unsafe_allow_html=True,
+    )
+
     # ── Run cost estimate ───────────────────────────────────────────────────
-    with st.spinner('Running cost estimate…'):
-        try:
-            display_df, enriched_df, detailed_sorted_df, params = _run_estimate(
-                reactor_type, power_mwt, enrichment,
-                interest_rate / 100.0, discount_rate / 100.0, construction_duration, debt_to_equity,
-                operation_mode, emergency_shutdowns, startup_duration, startup_duration_refueling,
-                tax_credit_type, tax_credit_value, plant_lifetime,
-                n_rings_per_assembly=n_rings_per_assembly,
-                active_height=active_height,
-                n_assembly_rings=n_assembly_rings,
-                n_core_rings=n_core_rings,
-            )
-        except SubcriticalError as exc:
-            st.error('### ⚠ Reactor is Subcritical')
-            st.warning(str(exc))
-            ca, cb, cc = st.columns(3)
-            _info_card(ca, 'Fuel Lifetime', '0 days', accent='#dc2626', bg='#fef2f2', border='#fecaca')
-            _info_card(cb, 'Thermal Power', f'{power_mwt} MW<sub>t</sub>', accent='#9a3412', bg='#fff7ed', border='#fed7aa')
-            _info_card(cc, 'Enrichment', f'{enrichment*100:.2f}%', accent='#9a3412', bg='#fff7ed', border='#fed7aa')
-            st.info('No cost estimate is available for a subcritical operating point. '
-                    'Try reducing the power or increasing the enrichment.')
+    try:
+        display_df, enriched_df, detailed_sorted_df, params = _run_estimate(
+            reactor_type, power_mwt, enrichment,
+            interest_rate / 100.0, discount_rate / 100.0, construction_duration, debt_to_equity,
+            operation_mode, emergency_shutdowns, startup_duration, startup_duration_refueling,
+            tax_credit_type, tax_credit_value, plant_lifetime,
+            n_rings_per_assembly=n_rings_per_assembly,
+            active_height=active_height,
+            n_assembly_rings=n_assembly_rings,
+            n_core_rings=n_core_rings,
+        )
+    except SubcriticalError as exc:
+        _precompute_slot.empty()
+        st.error('### ⚠ Reactor is Subcritical')
+        st.warning(str(exc))
+        ca, cb, cc = st.columns(3)
+        _info_card(ca, 'Fuel Lifetime', '0 days', accent='#dc2626', bg='#fef2f2', border='#fecaca')
+        _info_card(cb, 'Thermal Power', f'{power_mwt} MW<sub>t</sub>', accent='#9a3412', bg='#fff7ed', border='#fcd34d')
+        _info_card(cc, 'Enrichment', f'{enrichment*100:.2f}%', accent='#9a3412', bg='#fff7ed', border='#fcd34d')
+        st.info('No cost estimate is available for a subcritical operating point. '
+                'Try reducing the power or increasing the enrichment.')
 
-            st.markdown(
-                """
-                <div style='text-align: center; font-size: 0.9rem; color: gray; padding-top: 2rem; padding-bottom: 1rem;'>
-                    © 2025 Battelle Energy Alliance, LLC. MOUSE is released under the MIT License.
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-            st.stop()
-        except ShortLifetimeError as exc:
-            # Extract the estimated lifetime in days from the message ("only N days")
-            import re
-            m = re.search(r'only (\d+) days', str(exc))
-            est_lt_days = int(m.group(1)) if m else 0
-            st.error('### ⚠ Fuel Lifetime Too Short')
-            st.warning(str(exc))
-            ca, cb, cc = st.columns(3)
-            _info_card(ca, 'Fuel Lifetime', f'{est_lt_days} days',
-                       accent='#dc2626', bg='#fef2f2', border='#fecaca')
-            _info_card(cb, 'Thermal Power', f'{power_mwt} MW<sub>t</sub>',
-                       accent='#9a3412', bg='#fff7ed', border='#fed7aa')
-            _info_card(cc, 'Enrichment', f'{enrichment*100:.2f}%',
-                       accent='#9a3412', bg='#fff7ed', border='#fed7aa')
-            st.info('No cost estimate is performed when the fuel lifetime is below 90 days. '
-                    'Try increasing the diameter, the height, or the enrichment.')
+        st.markdown(
+            """
+            <div style='text-align: center; font-size: 1rem; color: #64748b; padding-top: 2rem; padding-bottom: 1rem;'>
+                © 2025 Battelle Energy Alliance, LLC. MOUSE is released under the MIT License.
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.stop()
+    except ShortLifetimeError as exc:
+        _precompute_slot.empty()
+        # Extract the estimated lifetime in days from the message ("only N days")
+        import re
+        m = re.search(r'only (\d+) days', str(exc))
+        est_lt_days = int(m.group(1)) if m else 0
+        st.error('### ⚠ Fuel Lifetime Too Short')
+        st.warning(str(exc))
+        ca, cb, cc = st.columns(3)
+        _info_card(ca, 'Fuel Lifetime', f'{est_lt_days} days',
+                   accent='#dc2626', bg='#fef2f2', border='#fecaca')
+        _info_card(cb, 'Thermal Power', f'{power_mwt} MW<sub>t</sub>',
+                   accent='#9a3412', bg='#fff7ed', border='#fcd34d')
+        _info_card(cc, 'Enrichment', f'{enrichment*100:.2f}%',
+                   accent='#9a3412', bg='#fff7ed', border='#fcd34d')
+        st.info('No cost estimate is performed when the fuel lifetime is below 90 days. '
+                'Try increasing the diameter, the height, or the enrichment.')
 
-            st.markdown(
-                """
-                <div style='text-align: center; font-size: 0.9rem; color: gray; padding-top: 2rem; padding-bottom: 1rem;'>
-                    © 2025 Battelle Energy Alliance, LLC. MOUSE is released under the MIT License.
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-            st.stop()
-        except Exception as exc:
-            st.error(f'Cost estimation failed: {exc}')
-            import traceback
-            st.code(traceback.format_exc())
+        st.markdown(
+            """
+            <div style='text-align: center; font-size: 1rem; color: #64748b; padding-top: 2rem; padding-bottom: 1rem;'>
+                © 2025 Battelle Energy Alliance, LLC. MOUSE is released under the MIT License.
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.stop()
+    except Exception as exc:
+        _precompute_slot.empty()
+        st.error(f'Cost estimation failed: {exc}')
+        import traceback
+        st.code(traceback.format_exc())
 
-            st.markdown(
-                """
-                <div style='text-align: center; font-size: 0.9rem; color: gray; padding-top: 2rem; padding-bottom: 1rem;'>
-                    © 2025 Battelle Energy Alliance, LLC. MOUSE is released under the MIT License.
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-            st.stop()
+        st.markdown(
+            """
+            <div style='text-align: center; font-size: 1rem; color: #64748b; padding-top: 2rem; padding-bottom: 1rem;'>
+                © 2025 Battelle Energy Alliance, LLC. MOUSE is released under the MIT License.
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.stop()
 
     # ── Extract key params ──────────────────────────────────────────────────
     fuel_lifetime = params.get('Fuel Lifetime', float('nan'))
@@ -1741,60 +1844,6 @@ with streamlit_analytics.track():
     _fl_str = f'{fuel_lifetime / 365:.1f} yrs' if not math.isnan(float(fuel_lifetime)) else 'N/A'
     _fl_days = f'{int(fuel_lifetime):,} days' if not math.isnan(float(fuel_lifetime)) else ''
     _cf_str = f'{capacity_factor * 100:.1f}%' if not math.isnan(float(capacity_factor)) else 'N/A'
-
-    # ── Result hero banner ──────────────────────────────────────────────────
-    _credit_badge = ''
-    if tax_credit_type == 'PTC':
-        _credit_badge = f'<span style="background:rgba(255,255,255,0.2);border:1px solid rgba(255,255,255,0.35);border-radius:999px;font-size:0.68rem;font-weight:700;padding:0.2rem 0.7rem;letter-spacing:0.06em;margin-left:0.6rem;">PTC ${tax_credit_value}/MWh</span>'
-    elif tax_credit_type == 'ITC':
-        _credit_badge = f'<span style="background:rgba(255,255,255,0.2);border:1px solid rgba(255,255,255,0.35);border-radius:999px;font-size:0.68rem;font-weight:700;padding:0.2rem 0.7rem;letter-spacing:0.06em;margin-left:0.6rem;">ITC {int(tax_credit_value*100)}%</span>'
-
-    st.markdown(
-        f'''<div style="background:linear-gradient(135deg,#0b1f3a 0%,#1B4F8C 55%,#1e6fa8 100%);
-                       border-radius:16px;padding:1.8rem 2.2rem;color:white;
-                       margin-bottom:1.5rem;position:relative;overflow:hidden;">
-             <div style="position:absolute;right:2.5rem;top:50%;transform:translateY(-50%);
-                         font-size:5.5rem;opacity:0.1;line-height:1;">⚛</div>
-             <div style="font-size:0.68rem;font-weight:700;letter-spacing:0.12em;
-                         text-transform:uppercase;opacity:0.55;margin-bottom:0.5rem;">
-               Cost Estimate Result
-             </div>
-             <h2 style="font-size:1.65rem;font-weight:800;margin:0 0 0.9rem;color:white;line-height:1.2;">
-               {reactor_label} {_credit_badge}
-             </h2>
-             <div style="display:flex;gap:2rem;flex-wrap:wrap;">
-               <div>
-                 <div style="font-size:0.6rem;text-transform:uppercase;letter-spacing:0.1em;opacity:0.55;">Thermal Power</div>
-                 <div style="font-weight:700;font-size:0.95rem;">{power_mwt} MW<sub>t</sub></div>
-               </div>
-               <div>
-                 <div style="font-size:0.6rem;text-transform:uppercase;letter-spacing:0.1em;opacity:0.55;">Enrichment</div>
-                 <div style="font-weight:700;font-size:0.95rem;">{enrichment*100:.2f}%</div>
-               </div>
-               <div>
-                 <div style="font-size:0.6rem;text-transform:uppercase;letter-spacing:0.1em;opacity:0.55;">Interest Rate</div>
-                 <div style="font-weight:700;font-size:0.95rem;">{interest_rate:.1f}%</div>
-               </div>
-               <div>
-                 <div style="font-size:0.6rem;text-transform:uppercase;letter-spacing:0.1em;opacity:0.55;">Discount Rate</div>
-                 <div style="font-weight:700;font-size:0.95rem;">{discount_rate:.1f}%</div>
-               </div>
-               <div>
-                 <div style="font-size:0.6rem;text-transform:uppercase;letter-spacing:0.1em;opacity:0.55;">Operation Mode</div>
-                 <div style="font-weight:700;font-size:0.95rem;">{operation_mode}</div>
-               </div>
-               <div>
-                 <div style="font-size:0.6rem;text-transform:uppercase;letter-spacing:0.1em;opacity:0.55;">Capacity Factor</div>
-                 <div style="font-weight:700;font-size:0.95rem;">{_cf_str}</div>
-               </div>
-               <div>
-                 <div style="font-size:0.6rem;text-transform:uppercase;letter-spacing:0.1em;opacity:0.55;">All costs in</div>
-                 <div style="font-weight:700;font-size:0.95rem;">{ESCALATION_YEAR} USD</div>
-               </div>
-             </div>
-           </div>''',
-        unsafe_allow_html=True,
-    )
 
     # ── Collect all summary values ──────────────────────────────────────────
     if tax_credit_type == 'ITC':
@@ -1822,22 +1871,6 @@ with streamlit_analytics.track():
     lcoh_n, lcoh_n_std = _get_mean_std(display_df, 'LCOH', 'NOAK')
     lcof_n, lcof_n_std = _get_lcof(enriched_df, 'NOAK')
 
-    # ── Caveat reminder ─────────────────────────────────────────────────────
-    st.markdown(
-        '''<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;
-                       padding:0.65rem 1rem;margin-bottom:1.2rem;
-                       display:flex;align-items:flex-start;gap:0.6rem;">
-             <span style="font-size:1rem;flex-shrink:0;margin-top:0.05rem;">⚠️</span>
-             <span style="font-size:0.78rem;color:#92400e;line-height:1.55;">
-               <strong>Caveats:</strong> This app is under active development. Reactor designs are
-               pre-conceptual and not fully optimized. Cost estimates were produced with incomplete
-               information and <strong>must not be used for investment or procurement decisions</strong>.
-               Results are intended for research and comparative screening only.
-             </span>
-           </div>''',
-        unsafe_allow_html=True,
-    )
-
     # ── Pre-compute the slow cost-engine sweep BEFORE rendering any
     # tab, so all results show up at once when the spinner clears.
     # Without this, the user sees half the tab populate, then a long
@@ -1849,43 +1882,109 @@ with streamlit_analytics.track():
         _N_user_pre = 100
     _N_mids_pre = [2, 10]
     _mid_results = {}
-    _precompute_slot = st.empty()
-    _precompute_slot.markdown(
-        '<div style="background:linear-gradient(90deg,#fef3c7 0%,#fde68a 100%);'
-        'border:2px solid #f59e0b;border-radius:12px;padding:1.4rem 1.6rem;'
-        'margin-bottom:1rem;color:#78350f;text-align:center;'
-        'box-shadow:0 4px 12px rgba(245,158,11,0.18);">'
-        '<div style="font-size:1.15rem;font-weight:800;margin-bottom:0.4rem;'
-        'letter-spacing:0.02em;">⏳ Computing all results...</div>'
-        '<div style="font-size:0.88rem;font-weight:500;line-height:1.5;">'
-        'Running the cost engine for the LCOE-vs-deployment-scale curve. '
-        'Roughly <strong>15-25 seconds</strong> on a fresh cache. '
-        'All tabs and results appear together once this finishes.'
-        '</div></div>',
+    for _N in _N_mids_pre:
+        if _N <= 1 or _N >= _N_user_pre:
+            continue
+        try:
+            _m_i, _s_i, _, _ = _lcoe_at_noak_unit(
+                reactor_type, power_mwt, enrichment,
+                interest_rate / 100.0, discount_rate / 100.0,
+                construction_duration,
+                debt_to_equity, operation_mode, emergency_shutdowns,
+                startup_duration, startup_duration_refueling,
+                tax_credit_type, tax_credit_value, plant_lifetime,
+                n_rings_per_assembly=n_rings_per_assembly,
+                active_height=active_height,
+                n_assembly_rings=n_assembly_rings,
+                n_core_rings=n_core_rings,
+                noak_unit_number=_N,
+            )
+            _mid_results[_N] = (_m_i, _s_i)
+        except Exception as _e:
+            st.warning(f'Could not compute N={_N} anchor: {_e}')
+    _precompute_slot.empty()
+
+    # ── Result hero banner (rendered AFTER all computation finishes) ────────
+    if tax_credit_type == 'PTC':
+        _credit_badge = f'<span style="background:#eff6ff;border:1px solid #bfdbfe;color:#1B4F8C;border-radius:999px;font-size:0.85rem;font-weight:600;padding:0.2rem 0.7rem;letter-spacing:0.06em;margin-left:0.6rem;">PTC ${tax_credit_value}/MWh</span>'
+    elif tax_credit_type == 'ITC':
+        _credit_badge = f'<span style="background:#eff6ff;border:1px solid #bfdbfe;color:#1B4F8C;border-radius:999px;font-size:0.85rem;font-weight:600;padding:0.2rem 0.7rem;letter-spacing:0.06em;margin-left:0.6rem;">ITC {int(tax_credit_value*100)}%</span>'
+    else:
+        _credit_badge = '<span style="background:#f1f3f5;border:1px solid #cbd5e1;color:#64748b;border-radius:999px;font-size:0.85rem;font-weight:600;padding:0.2rem 0.7rem;letter-spacing:0.06em;margin-left:0.6rem;">No Tax Credit</span>'
+
+    st.markdown(
+        f'''<div style="background:#f1f3f5;border:1px solid #94a3b8;
+                       border-left:4px solid #1B4F8C;border-radius:8px;
+                       padding:1.8rem 2.2rem;color:#3c4257;
+                       margin-bottom:1.5rem;">
+             <div style="font-size:0.85rem;font-weight:600;letter-spacing:0.12em;
+                         text-transform:uppercase;color:#64748b;margin-bottom:0.5rem;">
+               Cost Estimate Result
+             </div>
+             <h2 style="font-size:1.5rem;font-weight:700;margin:0 0 0.9rem;color:#0a2540;line-height:1.2;">
+               {reactor_label} {_credit_badge}
+             </h2>
+             <div style="display:flex;gap:2rem;flex-wrap:wrap;">
+               <div>
+                 <div style="font-size:0.85rem;text-transform:uppercase;letter-spacing:0.1em;color:#64748b;">Thermal Power</div>
+                 <div style="font-weight:600;font-size:1rem;color:#0a2540;">{power_mwt} MW<sub>t</sub></div>
+               </div>
+               <div>
+                 <div style="font-size:0.85rem;text-transform:uppercase;letter-spacing:0.1em;color:#64748b;">Enrichment</div>
+                 <div style="font-weight:600;font-size:1rem;color:#0a2540;">{enrichment*100:.2f} wt%</div>
+               </div>
+               <div>
+                 <div style="font-size:0.85rem;text-transform:uppercase;letter-spacing:0.1em;color:#64748b;">Active Diameter</div>
+                 <div style="font-weight:600;font-size:1rem;color:#0a2540;">{_diameter_label.replace(' *', '').strip()}</div>
+               </div>
+               <div>
+                 <div style="font-size:0.85rem;text-transform:uppercase;letter-spacing:0.1em;color:#64748b;">Active Height</div>
+                 <div style="font-weight:600;font-size:1rem;color:#0a2540;">{active_height} cm</div>
+               </div>
+               <div>
+                 <div style="font-size:0.85rem;text-transform:uppercase;letter-spacing:0.1em;color:#64748b;">Operation Mode</div>
+                 <div style="font-weight:600;font-size:1rem;color:#0a2540;">{operation_mode}</div>
+               </div>
+               <div>
+                 <div style="font-size:0.85rem;text-transform:uppercase;letter-spacing:0.1em;color:#64748b;">Emergency Shutdowns / Yr</div>
+                 <div style="font-weight:600;font-size:1rem;color:#0a2540;">{emergency_shutdowns:.1f}</div>
+               </div>
+               <div>
+                 <div style="font-size:0.85rem;text-transform:uppercase;letter-spacing:0.1em;color:#64748b;">Emergency Outage</div>
+                 <div style="font-weight:600;font-size:1rem;color:#0a2540;">{startup_duration} days</div>
+               </div>
+               <div>
+                 <div style="font-size:0.85rem;text-transform:uppercase;letter-spacing:0.1em;color:#64748b;">Refuel Outage</div>
+                 <div style="font-weight:600;font-size:1rem;color:#0a2540;">{startup_duration_refueling} days</div>
+               </div>
+               <div>
+                 <div style="font-size:0.85rem;text-transform:uppercase;letter-spacing:0.1em;color:#64748b;">Debt-to-Equity</div>
+                 <div style="font-weight:600;font-size:1rem;color:#0a2540;">{debt_to_equity:.1f}</div>
+               </div>
+               <div>
+                 <div style="font-size:0.85rem;text-transform:uppercase;letter-spacing:0.1em;color:#64748b;">Interest Rate</div>
+                 <div style="font-weight:600;font-size:1rem;color:#0a2540;">{interest_rate:.1f}%</div>
+               </div>
+               <div>
+                 <div style="font-size:0.85rem;text-transform:uppercase;letter-spacing:0.1em;color:#64748b;">Discount Rate</div>
+                 <div style="font-weight:600;font-size:1rem;color:#0a2540;">{discount_rate:.1f}%</div>
+               </div>
+               <div>
+                 <div style="font-size:0.85rem;text-transform:uppercase;letter-spacing:0.1em;color:#64748b;">Construction</div>
+                 <div style="font-weight:600;font-size:1rem;color:#0a2540;">{construction_duration} months</div>
+               </div>
+               <div>
+                 <div style="font-size:0.85rem;text-transform:uppercase;letter-spacing:0.1em;color:#64748b;">Plant Lifetime</div>
+                 <div style="font-weight:600;font-size:1rem;color:#0a2540;">{plant_lifetime} yrs</div>
+               </div>
+               <div>
+                 <div style="font-size:0.85rem;text-transform:uppercase;letter-spacing:0.1em;color:#64748b;">All Costs In</div>
+                 <div style="font-weight:600;font-size:1rem;color:#0a2540;">{ESCALATION_YEAR} USD</div>
+               </div>
+             </div>
+           </div>''',
         unsafe_allow_html=True,
     )
-    with st.spinner('Computing all results...'):
-        for _N in _N_mids_pre:
-            if _N <= 1 or _N >= _N_user_pre:
-                continue
-            try:
-                _m_i, _s_i, _, _ = _lcoe_at_noak_unit(
-                    reactor_type, power_mwt, enrichment,
-                    interest_rate / 100.0, discount_rate / 100.0,
-                    construction_duration,
-                    debt_to_equity, operation_mode, emergency_shutdowns,
-                    startup_duration, startup_duration_refueling,
-                    tax_credit_type, tax_credit_value, plant_lifetime,
-                    n_rings_per_assembly=n_rings_per_assembly,
-                    active_height=active_height,
-                    n_assembly_rings=n_assembly_rings,
-                    n_core_rings=n_core_rings,
-                    noak_unit_number=_N,
-                )
-                _mid_results[_N] = (_m_i, _s_i)
-            except Exception as _e:
-                st.warning(f'Could not compute N={_N} anchor: {_e}')
-    _precompute_slot.empty()
 
     tab_design, tab_physics, tab_drivers, tab_table = st.tabs([
         'Design & Economics',
@@ -2058,7 +2157,7 @@ with streamlit_analytics.track():
                     'parametric study (104 rows, K=4 distance-weighted). Typical '
                     'error is **5-15%** for queries inside the trained envelope '
                     '(N_A=6, N_C ∈ [3..7], H = 136-1056 cm, E = 10-19.75%, P = '
-                    '1-60 MWt). Mass U-235 / U-238 are derived from the exact '
+                    '1-60 MWₜ). Mass U-235 / U-238 are derived from the exact '
                     'HPMR mass formula (1.6116 g/(pin·cm) × N_pins(N_A, N_C) × H), '
                     'so off-grid geometry queries are mass-consistent. The 8-10% '
                     'enrichment band lets you see the subcritical region '
@@ -2084,7 +2183,7 @@ with streamlit_analytics.track():
                         _reactivity_swing_pct = (_k_bol - 1.0) / _k_bol * 100.0
                 if _times.size >= 2:
                     st.markdown(
-                        '<div style="font-size:0.7rem;font-weight:700;color:#64748b;'
+                        '<div style="font-size:0.85rem;font-weight:600;color:#64748b;'
                         'text-transform:uppercase;letter-spacing:0.09em;'
                         'margin-bottom:0.6rem;">k_eff vs Time</div>',
                         unsafe_allow_html=True,
@@ -2139,7 +2238,7 @@ with streamlit_analytics.track():
                         _reactivity_swing_pct = (_k_bol - 1.0) / _k_bol * 100.0
                 if _times.size >= 2:
                     st.markdown(
-                        '<div style="font-size:0.7rem;font-weight:700;color:#64748b;'
+                        '<div style="font-size:0.85rem;font-weight:600;color:#64748b;'
                         'text-transform:uppercase;letter-spacing:0.09em;'
                         'margin-bottom:0.6rem;">k_eff vs Time</div>',
                         unsafe_allow_html=True,
@@ -2189,7 +2288,7 @@ with streamlit_analytics.track():
                         _reactivity_swing_pct = (_k_bol - 1.0) / _k_bol * 100.0
                 if _times.size >= 2:
                     st.markdown(
-                        '<div style="font-size:0.7rem;font-weight:700;color:#64748b;'
+                        '<div style="font-size:0.85rem;font-weight:600;color:#64748b;'
                         'text-transform:uppercase;letter-spacing:0.09em;'
                         'margin-bottom:0.6rem;">k_eff vs Time</div>',
                         unsafe_allow_html=True,
@@ -2230,7 +2329,7 @@ with streamlit_analytics.track():
             # rendered above; the Materials & Components panel completes
             # the visual / structural picture of the design.)
             _section_header_2 = (
-                '<div style="font-size:1.05rem;font-weight:800;color:#1B4F8C;'
+                '<div style="font-size:1rem;font-weight:700;color:#1B4F8C;'
                 'border-left:4px solid #1B4F8C;padding:0.4rem 0 0.4rem 0.75rem;'
                 'margin:0.5rem 0 0.85rem 0;">'
                 'What does it look like?</div>'
@@ -2242,7 +2341,7 @@ with streamlit_analytics.track():
 
             # ─── SECTION 3 How much fuel and how long does it last? ───
             st.markdown(
-                '<div style="font-size:1.05rem;font-weight:800;color:#1B4F8C;'
+                '<div style="font-size:1rem;font-weight:700;color:#1B4F8C;'
                 'border-left:4px solid #1B4F8C;padding:0.4rem 0 0.4rem 0.75rem;'
                 'margin:1.2rem 0 0.85rem 0;">'
                 'How much fuel and how long does it last?</div>',
@@ -2274,18 +2373,18 @@ with streamlit_analytics.track():
                 elif status == 'error':
                     _bg, _br, _tc = '#fef2f2', '#fecaca', '#b91c1c'
                 else:
-                    _bg, _br, _tc = '#ffffff', '#e2e8f0', '#1B4F8C'
+                    _bg, _br, _tc = '#ffffff', '#bfdbfe', '#1B4F8C'
                 _help_html = html.escape(help_text) if help_text else ''
                 _html = (
                     f'<div style="background:{_bg};border:1px solid {_br};'
-                    f'border-radius:14px;padding:1.0rem 1.25rem;'
-                    f'box-shadow:0 2px 8px rgba(0,0,0,0.04);margin-bottom:0.6rem;">'
-                    f'<div style="font-size:0.68rem;font-weight:700;color:{_tc};'
+                    f'border-radius:8px;padding:1.0rem 1.25rem;'
+                    f'margin-bottom:0.6rem;">'
+                    f'<div style="font-size:0.85rem;font-weight:600;color:{_tc};'
                     f'text-transform:uppercase;letter-spacing:0.09em;margin-bottom:0.35rem;">'
                     f'{title}</div>'
-                    f'<div style="font-size:1.05rem;font-weight:800;color:#111827;'
+                    f'<div style="font-size:1rem;font-weight:700;color:#0a2540;'
                     f'line-height:1.3;margin-bottom:0.45rem;">{value_str}</div>'
-                    f'<div style="font-size:0.72rem;font-weight:400;color:#64748b;'
+                    f'<div style="font-size:0.85rem;font-weight:400;color:#64748b;'
                     f'line-height:1.45;">{_help_html}</div>'
                     f'</div>'
                 )
@@ -2293,7 +2392,7 @@ with streamlit_analytics.track():
 
             def _section_header(label, accent='#1B4F8C'):
                 st.markdown(
-                    f'<div style="font-size:0.95rem;font-weight:800;color:{accent};'
+                    f'<div style="font-size:1rem;font-weight:700;color:{accent};'
                     f'border-left:4px solid {accent};padding:0.35rem 0 0.35rem 0.7rem;'
                     f'margin:1.5rem 0 0.85rem 0;letter-spacing:0.01em;">'
                     f'{label}</div>',
@@ -2303,8 +2402,8 @@ with streamlit_analytics.track():
             def _scoping_callout(text):
                 st.markdown(
                     f'<div style="background:#fffbeb;border:1.5px solid #f59e0b;'
-                    f'border-radius:10px;padding:0.95rem 1.15rem;margin-bottom:1rem;'
-                    f'font-size:0.85rem;line-height:1.55;color:#78350f;">'
+                    f'border-radius:8px;padding:0.95rem 1.15rem;margin-bottom:1rem;'
+                    f'font-size:0.85rem;line-height:1.55;color:#92400e;">'
                     f'<strong style="color:#92400e;">Scoping-only note. </strong>'
                     f'{text}</div>',
                     unsafe_allow_html=True,
@@ -2478,7 +2577,7 @@ with streamlit_analytics.track():
                     'Discharge burnup (avg)',
                     f'{_bu_avg:,.1f} MWd/kgHM',
                     ('Average burnup of the fuel at end-of-life (when the reactor '
-                     'first becomes subcritical). Computed as Power [MWt] × Fuel '
+                     'first becomes subcritical). Computed as Power [MWₜ] × Fuel '
                      'Lifetime [days] / Heavy Metal mass [kg]. This is the '
                      'headline economic metric higher discharge burnup means '
                      'more energy extracted per kg of fuel, lowering fuel cost '
@@ -2575,8 +2674,8 @@ with streamlit_analytics.track():
                     )
 
                 # Onsite coolant inventory power-scaled, reactor-specific.
-                # LTMR: 1833 kg/MWt of NaK (Creys-Malville scaling).
-                # GCMR: 3.3 kg/MWt of helium (UNT 919556 tables 17 & 18).
+                # LTMR: 1833 kg/MWₜ of NaK (Creys-Malville scaling).
+                # GCMR: 3.3 kg/MWₜ of helium (UNT 919556 tables 17 & 18).
                 # HPMR: 0 (heat pipes individually sealed; no bulk inventory).
                 #
                 # Display in tons with deliberately coarse rounding to signal
@@ -2596,9 +2695,9 @@ with streamlit_analytics.track():
                             'LTMR': (
                                 'Rough estimate of the on-site primary NaK '
                                 'inventory (filled core + storage). Scales '
-                                'linearly with thermal power at ~1833 kg/MWt, '
+                                'linearly with thermal power at ~1833 kg/MWₜ, '
                                 'derived from the Creys-Malville sodium plant '
-                                '(5,500 t Na for a 3,000 MWt core). NaK does '
+                                '(5,500 t Na for a 3,000 MWₜ core). NaK does '
                                 'not require periodic replacement the '
                                 'primary boundary is sealed and the coolant '
                                 'is not consumed. Drives the coolant '
@@ -2608,7 +2707,7 @@ with streamlit_analytics.track():
                             'GCMR': (
                                 'Rough estimate of the on-site helium '
                                 'inventory. Scales linearly with thermal '
-                                'power at ~3.3 kg/MWt (UNT 919556 tables 17 '
+                                'power at ~3.3 kg/MWₜ (UNT 919556 tables 17 '
                                 '& 18). He has a steady ~10 %/year leakage '
                                 'rate (NAS 12844), so one-tenth of this '
                                 'inventory is replaced annually. Drives both '
@@ -2634,13 +2733,13 @@ with streamlit_analytics.track():
                             'Coolant mass flow rate',
                             f'{_mdot:,.1f} kg/s',
                             ('Primary-coolant mass flow rate computed from '
-                             'm_dot = Power_MWt × 10⁶ / (ΔT × c_p) with the '
+                             'm_dot = Power_MWₜ × 10⁶ / (ΔT × c_p) with the '
                              'LTMR\'s fixed ΔT = 90 °C across the core (Tin '
                              '430 → Tout 520 °C) and the heat capacity of '
                              'NaK eutectic. Sets the primary-pump and heat-'
                              'exchanger sizing. Liquid-metal microreactor '
                              'flow rates are typically 5-100 kg/s for the '
-                             '1-20 MWt range; higher powers scale linearly.'),
+                             '1-20 MWₜ range; higher powers scale linearly.'),
                             section=5,
                         )
 
@@ -2676,13 +2775,13 @@ with streamlit_analytics.track():
                             ('Primary-coolant (helium) mass flow rate, total '
                              'across all primary loops. Computed by '
                              'tools.mass_flow_rate as '
-                             'm_dot = Power_MWt × 10⁶ / (ΔT × c_p) per loop, '
+                             'm_dot = Power_MWₜ × 10⁶ / (ΔT × c_p) per loop, '
                              'then ÷ loop_factor to get the reactor total. '
                              'GCMR uses a fixed ΔT = 250 °C across the core '
                              '(T_in 300 → T_out 550 °C) and the c_p of He '
                              '(~5193 J/(kg·K)). Helium\'s low density makes '
                              'these values much smaller than liquid-metal '
-                             'flows typically 1-10 kg/s for a 1-20 MWt '
+                             'flows typically 1-10 kg/s for a 1-20 MWₜ '
                              'GCMR. Sets compressor and PCHE sizing.'),
                             section=5,
                         )
@@ -2745,7 +2844,7 @@ with streamlit_analytics.track():
                             'Power per heat pipe',
                             f'{_kw_per_hp:,.2f} kW/HP',
                             ('Thermal duty carried by each Na heat pipe = '
-                             'Power_MWt × 1000 / N_HP. Sets the operating '
+                             'Power_MWₜ × 1000 / N_HP. Sets the operating '
                              'point relative to the sodium heat-pipe '
                              'capacity envelope, which is bounded by four '
                              'physical limits: capillary (wick can\'t '
@@ -2814,7 +2913,7 @@ with streamlit_analytics.track():
                                 section=5,
                             )
 
-                # Power density = Power_MWt / Active Core Volume.
+                # Power density = Power_MWₜ / Active Core Volume.
                 # Active core is a hex prism with apothem = active_radius
                 # and height = Active Height. _active_radius_cm was already
                 # computed earlier in this block (Core Radius − reflector).
@@ -2828,7 +2927,7 @@ with streamlit_analytics.track():
                         'Power density',
                         f'{_pd:,.1f} MW/m³',
                         ('Thermal power per unit active core volume = '
-                         'Power_MWt / (2√3 · R² · H), where R is the active '
+                         'Power_MWₜ / (2√3 · R² · H), where R is the active '
                          'core hex apothem (no reflector) and H is the active '
                          'height. Tells you how aggressively the fuel is '
                          'loaded relative to the core size. Typical ranges: '
@@ -2883,15 +2982,15 @@ with streamlit_analytics.track():
             # weights < 1 ton -> 1 significant figure
             # dimensions -> meters with 1 decimal
             st.markdown(
-                '<div style="font-size:1.05rem;font-weight:800;color:#1B4F8C;'
+                '<div style="font-size:1rem;font-weight:700;color:#1B4F8C;'
                 'border-left:4px solid #1B4F8C;padding:0.4rem 0 0.4rem 0.75rem;'
                 'margin:1.2rem 0 0.85rem 0;">'
                 'Can we ship it?</div>',
                 unsafe_allow_html=True,
             )
             st.markdown(
-                '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;'
-                'padding:0.85rem 1.1rem;margin-bottom:0.9rem;font-size:0.82rem;line-height:1.45;color:#334155;">'
+                '<div style="background:#f7f8fa;border:1px solid #bfdbfe;border-radius:8px;'
+                'padding:0.85rem 1.1rem;margin-bottom:0.9rem;font-size:0.85rem;line-height:1.45;color:#3c4257;">'
                 'Transportability is one of the headline features of microreactors the option to '
                 'ship the reactor module in one piece on a truck, rail car, or sea container differentiates '
                 'them from large NPPs. The values below check the current MOUSE configuration against the '
@@ -2992,12 +3091,12 @@ with streamlit_analytics.track():
             # shown inline in the table itself. Explicit colors
             # throughout so the table is readable regardless of the
             # Streamlit theme.
-            _CELL = ('padding:0.55rem 0.8rem;color:#1e293b;'
-                     'border-bottom:1px solid #e2e8f0;'
+            _CELL = ('padding:0.55rem 0.8rem;color:#0a2540;'
+                     'border-bottom:1px solid #bfdbfe;'
                      'vertical-align:top;')
             _CELL_C = _CELL + 'text-align:center;'
             _CELL_NAME = _CELL + 'font-weight:600;'
-            _DESC = ('font-size:0.72rem;font-weight:400;color:#64748b;'
+            _DESC = ('font-size:0.85rem;font-weight:400;color:#64748b;'
                      'line-height:1.4;margin-top:0.2rem;')
 
             _reactor_desc = (
@@ -3006,12 +3105,12 @@ with streamlit_analytics.track():
                 'monolith graphite for HPMR), radial + axial reflector, '
                 'control drums. Excludes: fuel cladding (small, not '
                 'tracked in MOUSE).'
-                + (' <span style="color:#b45309;">HPMR heat-pipe '
+                + (' <span style="color:#92400e;">HPMR heat-pipe '
                    'steel cladding and Na working fluid not yet '
                    'modeled.</span>' if reactor_type == 'HPMR' else '')
             )
             _rv_desc_extra = (
-                ' <span style="color:#0c4a6e;">For GCMR this maps to '
+                ' <span style="color:#1B4F8C;">For GCMR this maps to '
                 'MOUSE\'s internal "Guard Vessel" field (the RPV).</span>'
                 if reactor_type == 'GCMR' else ''
             )
@@ -3020,7 +3119,7 @@ with streamlit_analytics.track():
                 'Height = active core + axial reflector + lower '
                 f'plenum + upper plenum + bottom dish '
                 f'({_bottom_depth_cm:.1f} cm placeholder, flagged). '
-                '<span style="color:#b45309;">Top closure dome '
+                '<span style="color:#92400e;">Top closure dome '
                 'not yet modeled.</span> Mass = vessel wall only.'
                 + _rv_desc_extra
             )
@@ -3054,7 +3153,7 @@ with streamlit_analytics.track():
                 '</tr>'
             )
             _rows_html.append(
-                '<tr style="background:#fafafa;">'
+                '<tr style="background:#f7f8fa;">'
                 f'<td style="{_CELL_NAME}">Reactor vessel'
                 f'<div style="{_DESC}">{_rv_desc}</div></td>'
                 f'<td style="{_CELL_C}">{_m1(_rv_height_cm)}</td>'
@@ -3075,13 +3174,13 @@ with streamlit_analytics.track():
             else:
                 _rows_html.append(
                     '<tr style="background:#ffffff;">'
-                    f'<td style="{_CELL_NAME};color:#94a3b8;">Guard vessel'
+                    f'<td style="{_CELL_NAME};color:#64748b;">Guard vessel'
                     f'<div style="{_DESC}">{_gv_na_desc}</div></td>'
-                    f'<td colspan="3" style="{_CELL_C};color:#94a3b8;">N/A not used for this reactor type</td>'
+                    f'<td colspan="3" style="{_CELL_C};color:#64748b;">N/A not used for this reactor type</td>'
                     '</tr>'
                 )
             _rows_html.append(
-                '<tr style="background:#fafafa;">'
+                '<tr style="background:#f7f8fa;">'
                 f'<td style="{_CELL_NAME}">RVACS (cooling + intake vessels)'
                 f'<div style="{_DESC}">{_rvacs_desc}</div></td>'
                 f'<td style="{_CELL_C}">{_m1(_rvacs_height_cm)}</td>'
@@ -3090,15 +3189,15 @@ with streamlit_analytics.track():
                 '</tr>'
             )
 
-            _TH = ('padding:0.6rem 0.8rem;font-size:0.72rem;'
+            _TH = ('padding:0.6rem 0.8rem;font-size:0.85rem;'
                    'text-transform:uppercase;letter-spacing:0.06em;'
-                   'color:#475569;font-weight:700;')
+                   'color:#3c4257;font-weight:600;')
             st.markdown(
                 '<div style="margin-bottom:0.9rem;">'
                 '<table style="width:100%;border-collapse:collapse;'
-                'font-size:0.83rem;background:#ffffff;color:#1e293b;'
-                'border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">'
-                '<thead style="background:#f1f5f9;">'
+                'font-size:0.85rem;background:#ffffff;color:#0a2540;'
+                'border:1px solid #bfdbfe;border-radius:8px;overflow:hidden;">'
+                '<thead style="background:#f1f3f5;">'
                 '<tr>'
                 f'<th style="{_TH};text-align:left;">Component</th>'
                 f'<th style="{_TH};text-align:center;">Height</th>'
@@ -3138,13 +3237,13 @@ with streamlit_analytics.track():
                 'has a bulk primary coolant requiring secondary containment).</li>'
             )
             st.markdown(
-                '<div style="background:#f0f9ff;border:1px solid #bae6fd;'
-                'border-radius:10px;padding:0.85rem 1.1rem;margin-bottom:0.9rem;'
-                'font-size:0.79rem;line-height:1.55;color:#0c4a6e;">'
-                '<div style="font-weight:700;font-size:0.72rem;'
+                '<div style="background:#eff6ff;border:1px solid #bfdbfe;'
+                'border-radius:8px;padding:0.85rem 1.1rem;margin-bottom:0.9rem;'
+                'font-size:0.85rem;line-height:1.55;color:#1B4F8C;">'
+                '<div style="font-weight:600;font-size:0.85rem;'
                 'text-transform:uppercase;letter-spacing:0.06em;'
-                'color:#0369a1;margin-bottom:0.45rem;">Notes &amp; assumptions</div>'
-                '<ul style="margin:0;padding-left:1.2rem;color:#0c4a6e;">'
+                'color:#1B4F8C;margin-bottom:0.45rem;">Notes &amp; assumptions</div>'
+                '<ul style="margin:0;padding-left:1.2rem;color:#1B4F8C;">'
                 '<li><strong>Reactor (core + reflectors + drums):</strong> '
                 'mass sums uranium (U235 + U238) + moderator (ZrH for LTMR; '
                 'graphite + ZrH booster for GCMR; monolith graphite for HPMR) '
@@ -3198,7 +3297,7 @@ with streamlit_analytics.track():
                     'cite_html': (
                         'Federal Bridge Formula '
                         '<a href="https://www.law.cornell.edu/uscode/text/23/127" '
-                        'target="_blank" style="color:#2563eb;">23 U.S.C. § 127</a>; '
+                        'target="_blank" style="color:#1B4F8C;">23 U.S.C. § 127</a>; '
                         'FHWA "Federal Size Regulations for Commercial Motor Vehicles". '
                         'State-by-state variations may permit larger envelopes on '
                         'non-Interstate routes.'
@@ -3254,21 +3353,21 @@ with streamlit_analytics.track():
                 _len_str = (f' &nbsp;|&nbsp; length ≤ {_mode["length_m"]:.2f} m'
                             if _mode['length_m'] is not None else '')
                 _mode_cards_html.append(
-                    '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;'
-                    'padding:0.85rem 1.1rem;margin-bottom:0.6rem;color:#1e293b;">'
+                    '<div style="background:#ffffff;border:1px solid #bfdbfe;border-radius:8px;'
+                    'padding:0.85rem 1.1rem;margin-bottom:0.6rem;color:#0a2540;">'
                     '<div style="display:flex;justify-content:space-between;align-items:center;'
                     'margin-bottom:0.35rem;">'
-                    f'<div style="font-weight:700;font-size:0.86rem;color:#1e293b;">{_mode["name"]}</div>'
+                    f'<div style="font-weight:600;font-size:0.85rem;color:#0a2540;">{_mode["name"]}</div>'
                     f'<div style="background:{_badge_color[1]};border:1px solid {_badge_color[2]};'
-                    f'color:{_badge_color[0]};font-size:0.72rem;font-weight:700;'
-                    f'padding:0.15rem 0.6rem;border-radius:6px;">{_badge_text}</div>'
+                    f'color:{_badge_color[0]};font-size:0.85rem;font-weight:600;'
+                    f'padding:0.15rem 0.6rem;border-radius:8px;">{_badge_text}</div>'
                     '</div>'
-                    f'<div style="font-size:0.78rem;color:#475569;margin-bottom:0.3rem;">'
+                    f'<div style="font-size:0.85rem;color:#3c4257;margin-bottom:0.3rem;">'
                     f'width ≤ {_mode["width_m"]:.2f} m &nbsp;|&nbsp; '
                     f'height ≤ {_mode["height_m"]:.2f} m &nbsp;|&nbsp; '
                     f'weight ≤ {_mode["weight_t"]:.1f} ton{_len_str}'
                     f'</div>'
-                    f'<div style="font-size:0.72rem;color:#64748b;line-height:1.4;">{_mode["cite_html"]}</div>'
+                    f'<div style="font-size:0.85rem;color:#64748b;line-height:1.4;">{_mode["cite_html"]}</div>'
                     '</div>'
                 )
 
@@ -3276,8 +3375,8 @@ with streamlit_analytics.track():
 
             # Footnote what each badge does and doesn't check
             st.markdown(
-                '<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;'
-                'padding:0.65rem 1rem;margin-bottom:1rem;font-size:0.74rem;line-height:1.45;color:#7c2d12;">'
+                '<div style="background:#fff7ed;border:1px solid #fcd34d;border-radius:8px;'
+                'padding:0.65rem 1rem;margin-bottom:1rem;font-size:0.85rem;line-height:1.45;color:#92400e;">'
                 '<strong>Note:</strong> Each badge compares the outermost RVACS envelope '
                 '(diameter, height) and the sum of all component masses against the mode\'s '
                 'limits. Per-component dimensions and masses are shown above; component-level '
@@ -3289,7 +3388,7 @@ with streamlit_analytics.track():
             )
 
             st.markdown(
-                '<div style="font-size:0.7rem;font-weight:700;color:#64748b;text-transform:uppercase;'
+                '<div style="font-size:0.85rem;font-weight:600;color:#64748b;text-transform:uppercase;'
                 'letter-spacing:0.09em;margin-bottom:0.6rem;">Capital Costs</div>',
                 unsafe_allow_html=True,
             )
@@ -3304,7 +3403,7 @@ with streamlit_analytics.track():
             st.markdown('<div style="height:0.75rem"></div>', unsafe_allow_html=True)
 
             st.markdown(
-                '<div style="font-size:0.7rem;font-weight:700;color:#64748b;text-transform:uppercase;'
+                '<div style="font-size:0.85rem;font-weight:600;color:#64748b;text-transform:uppercase;'
                 'letter-spacing:0.09em;margin-bottom:0.6rem;">Levelized Costs</div>',
                 unsafe_allow_html=True,
             )
@@ -3320,12 +3419,12 @@ with streamlit_analytics.track():
                       color=_CARD_COLORS['lcof'])
 
         st.markdown(
-            '<div style="margin-top:1.2rem;padding:0.7rem 1rem;background:#f8fafc;'
-            'border-radius:8px;border:1px solid #e2e8f0;font-size:0.78rem;color:#64748b;">'
-            '<span style="background:#fff3ed;color:#c84b1e;font-size:0.62rem;font-weight:800;'
+            '<div style="margin-top:1.2rem;padding:0.7rem 1rem;background:#f7f8fa;'
+            'border-radius:8px;border:1px solid #bfdbfe;font-size:0.85rem;color:#64748b;">'
+            '<span style="background:#fff3ed;color:#c84b1e;font-size:0.85rem;font-weight:700;'
             'padding:0.1rem 0.4rem;border-radius:4px;margin-right:0.4rem;">FOAK</span>'
             'First-of-a-Kind includes learning curve and contingency premiums for an initial deployment.&emsp;'
-            '<span style="background:#eff6ff;color:#1d4ed8;font-size:0.62rem;font-weight:800;'
+            '<span style="background:#eff6ff;color:#1B4F8C;font-size:0.85rem;font-weight:700;'
             'padding:0.1rem 0.4rem;border-radius:4px;margin-right:0.4rem;">NOAK</span>'
             'Nth-of-a-Kind reflects mature, serial production cost reductions at scale.'
             '</div>',
@@ -3337,13 +3436,13 @@ with streamlit_analytics.track():
         # ─────────────────────────────────────────────────────────
         st.markdown('<div style="height:1.2rem"></div>', unsafe_allow_html=True)
         st.markdown(
-            '<div style="font-size:0.7rem;font-weight:700;color:#64748b;text-transform:uppercase;'
+            '<div style="font-size:0.85rem;font-weight:600;color:#64748b;text-transform:uppercase;'
             'letter-spacing:0.09em;margin-bottom:0.6rem;">Costs in Perspective</div>',
             unsafe_allow_html=True,
         )
         st.markdown(
-            '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;'
-            'padding:0.85rem 1.1rem;margin-bottom:0.9rem;font-size:0.82rem;line-height:1.45;color:#334155;">'
+            '<div style="background:#f7f8fa;border:1px solid #bfdbfe;border-radius:8px;'
+            'padding:0.85rem 1.1rem;margin-bottom:0.9rem;font-size:0.85rem;line-height:1.45;color:#3c4257;">'
             'The curve is anchored at four deployment scales: N=1 (FOAK from the headline '
             'card), N=2, N=10 (two extra cost-engine calls, cached), and N=user-set NOAK '
             'Unit Number (default 100, NOAK from the headline card). The shaded band '
@@ -3550,10 +3649,10 @@ with streamlit_analytics.track():
                 _band_lo = (_m_arr - _s_arr).min()
                 _band_hi = (_m_arr + _s_arr).max()
                 st.markdown(
-                    f'<div style="background:#fef3c7;border:1px solid #f59e0b;'
+                    f'<div style="background:#fffbeb;border:1px solid #f59e0b;'
                     f'border-radius:8px;padding:0.8rem 1rem;margin-bottom:0.6rem;'
-                    f'color:#7c2d12;font-size:0.85rem;line-height:1.55;">'
-                    f'<strong style="color:#7c2d12;">⚠️ Reactor LCOE off the chart.</strong> '
+                    f'color:#92400e;font-size:0.85rem;line-height:1.55;">'
+                    f'<strong style="color:#92400e;">⚠️ Reactor LCOE off the chart.</strong> '
                     f'The reactor LCOE band ranges roughly '
                     f'<strong>${_band_lo:,.0f}-${_band_hi:,.0f}/MWh</strong>, which is above '
                     f'the chart\'s <strong>${int(_ymax)}/MWh</strong> ceiling, so the curve is '
@@ -3570,12 +3669,12 @@ with streamlit_analytics.track():
 
             # Market definitions panel (matches the user-provided spec)
             st.markdown(
-                '<div style="background:#f0f9ff;border:1px solid #bae6fd;'
-                'border-radius:10px;padding:0.85rem 1.1rem;margin-bottom:0.9rem;'
-                'font-size:0.78rem;line-height:1.55;color:#0c4a6e;">'
-                '<div style="font-weight:700;font-size:0.72rem;'
+                '<div style="background:#eff6ff;border:1px solid #bfdbfe;'
+                'border-radius:8px;padding:0.85rem 1.1rem;margin-bottom:0.9rem;'
+                'font-size:0.85rem;line-height:1.55;color:#1B4F8C;">'
+                '<div style="font-weight:600;font-size:0.85rem;'
                 'text-transform:uppercase;letter-spacing:0.06em;'
-                'color:#0369a1;margin-bottom:0.45rem;">Market definitions</div>'
+                'color:#1B4F8C;margin-bottom:0.45rem;">Market definitions</div>'
                 '<ul style="margin:0;padding-left:1.2rem;">'
                 '<li><strong>U.S. Grid Generation:</strong> regional average wholesale price; '
                 'excludes transmission, distribution, and customer charges.</li>'
@@ -3648,14 +3747,14 @@ with streamlit_analytics.track():
 
         st.markdown('<div style="height:1.2rem"></div>', unsafe_allow_html=True)
         st.markdown(
-            '<div style="font-size:0.7rem;font-weight:700;color:#64748b;text-transform:uppercase;'
+            '<div style="font-size:0.85rem;font-weight:600;color:#64748b;text-transform:uppercase;'
             'letter-spacing:0.09em;margin-bottom:0.6rem;">Behind-the-Meter Comparison: '
             'Reactor LCOE vs State Retail Electricity Prices</div>',
             unsafe_allow_html=True,
         )
         st.markdown(
-            '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;'
-            'padding:0.85rem 1.1rem;margin-bottom:0.9rem;font-size:0.82rem;line-height:1.45;color:#334155;">'
+            '<div style="background:#f7f8fa;border:1px solid #bfdbfe;border-radius:8px;'
+            'padding:0.85rem 1.1rem;margin-bottom:0.9rem;font-size:0.85rem;line-height:1.45;color:#3c4257;">'
             'For behind-the-meter (BTM) and bring-your-own-generator (BYOG) deployments '
             'data centers, industrial loads, mining, defense a useful '
             '<em>first-order</em> cost benchmark is the average retail electricity price '
@@ -3664,14 +3763,14 @@ with streamlit_analytics.track():
             '<strong>industrial sector</strong> by state from the U.S. Energy Information '
             'Administration. States are color-coded by competitiveness:'
             '<ul style="margin:0.4rem 0 0 1.2rem;">'
-            '<li><span style="color:#15803d;font-weight:700;">Green:</span> retail price '
+            '<li><span style="color:#15803d;font-weight:600;">Green:</span> retail price '
             'exceeds the FOAK upper band reactor wins even at FOAK.</li>'
-            '<li><span style="color:#b45309;font-weight:700;">Yellow:</span> retail price '
+            '<li><span style="color:#92400e;font-weight:600;">Yellow:</span> retail price '
             'between NOAK and FOAK bands reactor wins only at NOAK scale.</li>'
-            '<li><span style="color:#64748b;font-weight:700;">Gray:</span> retail price '
+            '<li><span style="color:#64748b;font-weight:600;">Gray:</span> retail price '
             'below the NOAK band not competitive even at scale.</li>'
             '</ul>'
-            '<div style="margin-top:0.5rem;font-size:0.74rem;color:#64748b;line-height:1.45;">'
+            '<div style="margin-top:0.5rem;font-size:0.85rem;color:#64748b;line-height:1.45;">'
             '<strong>Caveat:</strong> this is a simplified comparison. Actual avoided cost '
             'depends on customer sector, demand charges, standby tariffs, time-of-use '
             'structure, and ancillary value streams. Defense and remote sites often have '
@@ -3816,7 +3915,7 @@ with streamlit_analytics.track():
                 f'Of <strong>{len(_sorted)}</strong> jurisdictions, the reactor beats '
                 f'the average retail price in <strong style="color:#15803d;">'
                 f'{len(_foak_winners)}</strong> at FOAK (red band) and '
-                f'<strong style="color:#b45309;">{len(_noak_winners)}</strong> at NOAK '
+                f'<strong style="color:#92400e;">{len(_noak_winners)}</strong> at NOAK '
                 f'(blue band).'
             )
             _foak_list_html = (', '.join(_foak_winners) if _foak_winners
@@ -3826,9 +3925,9 @@ with streamlit_analytics.track():
                                else '<em>none</em>')
 
             st.markdown(
-                f'<div style="background:#f8fafc;border:1px solid #e2e8f0;'
-                f'border-radius:10px;padding:0.85rem 1.1rem;margin-bottom:0.9rem;'
-                f'font-size:0.82rem;line-height:1.55;color:#334155;">'
+                f'<div style="background:#f7f8fa;border:1px solid #bfdbfe;'
+                f'border-radius:8px;padding:0.85rem 1.1rem;margin-bottom:0.9rem;'
+                f'font-size:0.85rem;line-height:1.55;color:#3c4257;">'
                 f'{_summary_html}'
                 f'<div style="margin-top:0.55rem;">'
                 f'<span style="display:inline-block;width:0.85rem;height:0.85rem;'
@@ -3844,11 +3943,11 @@ with streamlit_analytics.track():
                 f'<strong>NOAK-only competitive ({len(_noak_only)}):</strong> '
                 f'{_noak_only_html}'
                 f'</div>'
-                f'<div style="margin-top:0.55rem;font-size:0.72rem;color:#64748b;">'
+                f'<div style="margin-top:0.55rem;font-size:0.85rem;color:#64748b;">'
                 f'Source: U.S. EIA, <em>State Electricity Profiles</em>, 2023 annual '
                 f'average retail price to ultimate customers industrial sector. '
                 f'<a href="https://www.eia.gov/electricity/state/" target="_blank" '
-                f'style="color:#2563eb;">eia.gov/electricity/state</a>'
+                f'style="color:#1B4F8C;">eia.gov/electricity/state</a>'
                 f'</div>'
                 f'</div>',
                 unsafe_allow_html=True,
@@ -3863,7 +3962,7 @@ with streamlit_analytics.track():
     with tab_physics:
         # Section 4 Neutronics
         st.markdown(
-            '<div style="font-size:1.05rem;font-weight:800;color:#1B4F8C;'
+            '<div style="font-size:1rem;font-weight:700;color:#1B4F8C;'
             'border-left:4px solid #1B4F8C;padding:0.4rem 0 0.4rem 0.75rem;'
             'margin:0.5rem 0 0.85rem 0;">'
             'Core neutronics at glance</div>',
@@ -3871,8 +3970,8 @@ with streamlit_analytics.track():
         )
         st.markdown(
             '<div style="background:#fffbeb;border:1.5px solid #f59e0b;'
-            'border-radius:10px;padding:0.95rem 1.15rem;margin-bottom:1rem;'
-            'font-size:0.85rem;line-height:1.55;color:#78350f;">'
+            'border-radius:8px;padding:0.95rem 1.15rem;margin-bottom:1rem;'
+            'font-size:0.85rem;line-height:1.55;color:#92400e;">'
             '<strong style="color:#92400e;">Scoping-only note. </strong>'
             'These are first-pass scoping designs for initial economic '
             'analysis. They have NOT been checked for shutdown margin, '
@@ -3894,7 +3993,7 @@ with streamlit_analytics.track():
 
         # Section 5 Thermal-hydraulics
         st.markdown(
-            '<div style="font-size:1.05rem;font-weight:800;color:#1B4F8C;'
+            '<div style="font-size:1rem;font-weight:700;color:#1B4F8C;'
             'border-left:4px solid #1B4F8C;padding:0.4rem 0 0.4rem 0.75rem;'
             'margin:1.5rem 0 0.85rem 0;">'
             'Core thermal-hydraulic conditions at a glance</div>',
@@ -3902,8 +4001,8 @@ with streamlit_analytics.track():
         )
         st.markdown(
             '<div style="background:#fffbeb;border:1.5px solid #f59e0b;'
-            'border-radius:10px;padding:0.95rem 1.15rem;margin-bottom:1rem;'
-            'font-size:0.85rem;line-height:1.55;color:#78350f;">'
+            'border-radius:8px;padding:0.95rem 1.15rem;margin-bottom:1rem;'
+            'font-size:0.85rem;line-height:1.55;color:#92400e;">'
             '<strong style="color:#92400e;">Scoping-only note. </strong>'
             'Heat flux, power density, and per-component thermal duty '
             'are reported for first-order sizing only. The app does NOT '
@@ -3987,7 +4086,7 @@ with streamlit_analytics.track():
             ax.set_axisbelow(True)
 
             legend = ax.legend(fontsize=12, frameon=True, framealpha=1,
-                               edgecolor='#e2e8f0', facecolor='white',
+                               edgecolor='#bfdbfe', facecolor='white',
                                loc='upper right', handlelength=1.5,
                                borderpad=0.8, labelspacing=0.5)
             legend.get_frame().set_linewidth(1.0)
@@ -4061,7 +4160,7 @@ with streamlit_analytics.track():
             ax2.set_axisbelow(True)
 
             legend2 = ax2.legend(fontsize=12, frameon=True, framealpha=1,
-                                 edgecolor='#e2e8f0', facecolor='white',
+                                 edgecolor='#bfdbfe', facecolor='white',
                                  loc='upper right', handlelength=1.5,
                                  borderpad=0.8, labelspacing=0.5)
             legend2.get_frame().set_linewidth(1.0)
@@ -4081,6 +4180,8 @@ with streamlit_analytics.track():
         st.markdown(
             f'<p style="color:#64748b;font-size:0.85rem;margin-bottom:1rem;">'
             f'Full cost breakdown by Code of Accounts. Highlighted rows are parent accounts. '
+            f'Cost ranges (e.g. <em>36M - 42M</em>) show mean ± 1σ from the uncertainty analysis; '
+            f'a single value means no uncertainty was computed for that account. '
             f'All dollar values in {ESCALATION_YEAR} USD.</p>',
             unsafe_allow_html=True,
         )
@@ -4106,7 +4207,7 @@ with streamlit_analytics.track():
                 return m
             lo = _fmt_table_val(max(0, mn - sd))
             hi = _fmt_table_val(mn + sd)
-            return f'{lo} {hi}' if lo != hi else lo
+            return f'{lo} - {hi}' if lo != hi else lo
 
         def _fmt_lcoe_tab(v):
             try:
@@ -4134,7 +4235,7 @@ with streamlit_analytics.track():
                 return m
             lo = _fmt_lcoe_tab(max(0.0, mn - sd))
             hi = _fmt_lcoe_tab(mn + sd)
-            return lo if lo == hi else f'{lo} {hi}'
+            return lo if lo == hi else f'{lo} - {hi}'
 
         def _fmt_account(x):
             if isinstance(x, str):
@@ -4189,17 +4290,17 @@ with streamlit_analytics.track():
         ]
 
         _LEVEL_STYLE = {
-            '-': ('background-color:#fef9c3', 'color:#78350f', 'font-weight:700'),
-             0: ('background-color:#1e3a5f', 'color:#f0f9ff', 'font-weight:700'),
-             1: ('background-color:#cfe2f3', 'color:#1a2e44', 'font-weight:600'),
-             2: ('background-color:#eaf4fb', 'color:#1a2e44', 'font-weight:500'),
-             3: ('background-color:#ffffff', 'color:#374151', 'font-weight:400'),
-             4: ('background-color:#ffffff', 'color:#374151', 'font-weight:400'),
+            '-': ('background-color:#fef9c3', 'color:#92400e', 'font-weight:600'),
+             0: ('background-color:#0a2540', 'color:#ffffff', 'font-weight:600'),
+             1: ('background-color:#cfe2f3', 'color:#0a2540', 'font-weight:600'),
+             2: ('background-color:#eaf4fb', 'color:#0a2540', 'font-weight:500'),
+             3: ('background-color:#ffffff', 'color:#3c4257', 'font-weight:400'),
+             4: ('background-color:#ffffff', 'color:#3c4257', 'font-weight:400'),
         }
 
         def _row_style(row):
             lv = _acct_levels[_idx_to_pos[row.name]]
-            bg, fg, fw = _LEVEL_STYLE.get(lv, ('background-color:#ffffff', 'color:#374151', ''))
+            bg, fg, fw = _LEVEL_STYLE.get(lv, ('background-color:#ffffff', 'color:#3c4257', ''))
             cell = f'{bg};{fg};{fw}'
             return [cell] * len(row)
 
@@ -4210,8 +4311,8 @@ with streamlit_analytics.track():
             .set_properties(subset=_num_cols, **{'text-align': 'right', 'padding': '2px 8px'})
             .set_table_styles([{
                 'selector': 'thead tr th',
-                'props': ('background-color:#1e3a5f;color:#f0f9ff;'
-                          'font-weight:600;font-size:0.75rem;'
+                'props': ('background-color:#0a2540;color:#ffffff;'
+                          'font-weight:600;font-size:0.85rem;'
                           'text-transform:uppercase;letter-spacing:0.05em;')
             }])
         )
@@ -4245,9 +4346,26 @@ with streamlit_analytics.track():
             use_container_width=True,
         )
 
+    # ── Caveat reminder (rendered at the very end of the results page) ──────
+    st.markdown(
+        '''<div style="background:#fffbeb;border:1px solid #fcd34d;
+                       border-left:4px solid #f59e0b;border-radius:8px;
+                       padding:0.65rem 1rem;margin-top:1.5rem;margin-bottom:1.2rem;
+                       display:flex;align-items:flex-start;gap:0.6rem;">
+             <span style="font-size:1rem;flex-shrink:0;margin-top:0.05rem;">⚠️</span>
+             <span style="font-size:1rem;color:#92400e;line-height:1.55;">
+               <strong>Caveats:</strong> Reactor designs are pre-conceptual and not fully
+               optimized. Cost estimates were produced with incomplete information and
+               <strong>must not be used for investment or procurement decisions</strong>.
+               Results are intended for research and comparative screening only.
+             </span>
+           </div>''',
+        unsafe_allow_html=True,
+    )
+
     st.markdown(
         """
-        <div style='text-align: center; font-size: 0.9rem; color: gray; padding-top: 2rem; padding-bottom: 1rem;'>
+        <div style='text-align: center; font-size: 1rem; color: #64748b; padding-top: 2rem; padding-bottom: 1rem;'>
             © 2025 Battelle Energy Alliance, LLC. MOUSE is released under the MIT License.
         </div>
         """,

@@ -998,7 +998,7 @@ PARAMS_REGISTRY = {
     # =========================================================
     'Operation Mode': {
         'group': 'Operation', 'units': '',
-        'description': 'Reactor operation mode: Autonomous (remote) or Non-Autonomous (staffed)',
+        'description': 'Reactor operation mode: Remotely Monitored or On-Site Staffed',
         'source': 'User Input', 'hidden': False, 'array_mode': None},
 
     'Number of Operators': {

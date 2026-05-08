@@ -221,7 +221,7 @@ calculate_shielding_masses(params)
 #                                           Sec. 9 : Operation
 # **************************************************************************************************************************
 update_params({
-    'Operation Mode': "Autonomous",
+    'Operation Mode': "Remotely Monitored",
     'Number of Operators': 2,
     'Levelization Period': 60,  # years
     'Refueling Period': 7,
