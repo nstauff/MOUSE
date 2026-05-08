@@ -1253,13 +1253,11 @@ with streamlit_analytics.track():
 
         _log_visit_once_per_session(analytics_conn, anonymous_id, reactor_type=reactor_type, page_name='main')
 
-        # Per-reactor enrichment floor. HPMR parametric study covers
-        # E in [0.10, 0.1975], so 10% is the lowest data-validated
-        # value. We expose 8% as the floor the 8 → 10% strip lets
-        # users explicitly see the subcritical region (extrapolated
-        # from training, which has subcritical rows at 10% for the
-        # smaller cores). LTMR / GCMR keep their data-validated 5%.
-        _enrichment_min = {'LTMR': 0.05, 'GCMR': 0.05, 'HPMR': 0.08}
+        # Per-reactor enrichment floor. All three reactors expose a 5%
+        # floor; values below the data-validated band (HPMR parametric
+        # study covers E in [0.10, 0.1975]) are extrapolated and let
+        # users explicitly see the subcritical region.
+        _enrichment_min = {'LTMR': 0.05, 'GCMR': 0.05, 'HPMR': 0.05}
         _e_min = _enrichment_min.get(reactor_type, 0.05)
         # Clamp the default to the per-reactor min in case a previous
         # session left a lower value cached.
