@@ -219,19 +219,18 @@ def estimate_hpmr_fuel_lifetime(n_rings_per_assembly, n_rings_per_core,
     weights = 1.0 / (nb_dists + 1e-9)
     weights /= weights.sum()
 
-    # Subcritical detection two-pronged:
-    # (a) Nearest-neighbour rule: if the closest training point is
-    # subcritical (LT=0) and the query is essentially right on
-    # top of it (normalised distance < 0.1), declare subcritical.
-    # Catches the sharp criticality cliff cleanly.
-    # (b) Majority weight rule: if the distance-weighted share of
-    # subcritical neighbours is ≥ 50 %, declare subcritical.
+    # Nearest-neighbour subcritical match: if the closest P-included
+    # neighbour is subcritical and the query sits essentially on top of
+    # it, declare subcritical. The majority-weight rule that used to
+    # live here was dropped — it produced a hard step in the lifetime
+    # curve right at the criticality cliff (sub_weight_fraction crossing
+    # 0.5 caused 14 yrs → 0 yrs over a single E tick). Subcritical
+    # anchors keep contributing to the L* weighted average (their
+    # L_star = 0 naturally pulls predicted lifetime down near the
+    # cliff), and the P-excluded pre-check above catches the clearly
+    # subcritical region.
     sub_mask = (nb['LT'].values <= 0)
     if sub_mask[0] and nb_dists[0] < 0.1:
-        return 0
-    sub_weight_fraction = (float(weights[sub_mask].sum())
-                           if sub_mask.any() else 0.0)
-    if sub_weight_fraction >= 0.5:
         return 0
 
     l_star_weighted = float((weights * nb['L_star'].values).sum())
