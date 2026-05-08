@@ -398,7 +398,7 @@ HPMR_DIAMETER_LABEL_TO_NC = {
 }
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, max_entries=64)
 def _run_estimate(reactor_type, power_mwt, enrichment, interest_rate, discount_rate,
                   construction_duration, debt_to_equity, operation_mode,
                   emergency_shutdowns, startup_duration, startup_duration_refueling,
@@ -438,7 +438,7 @@ def _run_estimate(reactor_type, power_mwt, enrichment, interest_rate, discount_r
 # "Costs in perspective" plot. Each call to bottom_up_cost_estimate uses
 # the same Number of Samples (10 set inside reactor_config.py) as the
 # headline LCOE card. Cached on every input that influences cost.
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, max_entries=64)
 def _run_lcoe_sweep(reactor_type, power_mwt, enrichment, interest_rate, discount_rate,
                     construction_duration, debt_to_equity, operation_mode,
                     emergency_shutdowns, startup_duration, startup_duration_refueling,
@@ -524,7 +524,7 @@ def _run_lcoe_sweep(reactor_type, power_mwt, enrichment, interest_rate, discount
 # extraction path as _run_estimate so the value matches the headline
 # format exactly: bottom_up_cost_estimate -> cost_drivers_estimate ->
 # transform_dataframe -> _get_mean_std.
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, max_entries=64)
 def _lcoe_at_noak_unit(reactor_type, power_mwt, enrichment, interest_rate, discount_rate,
                        construction_duration, debt_to_equity, operation_mode,
                        emergency_shutdowns, startup_duration, startup_duration_refueling,
