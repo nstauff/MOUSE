@@ -399,7 +399,7 @@ HPMR_DIAMETER_LABEL_TO_NC = {
 }
 
 
-@st.cache_data(show_spinner=False, max_entries=64)
+@st.cache_data(show_spinner=False, max_entries=16)
 def _run_estimate(reactor_type, power_mwt, enrichment, interest_rate, discount_rate,
                   construction_duration, debt_to_equity, operation_mode,
                   emergency_shutdowns, startup_duration, startup_duration_refueling,
@@ -444,7 +444,7 @@ def _run_estimate(reactor_type, power_mwt, enrichment, interest_rate, discount_r
 # extraction path as _run_estimate so the value matches the headline
 # format exactly: bottom_up_cost_estimate -> cost_drivers_estimate ->
 # transform_dataframe -> _get_mean_std.
-@st.cache_data(show_spinner=False, max_entries=64)
+@st.cache_data(show_spinner=False, max_entries=16)
 def _lcoe_at_noak_unit(reactor_type, power_mwt, enrichment, interest_rate, discount_rate,
                        construction_duration, debt_to_equity, operation_mode,
                        emergency_shutdowns, startup_duration, startup_duration_refueling,
