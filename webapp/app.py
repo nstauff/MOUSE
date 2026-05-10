@@ -2002,7 +2002,7 @@ with streamlit_analytics.track():
                        margin-bottom:1.5rem;">
              <div style="font-size:0.85rem;font-weight:600;letter-spacing:0.12em;
                          text-transform:uppercase;color:#64748b;margin-bottom:0.5rem;">
-               Cost Estimate Result
+               Run Summary
              </div>
              <h2 style="font-size:1.5rem;font-weight:700;margin:0 0 0.9rem;color:#0a2540;line-height:1.2;">
                {reactor_label} {_credit_badge}
