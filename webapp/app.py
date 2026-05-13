@@ -1855,6 +1855,23 @@ with streamlit_analytics.track():
             st.divider()
             _render_analytics_sidebar(analytics_conn)
 
+        # ── Subtle memory badge ──────────────────────────────────
+        # Last thing in the sidebar. Intentionally very small and
+        # faint slate text on the slate-grey sidebar; a casual user
+        # won't notice it, but a heavy user can glance to see how
+        # close the process is to the 1 GB Streamlit Cloud ceiling.
+        try:
+            import psutil as _psutil_sidebar
+            _rss_mb = _psutil_sidebar.Process().memory_info().rss / (1024 * 1024)
+            st.markdown(
+                f'<div style="font-size:0.7rem;color:#94a3b8;'
+                f'text-align:right;margin-top:1rem;">'
+                f'RAM {int(_rss_mb)} / 1024 MB</div>',
+                unsafe_allow_html=True,
+            )
+        except Exception:
+            pass
+
     # ── Welcome banner ──────────────────────────────────────────────────────
     # Wrap all welcome content in a single slot so we can explicitly
     # clear it when the user clicks Run; otherwise Streamlit can leave
