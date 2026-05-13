@@ -194,9 +194,11 @@ _REACTOR_IMAGES = {
     'LTMR': {
         'main': (
             os.path.join(_ASSETS, 'LTMR_core.png'),
-            'LTMR core cross-section hexagonal arrangement of TRIGA-type U-ZrH fuel '
-            'pins and ZrH moderator pins cooled by NaK liquid metal, surrounded by a '
-            'graphite radial reflector with control drums.',
+            'Simplified scoping-level design used for cost estimation, not a '
+            'detailed engineering design. LTMR core cross-section: hexagonal '
+            'arrangement of UZrH alloy fuel pins and ZrH moderator pins cooled '
+            'by NaK liquid metal, surrounded by a graphite radial reflector '
+            'with control drums.',
         ),
         'details': [
             (
@@ -728,12 +730,22 @@ def _get_mean_std(df, account, which='FOAK'):
 def _fmt_cost(mean, std):
     if math.isnan(mean):
         return 'N/A'
-    m = round(mean / 1e6)
+    # Sub-$1M values (e.g. training costs) round to 1 decimal so
+    # they read as "$0.3M" instead of "$0M". Values >= $1M stay as
+    # whole millions to keep OCC/TCI/Direct cards uncluttered.
+    use_decimal = abs(mean) < 1e6
+    fmt = (lambda v: f'${v / 1e6:.1f}M') if use_decimal else (lambda v: f'${round(v / 1e6)}M')
     if math.isnan(std) or std == 0:
-        return f'${m}M'
-    lo = round((mean - std) / 1e6)
-    hi = round((mean + std) / 1e6)
-    return f'${lo}M - ${hi}M'
+        return fmt(mean)
+    # "Mean [low – high]" the mean is the headline, the bracketed
+    # range (mean ± 1σ) is rendered in lighter slate so the eye anchors
+    # on the central number first.
+    return (
+        f'{fmt(mean)} '
+        f'<span style="color:#64748b;font-weight:400;">'
+        f'[{fmt(mean - std)} &ndash; {fmt(mean + std)}]'
+        f'</span>'
+    )
 
 
 def _fmt_lcoe(mean, std):
@@ -744,7 +756,12 @@ def _fmt_lcoe(mean, std):
         return f'${m}/MW<sub>e</sub>h'
     lo = int(round(mean - std))
     hi = int(round(mean + std))
-    return f'${lo} - ${hi}/MW<sub>e</sub>h'
+    return (
+        f'${m}/MW<sub>e</sub>h '
+        f'<span style="color:#64748b;font-weight:400;">'
+        f'[${lo} &ndash; ${hi}]'
+        f'</span>'
+    )
 
 
 def _fmt_lcoh(mean, std):
@@ -755,7 +772,12 @@ def _fmt_lcoh(mean, std):
         return f'${m}/MW<sub>t</sub>h'
     lo = int(round(mean - std))
     hi = int(round(mean + std))
-    return f'${lo} - ${hi}/MW<sub>t</sub>h'
+    return (
+        f'${m}/MW<sub>t</sub>h '
+        f'<span style="color:#64748b;font-weight:400;">'
+        f'[${lo} &ndash; ${hi}]'
+        f'</span>'
+    )
 
 
 def _get_lcof(df, which='FOAK'):
@@ -771,6 +793,32 @@ def _get_lcof(df, which='FOAK'):
     std_vals = pd.to_numeric(df.loc[mask, std_col], errors='coerce').fillna(0)
     std = float(np.sqrt((std_vals ** 2).sum()))
     return mean, std
+
+
+def _fmt_metric(v):
+    """Format a scoping-metric number per Section 3 convention.
+
+    - If value is NaN -> 'N/A'.
+    - If exactly 0 -> '0'.
+    - If |value| >= 1 -> rounded integer with thousands commas.
+    - If 0 < |value| < 1 -> rounded to ONE significant figure
+      (e.g. 0.123 -> 0.1, 0.045 -> 0.05, 0.0023 -> 0.002). If rounding
+      pushes the value across an order-of-magnitude boundary
+      (e.g. 0.97 -> 1), the integer branch is used instead.
+    """
+    if isinstance(v, float) and math.isnan(v):
+        return 'N/A'
+    if v == 0:
+        return '0'
+    av = abs(v)
+    if av >= 1:
+        return f'{round(v):,}'
+    exp = math.floor(math.log10(av))
+    decimals = -exp
+    rounded = round(v, decimals)
+    if abs(rounded) >= 1:
+        return f'{round(rounded):,}'
+    return f'{rounded:.{decimals}f}'
 
 
 def _fmt_table_val(x):
@@ -801,33 +849,85 @@ def _fmt_table_val(x):
 # ---------------------------------------------------------------------------
 # HTML/CSS card helpers
 # ---------------------------------------------------------------------------
-_CARD_COLORS = {
-    'occ': '#7c3aed',
-    'tci': '#0369a1',
-    'lcoe': '#0891b2',
-    'lcoh': '#059669',
-    'lcof': '#d97706',
-}
 
-def _kpi_card(col, title, foak_val, noak_val, color='#1B4F8C'):
+def _help_icon(text):
+    """Return HTML for a `?` help icon with a hover tooltip.
+
+    `text` is plain text (no HTML); it's HTML-escaped and exposed via
+    the `data-help` attribute (used by the CSS `::after` tooltip) and
+    `aria-label` (for screen readers). We deliberately do NOT set the
+    native `title=""` attribute because that triggers the browser's
+    built-in tooltip *on top of* our styled tooltip the result is
+    the same text rendering twice on hover.
+
+    Newlines (`\\n` or `\\n\\n`) inside the text are collapsed to a
+    single space before being put into the attribute value. Embedded
+    newlines in attribute values cause Streamlit's CommonMark parser
+    to treat the surrounding HTML as a "broken block" and dump the
+    attribute string as visible text into the card. Strip them defensively.
+    """
+    flat = ' '.join(text.split())
+    safe = html.escape(flat)
+    return (
+        f'<span class="mouse-help-icon" data-help="{safe}" '
+        f'aria-label="{safe}" tabindex="0">?</span>'
+    )
+
+
+def _section_header(num, title_html, subtitle_html, top_margin='2.5rem'):
+    """Render a Section 0X header as a tinted card.
+
+    The header is one rounded box with:
+    - a 4-px INL-blue left stripe (signature motif, same as Run Summary
+      and the subsection headers),
+    - a light-grey background (#f1f3f5 same as the Run Summary card)
+      so the section break is visually distinct from inline content,
+    - the section number prefix (`01 —`) in slate so the title pops,
+    - the title in INL-blue uppercase, 1.15 rem,
+    - the question-style subtitle in slate underneath.
+
+    `num` is a 2-char string ('01'..'05'). `title_html` and
+    `subtitle_html` may contain HTML entities; they're rendered as-is.
+    `top_margin` defaults to 2.5 rem (between sections); Section 1
+    overrides it to 0.5 rem (because the Run Summary card above has
+    its own margin-bottom and the gap would otherwise stack).
+    """
+    st.markdown(
+        f'<div style="margin-top:{top_margin};background:#f1f3f5;'
+        f'border-radius:8px;'
+        f'padding:0.85rem 1.1rem;margin-bottom:1.25rem;">'
+        f'<div style="font-size:1.15rem;font-weight:700;color:#1B4F8C;'
+        f'letter-spacing:0.04em;text-transform:uppercase;">'
+        f'<span style="color:#94a3b8;">{num} &mdash;</span> '
+        f'{title_html}</div>'
+        f'<p style="color:#64748b;font-size:0.85rem;margin:0.2rem 0 0 0;">'
+        f'{subtitle_html}'
+        f'</p>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def _kpi_card(col, title, foak_val, noak_val, help_text=None):
+    help_html = _help_icon(help_text) if help_text else ''
     col.markdown(
         f'''<div style="background:white;border-radius:8px;padding:1.1rem 1.25rem;
                         border:1px solid #bfdbfe;
-                        min-height:110px;">
+                        min-height:110px;overflow-wrap:break-word;">
               <div style="font-size:0.85rem;font-weight:600;color:#64748b;
-                          text-transform:uppercase;letter-spacing:0.09em;margin-bottom:0.65rem;">{title}</div>
-              <div style="display:flex;align-items:baseline;gap:0.45rem;margin-bottom:0.45rem;">
+                          text-transform:uppercase;letter-spacing:0.09em;margin-bottom:0.65rem;">{title}{help_html}</div>
+              <div style="display:flex;flex-wrap:wrap;align-items:baseline;gap:0.45rem;margin-bottom:0.45rem;">
                 <span style="background:#fff3ed;color:#c84b1e;font-size:0.85rem;font-weight:700;
-                             padding:0.12rem 0.38rem;border-radius:4px;letter-spacing:0.05em;
+                             padding:0.12rem 0.4rem;border-radius:4px;letter-spacing:0.05em;
                              flex-shrink:0;">FOAK</span>
-                <span style="font-size:1rem;font-weight:600;color:#0a2540;">{foak_val}</span>
+                <span style="font-size:1rem;font-weight:600;color:#0a2540;overflow-wrap:anywhere;">{foak_val}</span>
               </div>
               <div style="height:1px;background:#f1f3f5;margin:0.3rem 0;"></div>
-              <div style="display:flex;align-items:baseline;gap:0.45rem;margin-top:0.45rem;">
+              <div style="display:flex;flex-wrap:wrap;align-items:baseline;gap:0.45rem;margin-top:0.45rem;">
                 <span style="background:#eff6ff;color:#1B4F8C;font-size:0.85rem;font-weight:700;
-                             padding:0.12rem 0.38rem;border-radius:4px;letter-spacing:0.05em;
+                             padding:0.12rem 0.4rem;border-radius:4px;letter-spacing:0.05em;
                              flex-shrink:0;">NOAK</span>
-                <span style="font-size:1rem;font-weight:600;color:#0a2540;">{noak_val}</span>
+                <span style="font-size:1rem;font-weight:600;color:#0a2540;overflow-wrap:anywhere;">{noak_val}</span>
               </div>
             </div>''',
         unsafe_allow_html=True,
@@ -874,45 +974,38 @@ def _make_side_view_figure(diameter_cm, active_height_cm,
     fig = plt.figure(figsize=(fig_w, fig_h))
     ax = fig.add_axes([ax_left_frac, ax_bot_frac, ax_width_frac, ax_height_frac])
 
-    # Outer envelope (radial reflector) full diameter × full height
+    # Outer envelope (radial reflector) and active core rendered as
+    # nested white rectangles with navy edges; size + labels carry
+    # the meaning, no fill colour needed.
     outer = mpatches.Rectangle((-diameter_cm / 2.0, -total_h / 2.0),
                                diameter_cm, total_h,
-                               facecolor='#fde68a', edgecolor='#92400e', lw=1.0)
+                               facecolor='white', edgecolor='#0a2540', lw=1.0)
     ax.add_patch(outer)
 
-    # Active core active diameter × active height, centred
     core = mpatches.Rectangle((-active_d / 2.0, -active_height_cm / 2.0),
                               active_d, active_height_cm,
-                              facecolor='#fca5a5', edgecolor='#7f1d1d', lw=1.0)
+                              facecolor='white', edgecolor='#0a2540', lw=1.0)
     ax.add_patch(core)
 
-    # Dimension labels active labels are placed close to the inner
-    # (red) core rectangle; total labels are placed next to the outer
-    # (yellow) envelope. annotation_clip=False so labels can spill
-    # outside the axis box.
-    #
-    # H_active: just to the RIGHT of the inner core, slightly ABOVE the
-    # vertical centre. H_total: outside the outer envelope on the right,
-    # slightly BELOW centre staggered so the two labels don't overlap.
+    # Dimension labels. All at 10 pt bold navy to match the body-
+    # text colour used elsewhere in the app; single font size keeps
+    # the figure on the global type ladder.
     ax.annotate(f'H_active = {active_height_cm:.0f} cm',
                 xy=(active_d / 2.0 + 0.01 * half_d_int, +half_h_int * 0.30),
-                ha='left', va='center', fontsize=7, fontweight='bold',
-                color='#7f1d1d', annotation_clip=False)
+                ha='left', va='center', fontsize=10, fontweight='bold',
+                color='#0a2540', annotation_clip=False)
     ax.annotate(f'H_total = {total_h:.0f} cm',
                 xy=(half_d_int * 1.04, -half_h_int * 0.30),
-                ha='left', va='center', fontsize=8, fontweight='bold',
-                color='#92400e', annotation_clip=False)
-    #
-    # D_active: just BELOW the inner core, in the axial reflector gap.
-    # D_total: outside the outer envelope at the bottom.
+                ha='left', va='center', fontsize=10, fontweight='bold',
+                color='#0a2540', annotation_clip=False)
     ax.annotate(f'D_active = {active_d:.0f} cm',
                 xy=(0, -active_height_cm / 2.0 - 0.01 * half_h_int),
-                ha='center', va='top', fontsize=7, fontweight='bold',
-                color='#7f1d1d', annotation_clip=False)
+                ha='center', va='top', fontsize=10, fontweight='bold',
+                color='#0a2540', annotation_clip=False)
     ax.annotate(f'D_total = {diameter_cm:.0f} cm',
                 xy=(0, -half_h_int * 1.08),
-                ha='center', va='top', fontsize=8, fontweight='bold',
-                color='#92400e', annotation_clip=False)
+                ha='center', va='top', fontsize=10, fontweight='bold',
+                color='#0a2540', annotation_clip=False)
 
     ax.set_xlim(-half_d_int, half_d_int)
     ax.set_ylim(-half_h_int, half_h_int)
@@ -920,7 +1013,8 @@ def _make_side_view_figure(diameter_cm, active_height_cm,
     ax.set_yticks([])
     for spine in ax.spines.values():
         spine.set_visible(False)
-    ax.set_title('Side View (to scale)', fontsize=10, fontweight='bold')
+    ax.set_title('Side View (to scale)', fontsize=10, fontweight='bold',
+                 color='#0a2540')
 
     return fig
 
@@ -938,12 +1032,20 @@ def _materials_section(reactor_type, params):
         return name.replace('_', ' ')
 
     rows = []
-    # Fuel for LTMR (UZrH alloy) we know the U weight fraction, so
-    # show it next to the material name.
+    # Fuel row. Per reactor type:
+    #   LTMR: UZrH alloy fuel pins; show the U weight fraction.
+    #   GCMR: TRISO particles (UCO kernel) modeled explicitly in the
+    #         compact (particle radii + packing fraction resolved).
+    #   HPMR: TRISO fuel modeled as homogenized (particles smeared into
+    #         the pin volume rather than resolved individually).
     _fuel_str = _pretty(params.get('Fuel', ''))
     if reactor_type == 'LTMR' and 'U_met_wo' in params:
         _u_wo = float(params['U_met_wo']) * 100.0
         _fuel_str = f"{_fuel_str} ({_u_wo:.0f} wt% U)"
+    elif reactor_type == 'GCMR':
+        _fuel_str = f"TRISO &mdash; {_fuel_str} kernel (particles resolved)"
+    elif reactor_type == 'HPMR':
+        _fuel_str = "TRISO (modeled as homogenized)"
     rows.append(('Fuel', _fuel_str))
 
     rows.append(('Moderator', _pretty(params.get('Moderator', ''))))
@@ -977,12 +1079,12 @@ def _materials_section(reactor_type, params):
             _ntot = int(params['Total Number of TRISO Particles'])
             rows.append(('Total TRISO particles', f"{_ntot:,}"))
 
+    # Render as a 2-column CSS grid (label col + value col), both sized
+    # to their max content. Labels share a right edge, values share a
+    # left edge no ragged alignment, no stray table borders.
     body = ''.join(
-        f'<tr>'
-        f'<td style="padding:0.32rem 1rem 0.32rem 0;color:#3c4257;font-weight:600;'
-        f'white-space:nowrap;">{k}</td>'
-        f'<td style="padding:0.32rem 0;color:#0a2540;font-weight:500;">{v}</td>'
-        f'</tr>'
+        f'<div style="color:#3c4257;font-weight:600;white-space:nowrap;">{k}</div>'
+        f'<div style="color:#0a2540;font-weight:500;">{v}</div>'
         for k, v in rows
     )
     st.markdown(
@@ -992,10 +1094,11 @@ def _materials_section(reactor_type, params):
     )
     st.markdown(
         f'''<div style="background:#f7f8fa;border:1px solid #bfdbfe;border-radius:8px;
-                        padding:0.9rem 1.15rem;margin-bottom:0.85rem;">
-              <table style="width:100%;font-size:0.85rem;border-collapse:collapse;">
-                <tbody>{body}</tbody>
-              </table>
+                        padding:0.85rem 1.1rem;margin-bottom:0.85rem;">
+              <div style="display:grid;grid-template-columns:max-content max-content;
+                          row-gap:0.35rem;column-gap:1.25rem;font-size:0.85rem;">
+                {body}
+              </div>
             </div>''',
         unsafe_allow_html=True,
     )
@@ -1090,7 +1193,7 @@ section[data-testid="stSidebar"] .stTooltipHoverTarget::after {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
 }
 section[data-testid="stSidebar"] .stButton > button {
-    background: #e05c2b !important;
+    background: #c84b1e !important;
     color: white !important;
     font-weight: 600 !important;
     border: none !important;
@@ -1101,7 +1204,7 @@ section[data-testid="stSidebar"] .stButton > button {
     width: 100%;
 }
 section[data-testid="stSidebar"] .stButton > button:hover {
-    background: #c9531e !important;
+    background: #9a3412 !important;
     transform: translateY(-1px);
 }
 
@@ -1150,30 +1253,117 @@ section[data-testid="stSidebar"] input[type="number"] {
 }
 
 /* ── Expander ── */
+/* Box around the expander is kept subtle so the expanded content has  */
+/* a visible container, but the summary (click target) is styled to    */
+/* match the popover-trigger caption style: 0.85rem slate text, faint   */
+/* underline, hover turns it INL-blue. Consistent affordance vocabulary.*/
 [data-testid="stExpander"] {
     border: 1px solid #bfdbfe !important;
     border-radius: 8px !important;
     background: white;
 }
-/* The summary row is the clickable label. Streamlit defaults render
-   it in near-white text on a near-white background, which makes the
-   affordance invisible. Force INL-blue + bold + a hover state so it's
-   obvious the user can click it. */
 [data-testid="stExpander"] summary,
 [data-testid="stExpander"] details > summary,
 [data-testid="stExpander"] details > summary p,
 [data-testid="stExpander"] [role="button"],
 [data-testid="stExpander"] [role="button"] p,
 [data-testid="stExpander"] [data-testid="stExpanderToggleIcon"] {
-    color: #1B4F8C !important;
-    font-weight: 600 !important;
+    color: #64748b !important;
+    font-weight: 400 !important;
+    font-size: 0.85rem !important;
+}
+[data-testid="stExpander"] summary,
+[data-testid="stExpander"] details > summary,
+[data-testid="stExpander"] details > summary p,
+[data-testid="stExpander"] [role="button"] p {
+    text-decoration: underline !important;
+    text-decoration-color: #cbd5e1 !important;
+    text-underline-offset: 0.25rem !important;
 }
 [data-testid="stExpander"] summary:hover,
 [data-testid="stExpander"] details > summary:hover,
-[data-testid="stExpander"] [role="button"]:hover {
-    background: #f1f3f5 !important;
-    text-decoration: underline !important;
+[data-testid="stExpander"] details > summary:hover p,
+[data-testid="stExpander"] [role="button"]:hover,
+[data-testid="stExpander"] [role="button"]:hover p,
+[data-testid="stExpander"] summary:hover [data-testid="stExpanderToggleIcon"] {
+    color: #1B4F8C !important;
+    text-decoration-color: #1B4F8C !important;
     cursor: pointer !important;
+}
+
+/* ── Inline help icon ── */
+/* Small filled INL-blue circle with a white "?". On hover, a navy     */
+/* tooltip with the descriptive text appears below. Reuses the         */
+/* existing 999-px pill radius (no new shape). Native title="" attr    */
+/* is set alongside so touch / accessibility tools still work.         */
+.mouse-help-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 0.95rem;
+    height: 0.95rem;
+    background: #1B4F8C;
+    color: white !important;
+    font-size: 0.65rem;
+    font-weight: 700;
+    border-radius: 999px;
+    margin-left: 0.35rem;
+    cursor: help;
+    position: relative;
+    vertical-align: middle;
+    flex-shrink: 0;
+    line-height: 1;
+    text-transform: none;
+    letter-spacing: 0;
+}
+.mouse-help-icon:hover::after,
+.mouse-help-icon:focus::after {
+    content: attr(data-help);
+    position: absolute;
+    top: calc(100% + 0.4rem);
+    left: 0;
+    z-index: 100;
+    background: #0a2540;
+    color: white;
+    padding: 0.6rem 0.85rem;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    font-weight: 400;
+    line-height: 1.45;
+    width: 260px;
+    max-width: 260px;
+    text-transform: none;
+    letter-spacing: normal;
+    text-align: left;
+    white-space: normal;
+    box-shadow: 0 2px 8px rgba(10, 37, 64, 0.15);
+}
+
+/* ── Popover trigger button ── */
+/* Restyle the popover button so its label reads like a caption        */
+/* (st.caption styling: 0.85rem, slate #64748b, normal weight) instead  */
+/* of a bold primary button. The popover behavior is unchanged the     */
+/* user clicks the label to expand and read the long explanation. This  */
+/* makes "How is Fuel Lifetime estimated?" visually consistent with the */
+/* k_eff caption underneath it.                                          */
+[data-testid="stPopover"] button,
+.stPopover > button,
+button[kind="secondary"][data-testid="baseButton-secondary"][aria-haspopup] {
+    background: transparent !important;
+    border: none !important;
+    color: #64748b !important;
+    font-size: 0.85rem !important;
+    font-weight: 400 !important;
+    padding: 0.2rem 0 !important;
+    box-shadow: none !important;
+    text-decoration: underline !important;
+    text-decoration-color: #cbd5e1 !important;
+    text-underline-offset: 0.25rem !important;
+}
+[data-testid="stPopover"] button:hover,
+.stPopover > button:hover {
+    color: #1B4F8C !important;
+    text-decoration-color: #1B4F8C !important;
 }
 
 /* ── Download button ── */
@@ -1506,10 +1696,10 @@ with streamlit_analytics.track():
         )
         tax_credit_value = None
         if tax_credit_type == 'PTC':
-            tax_credit_value = st.selectbox(
+            tax_credit_value = st.select_slider(
                 'PTC Credit Value ($/MWh)',
                 options=[3.0, 3.3, 3.6, 15.0, 16.5, 18.0],
-                index=3,
+                value=15.0,
                 format_func=lambda x: f'${x:.1f}/MWh',
                 help=(
                     "The Production Tax Credit (PTC) is a per-MWh credit earned for every "
@@ -1535,10 +1725,10 @@ with streamlit_analytics.track():
                 ),
             )
         elif tax_credit_type == 'ITC':
-            tax_credit_value = st.selectbox(
+            tax_credit_value = st.select_slider(
                 'ITC Credit Level',
                 options=[0.06, 0.30, 0.40, 0.50],
-                index=1,
+                value=0.30,
                 format_func=lambda x: f'{x*100:.0f}%',
                 help=(
                     "The Investment Tax Credit (ITC) is a one-time credit that reduces "
@@ -1564,7 +1754,7 @@ with streamlit_analytics.track():
         # fall back to the un-subsidized values.
         tax_credit_units = None
         if tax_credit_type in ('PTC', 'ITC'):
-            tax_credit_units = st.number_input(
+            tax_credit_units = st.slider(
                 f'Number of Units Claiming {tax_credit_type}',
                 min_value=1,
                 max_value=50,
@@ -1638,7 +1828,7 @@ with streamlit_analytics.track():
         st.markdown(
             f'''<div style="background:#f1f3f5;border:1px solid #94a3b8;
                            border-left:4px solid #1B4F8C;border-radius:8px;
-                           padding:1.6rem 2rem 1.6rem;color:#3c4257;
+                           padding:1.8rem 2.2rem;color:#3c4257;
                            margin-bottom:1.5rem;">
                  <p style="font-size:1rem;line-height:1.55;margin:0 0 1.1rem;color:#3c4257;
                            padding-bottom:1.1rem;border-bottom:1px solid #93c5fd;">
@@ -1666,36 +1856,36 @@ with streamlit_analytics.track():
                    the MARVEL project and supplementary literature; all costs in <strong style="color:#0a2540;">{ESCALATION_YEAR} USD</strong>.
                  </p>
                  <div style="display:flex;gap:1rem;flex-wrap:wrap;">
-                   <div style="background:white;border:1px solid #bfdbfe;border-radius:8px;padding:0.85rem 1.2rem;">
+                   <div style="background:white;border:1px solid #bfdbfe;border-radius:8px;padding:0.85rem 1.1rem;">
                      <div style="font-size:0.85rem;text-transform:uppercase;letter-spacing:0.1em;
                                  font-weight:700;color:#1B4F8C;margin-bottom:0.3rem;">Reactor Types</div>
                      <div style="font-weight:600;font-size:1rem;color:#0a2540;">LTMR · GCMR · HPMR</div>
                      <div style="font-size:0.85rem;color:#64748b;margin-top:0.25rem;">Liquid Metal · Gas Cooled · Heat Pipe</div>
                    </div>
-                   <div style="background:white;border:1px solid #bfdbfe;border-radius:8px;padding:0.85rem 1.2rem;">
+                   <div style="background:white;border:1px solid #bfdbfe;border-radius:8px;padding:0.85rem 1.1rem;">
                      <div style="font-size:0.85rem;text-transform:uppercase;letter-spacing:0.1em;
                                  font-weight:700;color:#1B4F8C;margin-bottom:0.3rem;">Costs</div>
                      <div style="font-weight:600;font-size:1rem;color:#0a2540;">OCC · TCI · LCOE · LCOH · LCOF</div>
                      <div style="font-size:0.85rem;color:#64748b;margin-top:0.25rem;">Bottom-up estimation · Cost drivers · IRA credits</div>
                    </div>
-                   <div style="background:white;border:1px solid #bfdbfe;border-radius:8px;padding:0.85rem 1.2rem;">
+                   <div style="background:white;border:1px solid #bfdbfe;border-radius:8px;padding:0.85rem 1.1rem;">
                      <div style="font-size:0.85rem;text-transform:uppercase;letter-spacing:0.1em;
                                  font-weight:700;color:#1B4F8C;margin-bottom:0.3rem;">Neutronics &amp; Thermal Hydraulics at a glance</div>
                      <div style="font-weight:600;font-size:1rem;color:#0a2540;">Peaking Factor · Leakage · Power Density · Coolant Inventory</div>
                      <div style="font-size:0.85rem;color:#64748b;margin-top:0.25rem;">first-order scoping</div>
                    </div>
-                   <div style="background:white;border:1px solid #bfdbfe;border-radius:8px;padding:0.85rem 1.2rem;">
+                   <div style="background:white;border:1px solid #bfdbfe;border-radius:8px;padding:0.85rem 1.1rem;">
                      <div style="font-size:0.85rem;text-transform:uppercase;letter-spacing:0.1em;
                                  font-weight:700;color:#1B4F8C;margin-bottom:0.3rem;">Fuel Cycle</div>
                      <div style="font-weight:600;font-size:1rem;color:#0a2540;">U-235 / U-238 Mass · Lifetime · Discharge Burnup</div>
                    </div>
-                   <div style="background:white;border:1px solid #bfdbfe;border-radius:8px;padding:0.85rem 1.2rem;">
+                   <div style="background:white;border:1px solid #bfdbfe;border-radius:8px;padding:0.85rem 1.1rem;">
                      <div style="font-size:0.85rem;text-transform:uppercase;letter-spacing:0.1em;
                                  font-weight:700;color:#1B4F8C;margin-bottom:0.3rem;">Transportability</div>
                      <div style="font-weight:600;font-size:1rem;color:#0a2540;">Component Dims · Mass · Truck · Rail · Sea</div>
                      <div style="font-size:0.85rem;color:#64748b;margin-top:0.25rem;">first-order scoping</div>
                    </div>
-                   <div style="background:white;border:1px solid #bfdbfe;border-radius:8px;padding:0.85rem 1.2rem;">
+                   <div style="background:white;border:1px solid #bfdbfe;border-radius:8px;padding:0.85rem 1.1rem;">
                      <div style="font-size:0.85rem;text-transform:uppercase;letter-spacing:0.1em;
                                  font-weight:700;color:#1B4F8C;margin-bottom:0.3rem;">Costs in Perspective</div>
                      <div style="font-weight:600;font-size:1rem;color:#0a2540;">NOAK LCOE vs. market benchmarks</div>
@@ -1709,7 +1899,7 @@ with streamlit_analytics.track():
         st.markdown(
             '''<div style="background:#fffbeb;border:1px solid #fcd34d;
                            border-left:4px solid #f59e0b;border-radius:8px;
-                           padding:1.2rem 1.5rem;margin-bottom:1rem;">
+                           padding:1.1rem 1.25rem;margin-bottom:1rem;">
                  <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem;">
                    <span style="font-size:1.15rem;">⚠️</span>
                    <span style="font-size:1rem;font-weight:700;color:#92400e;
@@ -1735,7 +1925,7 @@ with streamlit_analytics.track():
         st.markdown(
             '''<div style="background:#eff6ff;border:1px solid #cbd5e1;
                            border-left:4px solid #1B4F8C;border-radius:8px;
-                           padding:1rem 1.4rem;margin-top:1rem;margin-bottom:1rem;
+                           padding:1.1rem 1.25rem;margin-top:1rem;margin-bottom:1rem;
                            font-size:1.15rem;font-weight:600;color:#1B4F8C;">
                  👈 How to use: configure your reactor in the sidebar on the left,
                  then click <strong>⚡ Run Cost Estimate</strong> at the bottom of the sidebar.
@@ -1788,7 +1978,7 @@ with streamlit_analytics.track():
         st.markdown(
             '<div style="background:#eff6ff;border:1px solid #cbd5e1;'
             'border-left:4px solid #1B4F8C;border-radius:8px;'
-            'padding:1rem 1.4rem;margin-top:1rem;margin-bottom:1rem;'
+            'padding:1.1rem 1.25rem;margin-top:1rem;margin-bottom:1rem;'
             'font-size:1.15rem;font-weight:600;color:#1B4F8C;">'
             '👈 Inputs changed. Click <strong>⚡ Run Cost Estimate</strong> '
             'in the sidebar to update results.'
@@ -1824,7 +2014,7 @@ with streamlit_analytics.track():
     _precompute_slot = st.empty()
     _precompute_slot.markdown(
         '<div style="background:#fffbeb;'
-        'border:2px solid #f59e0b;border-radius:8px;padding:1.4rem 1.6rem;'
+        'border:2px solid #f59e0b;border-radius:8px;padding:1.8rem 2.2rem;'
         'margin-bottom:1rem;color:#92400e;text-align:center;">'
         '<div style="font-size:1.15rem;font-weight:700;margin-bottom:0.4rem;'
         'letter-spacing:0.02em;">⏳ Computing all results...</div>'
@@ -1853,8 +2043,8 @@ with streamlit_analytics.track():
         st.warning(str(exc))
         ca, cb, cc = st.columns(3)
         _info_card(ca, 'Fuel Lifetime', '0 days', accent='#dc2626', bg='#fef2f2', border='#fecaca')
-        _info_card(cb, 'Thermal Power', f'{power_mwt} MW<sub>t</sub>', accent='#9a3412', bg='#fff7ed', border='#fcd34d')
-        _info_card(cc, 'Enrichment', f'{enrichment*100:.2f}%', accent='#9a3412', bg='#fff7ed', border='#fcd34d')
+        _info_card(cb, 'Thermal Power', f'{power_mwt} MW<sub>t</sub>', accent='#9a3412', bg='#fffbeb', border='#fcd34d')
+        _info_card(cc, 'Enrichment', f'{enrichment*100:.2f}%', accent='#9a3412', bg='#fffbeb', border='#fcd34d')
         st.info('No cost estimate is available for a subcritical operating point. '
                 'Try reducing the power or increasing the enrichment.')
 
@@ -1879,9 +2069,9 @@ with streamlit_analytics.track():
         _info_card(ca, 'Fuel Lifetime', f'{est_lt_days} days',
                    accent='#dc2626', bg='#fef2f2', border='#fecaca')
         _info_card(cb, 'Thermal Power', f'{power_mwt} MW<sub>t</sub>',
-                   accent='#9a3412', bg='#fff7ed', border='#fcd34d')
+                   accent='#9a3412', bg='#fffbeb', border='#fcd34d')
         _info_card(cc, 'Enrichment', f'{enrichment*100:.2f}%',
-                   accent='#9a3412', bg='#fff7ed', border='#fcd34d')
+                   accent='#9a3412', bg='#fffbeb', border='#fcd34d')
         st.info('No cost estimate is performed when the fuel lifetime is below 90 days. '
                 'Try increasing the diameter, the height, or the enrichment.')
 
@@ -1982,7 +2172,7 @@ with streamlit_analytics.track():
     # ── Result hero banner (rendered AFTER all computation finishes) ────────
     _badge_style = ('background:#eff6ff;border:1px solid #bfdbfe;color:#1B4F8C;'
                     'border-radius:999px;font-size:0.85rem;font-weight:600;'
-                    'padding:0.2rem 0.7rem;letter-spacing:0.06em;margin-left:0.6rem;')
+                    'padding:0.2rem 0.6rem;letter-spacing:0.06em;margin-left:0.6rem;')
     if tax_credit_type == 'PTC':
         _units_text = f' (for the first {int(tax_credit_units)} units)' if tax_credit_units is not None else ''
         _credit_badge = f'<span style="{_badge_style}">PTC ${tax_credit_value}/MWh{_units_text}</span>'
@@ -1992,7 +2182,7 @@ with streamlit_analytics.track():
     else:
         _credit_badge = ('<span style="background:#f1f3f5;border:1px solid #cbd5e1;'
                          'color:#64748b;border-radius:999px;font-size:0.85rem;'
-                         'font-weight:600;padding:0.2rem 0.7rem;letter-spacing:0.06em;'
+                         'font-weight:600;padding:0.2rem 0.6rem;letter-spacing:0.06em;'
                          'margin-left:0.6rem;">No Tax Credit</span>')
 
     st.markdown(
@@ -2004,10 +2194,11 @@ with streamlit_analytics.track():
                          text-transform:uppercase;color:#64748b;margin-bottom:0.5rem;">
                Run Summary
              </div>
-             <h2 style="font-size:1.5rem;font-weight:700;margin:0 0 0.9rem;color:#0a2540;line-height:1.2;">
+             <h2 style="font-size:1.5rem;font-weight:700;margin:0 0 1.1rem;color:#0a2540;line-height:1.2;">
                {reactor_label} {_credit_badge}
              </h2>
-             <div style="display:flex;gap:2rem;flex-wrap:wrap;">
+             <div style="font-size:0.85rem;font-weight:600;text-transform:uppercase;letter-spacing:0.09em;color:#94a3b8;margin:0 0 0.4rem;">Design</div>
+             <div style="display:flex;gap:2rem;flex-wrap:wrap;margin-bottom:1rem;">
                <div>
                  <div style="font-size:0.85rem;text-transform:uppercase;letter-spacing:0.1em;color:#64748b;">Thermal Power</div>
                  <div style="font-weight:600;font-size:1rem;color:#0a2540;">{power_mwt} MW<sub>t</sub></div>
@@ -2024,6 +2215,9 @@ with streamlit_analytics.track():
                  <div style="font-size:0.85rem;text-transform:uppercase;letter-spacing:0.1em;color:#64748b;">Active Height</div>
                  <div style="font-weight:600;font-size:1rem;color:#0a2540;">{active_height} cm</div>
                </div>
+             </div>
+             <div style="font-size:0.85rem;font-weight:600;text-transform:uppercase;letter-spacing:0.09em;color:#94a3b8;margin:0 0 0.4rem;">Operations</div>
+             <div style="display:flex;gap:2rem;flex-wrap:wrap;margin-bottom:1rem;">
                <div>
                  <div style="font-size:0.85rem;text-transform:uppercase;letter-spacing:0.1em;color:#64748b;">Operation Mode</div>
                  <div style="font-weight:600;font-size:1rem;color:#0a2540;">{operation_mode}</div>
@@ -2040,6 +2234,9 @@ with streamlit_analytics.track():
                  <div style="font-size:0.85rem;text-transform:uppercase;letter-spacing:0.1em;color:#64748b;">Refuel Outage</div>
                  <div style="font-weight:600;font-size:1rem;color:#0a2540;">{startup_duration_refueling} days</div>
                </div>
+             </div>
+             <div style="font-size:0.85rem;font-weight:600;text-transform:uppercase;letter-spacing:0.09em;color:#94a3b8;margin:0 0 0.4rem;">Economics</div>
+             <div style="display:flex;gap:2rem;flex-wrap:wrap;">
                <div>
                  <div style="font-size:0.85rem;text-transform:uppercase;letter-spacing:0.1em;color:#64748b;">Debt-to-Equity</div>
                  <div style="font-weight:600;font-size:1rem;color:#0a2540;">{debt_to_equity:.1f}</div>
@@ -2069,1972 +2266,2159 @@ with streamlit_analytics.track():
         unsafe_allow_html=True,
     )
 
-    tab_design, tab_physics, tab_drivers, tab_table = st.tabs([
-        'Design & Economics',
-        'Physics & Thermal',
-        'Cost Drivers',
-        'Full Breakdown',
-    ])
+    # Tabs were removed; bands render in sequential document order.
 
-    # Card queue shared across tabs. Cards are appended during the
-    # compute block in tab_design (via _fuel_card with a section= tag),
-    # then dispatched to the right tab when rendered.
-    # 3 = "How much fuel and how long does it last?" → Tab A
-    # 4 = "Core neutronics at glance" → Tab B
-    # 5 = "Core thermal-hydraulic conditions at a glance" → Tab B
+    # Card queue shared across containers. Cards are appended during
+    # the compute block in tab_design (via _fuel_card with a section=
+    # tag), then dispatched into the right band when rendered.
+    # 3 = Fuel cycle metrics (Band 3, third column)
+    # 4 = Core neutronics (Band 3, first column)
+    # 5 = Core thermal-hydraulics (Band 3, second column)
     _section_cards = {3: [], 4: [], 5: []}
 
     # ═══════════════════════════════════════════════════════════════
-    # TAB 1 DESIGN & ECONOMICS
+    # BAND 1 Design & Cost Headlines
     # Sections 1-3: What does it cost? · What does it look like? ·
     # How much fuel and how long does it last?
     # ═══════════════════════════════════════════════════════════════
-    with tab_design:
+    # Margin-top is smaller than the other bands because the Run
+    # Summary card immediately above already carries its own
+    # margin-bottom; otherwise the gap stacks visibly.
+    _section_header(
+        '01',
+        'Design &amp; Cost Summary',
+        'What it looks like, what it costs, how it performs',
+        top_margin='0.5rem',
+    )
 
-        img_col, info_col = st.columns([1, 1], gap='large')
+    # ── Subsection 1: Geometry & Layout ─────────────────────────
+    st.markdown(
+        '<div style="font-size:1rem;font-weight:700;color:#0a2540;'
+        'border-left:4px solid #0a2540;padding:0.4rem 0 0.4rem 0.75rem;'
+        'margin:0 0 0.85rem 0;">Geometry &amp; Layout</div>',
+        unsafe_allow_html=True,
+    )
+    geo_left, geo_right = st.columns([1, 1], gap='large')
+    with geo_left:
+        main_img, main_caption = _REACTOR_IMAGES[reactor_type]['main']
 
-        with img_col:
-            main_img, main_caption = _REACTOR_IMAGES[reactor_type]['main']
-
-            # For LTMR, pick the per-N core cross-section that matches
-            # the user's chosen diameter (Number of Rings per Assembly).
-            if reactor_type == 'LTMR':
-                _n = int(params.get('Number of Rings per Assembly', 12))
-                _per_n_path = os.path.join(_ASSETS, f'LTMR_core_N{_n}.png')
-                if os.path.exists(_per_n_path):
-                    main_img = _per_n_path
-                    main_caption = (
-                        f"LTMR core cross-section for N = {_n} rings per assembly "
-                        f"(active core radius {LTMR_N_TO_ACTIVE_RADIUS_CM[_n]:.1f} cm, "
-                        f"active core diameter {LTMR_N_TO_DIAMETER_CM[_n]} cm). "
-                        f"Hexagonal arrangement of TRIGA-type U-ZrH fuel pins and ZrH "
-                        f"moderator pins cooled by NaK liquid metal, surrounded by a "
-                        f"graphite radial reflector with 18 control drums."
-                    )
-
-            # For GCMR, pick the per-(N_A, N_C) core cross-section.
-            if reactor_type == 'GCMR':
-                _na = int(params.get('Assembly Rings', 6))
-                _nc = int(params.get('Core Rings', 5))
-                _per_pair_path = os.path.join(
-                    _ASSETS, f'GCMR_core_NA{_na}_NC{_nc}.png'
+        # For LTMR, pick the per-N core cross-section that matches
+        # the user's chosen diameter (Number of Rings per Assembly).
+        if reactor_type == 'LTMR':
+            _n = int(params.get('Number of Rings per Assembly', 12))
+            _per_n_path = os.path.join(_ASSETS, f'LTMR_core_N{_n}.png')
+            if os.path.exists(_per_n_path):
+                main_img = _per_n_path
+                main_caption = (
+                    f"Simplified scoping-level design used for cost estimation, "
+                    f"not a detailed engineering design. LTMR core cross-section "
+                    f"for N = {_n} rings per assembly "
+                    f"(active core radius {LTMR_N_TO_ACTIVE_RADIUS_CM[_n]:.1f} cm, "
+                    f"active core diameter {LTMR_N_TO_DIAMETER_CM[_n]} cm). "
+                    f"Hexagonal arrangement of UZrH alloy fuel pins and ZrH "
+                    f"moderator pins cooled by NaK liquid metal, surrounded by a "
+                    f"graphite radial reflector with 18 control drums."
                 )
-                if os.path.exists(_per_pair_path):
-                    main_img = _per_pair_path
-                    main_caption = (
-                        f"GCMR core cross-section for (N_A={_na} assembly rings, "
-                        f"N_C={_nc} core rings). Hexagonal fuel assemblies containing "
-                        f"TRISO fuel compacts arranged in a honeycomb pattern, cooled "
-                        f"by helium gas, with graphite reflector and control drums."
-                    )
 
-            # For HPMR, pick the per-(N_A, N_C) core cross-section
-            # (N_A is locked at 6 in the parametric study, but the
-            # filename pattern matches the GCMR convention so future
-            # N_A variation is supported).
-            if reactor_type == 'HPMR':
-                _na = int(params.get('Number of Rings per Assembly', 6))
-                _nc = int(params.get('Number of Rings per Core', 5))
-                _per_pair_path = os.path.join(
-                    _ASSETS, f'HPMR_core_NA{_na}_NC{_nc}.png'
+        # For GCMR, pick the per-(N_A, N_C) core cross-section.
+        if reactor_type == 'GCMR':
+            _na = int(params.get('Assembly Rings', 6))
+            _nc = int(params.get('Core Rings', 5))
+            _per_pair_path = os.path.join(
+                _ASSETS, f'GCMR_core_NA{_na}_NC{_nc}.png'
+            )
+            if os.path.exists(_per_pair_path):
+                main_img = _per_pair_path
+                main_caption = (
+                    f"Simplified scoping-level design used for cost estimation, "
+                    f"not a detailed engineering design. GCMR core cross-section "
+                    f"for (N_A={_na} assembly rings, N_C={_nc} core rings). "
+                    f"Hexagonal fuel assemblies containing TRISO fuel compacts "
+                    f"arranged in a honeycomb pattern, cooled by helium gas, "
+                    f"with graphite reflector and control drums."
                 )
-                if os.path.exists(_per_pair_path):
-                    main_img = _per_pair_path
-                    main_caption = (
-                        f"HPMR core cross-section for (N_A={_na} assembly rings, "
-                        f"N_C={_nc} core rings). Homogenized-TRISO fuel pins "
-                        f"interleaved with sodium heat pipes inside monolith-graphite "
-                        f"moderator blocks, surrounded by a graphite reflector with "
-                        f"12 control drums."
+
+        # For HPMR, pick the per-(N_A, N_C) core cross-section
+        # (N_A is locked at 6 in the parametric study, but the
+        # filename pattern matches the GCMR convention so future
+        # N_A variation is supported).
+        if reactor_type == 'HPMR':
+            _na = int(params.get('Number of Rings per Assembly', 6))
+            _nc = int(params.get('Number of Rings per Core', 5))
+            _per_pair_path = os.path.join(
+                _ASSETS, f'HPMR_core_NA{_na}_NC{_nc}.png'
+            )
+            if os.path.exists(_per_pair_path):
+                main_img = _per_pair_path
+                main_caption = (
+                    f"Simplified scoping-level design used for cost estimation, "
+                    f"not a detailed engineering design. HPMR core cross-section "
+                    f"for (N_A={_na} assembly rings, N_C={_nc} core rings). "
+                    f"TRISO fuel modeled as a homogenized fuel pin (TRISO particles "
+                    f"smeared into the pin volume rather than resolved individually) "
+                    f"interleaved with sodium heat pipes inside monolith-graphite "
+                    f"moderator blocks, surrounded by a graphite reflector with "
+                    f"12 control drums."
+                )
+
+        # Cross-section on top, side-view directly below (LTMR/GCMR
+        # only both have geometry-driven height inputs). Both render
+        # at the column width, so the side view's vertical extent
+        # relative to the cross-section's diameter makes H/D visually
+        # obvious.
+        st.image(main_img, use_container_width=True)
+        st.caption(main_caption)
+
+        if reactor_type in ('LTMR', 'GCMR', 'HPMR'):
+            # The figure has built-in right padding to mirror the
+            # cross-section's legend area, so the side-view rectangle
+            # aligns horizontally with the cross-section circle above.
+            # Save with bbox_inches=None (st.pyplot's default 'tight'
+            # would crop the right-side empty space, defeating the
+            # alignment).
+            _diam = float(2.0 * params['Core Radius'])
+            _h = float(params['Active Height'])
+            _ax_r = float(params.get('Axial Reflector Thickness', 0.0))
+            _rad_r = float(params.get('Radial Reflector Thickness', 0.0))
+            _fig = _make_side_view_figure(_diam, _h, _ax_r, _rad_r)
+            _buf = io.BytesIO()
+            _fig.savefig(_buf, format='png', bbox_inches=None,
+                         facecolor='white', dpi=120)
+            _buf.seek(0)
+            st.image(_buf, use_container_width=True)
+            plt.close(_fig)
+
+    with geo_right:
+        # Materials & components table at the top of the right column,
+        # followed by the aspect-ratio readout and the detailed cross-
+        # section gallery (both moved here from under the side view).
+        _materials_section(reactor_type, params)
+
+        _active_radius_cm = (float(2.0 * params['Core Radius'])
+                             - 2.0 * float(params.get('Radial Reflector Thickness', 0.0))
+                             ) / 2.0
+        _active_diam_cm = 2.0 * _active_radius_cm
+        if _active_diam_cm > 0:
+            _aspect = float(params['Active Height']) / _active_diam_cm
+            st.markdown(
+                f'<div style="margin-top:0.5rem;font-size:0.85rem;color:#0a2540;">'
+                f'<strong>Aspect ratio (H/D):</strong> {_aspect:,.2f}'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+            with st.popover('Tell me more', use_container_width=False):
+                st.markdown(
+                    'Active height &divide; active diameter, using the active fissioning '
+                    'region only (no reflector, no vessel). A value of 1.0 means a '
+                    '"cube-like" cylinder where height equals diameter, which '
+                    'minimises neutron leakage per unit core volume. Tall, slender '
+                    'cores (H/D > 1.5) lose more axial neutrons; short, fat cores '
+                    '(H/D < 0.5) lose more radial neutrons. Most microreactor '
+                    'designs sit between 0.7 and 1.5. The webapp constrains H/D '
+                    'to [0.5, 2.0] via the active-height slider.'
+                )
+
+        with st.expander('View detailed cross-sections'):
+            for img_path, img_caption in _REACTOR_IMAGES[reactor_type]['details']:
+                # GCMR: replace the static fuel-assembly image with the
+                # per-N_A version that matches the user's selection.
+                if reactor_type == 'GCMR' and 'Fuel Assembly.png' in img_path:
+                    _na = int(params.get('Assembly Rings', 6))
+                    _per_na_path = os.path.join(
+                        _ASSETS, f'GCMR_fuel_assembly_NA{_na}.png'
                     )
-
-            # Cross-section on top, side-view directly below (LTMR/GCMR
-            # only both have geometry-driven height inputs). Both render
-            # at the column width, so the side view's vertical extent
-            # relative to the cross-section's diameter makes H/D visually
-            # obvious.
-            st.image(main_img, use_container_width=True)
-            st.caption(main_caption)
-
-            if reactor_type in ('LTMR', 'GCMR', 'HPMR'):
-                # The figure has built-in right padding to mirror the
-                # cross-section's legend area, so the side-view rectangle
-                # aligns horizontally with the cross-section circle above.
-                # Save with bbox_inches=None (st.pyplot's default 'tight'
-                # would crop the right-side empty space, defeating the
-                # alignment).
-                _diam = float(2.0 * params['Core Radius'])
-                _h = float(params['Active Height'])
-                _ax_r = float(params.get('Axial Reflector Thickness', 0.0))
-                _rad_r = float(params.get('Radial Reflector Thickness', 0.0))
-                _fig = _make_side_view_figure(_diam, _h, _ax_r, _rad_r)
-                _buf = io.BytesIO()
-                _fig.savefig(_buf, format='png', bbox_inches=None,
-                             facecolor='white', dpi=120)
-                _buf.seek(0)
-                st.image(_buf, use_container_width=True)
-                plt.close(_fig)
-
-            with st.expander('View detailed cross-sections'):
-                for img_path, img_caption in _REACTOR_IMAGES[reactor_type]['details']:
-                    # GCMR: replace the static fuel-assembly image with the
-                    # per-N_A version that matches the user's selection.
-                    if reactor_type == 'GCMR' and 'Fuel Assembly.png' in img_path:
-                        _na = int(params.get('Assembly Rings', 6))
-                        _per_na_path = os.path.join(
-                            _ASSETS, f'GCMR_fuel_assembly_NA{_na}.png'
+                    if os.path.exists(_per_na_path):
+                        img_path = _per_na_path
+                        img_caption = (
+                            f"GCMR fuel assembly cross-section for N_A={_na} "
+                            f"(assembly rings). TRISO fuel compacts, helium coolant "
+                            f"channels, and ZrH moderator booster pins embedded in "
+                            f"a graphite matrix."
                         )
-                        if os.path.exists(_per_na_path):
-                            img_path = _per_na_path
-                            img_caption = (
-                                f"GCMR fuel assembly cross-section for N_A={_na} "
-                                f"(assembly rings). TRISO fuel compacts, helium coolant "
-                                f"channels, and ZrH moderator booster pins embedded in "
-                                f"a graphite matrix."
-                            )
-                    # HPMR: same pattern, swap to per-N_A assembly image.
-                    elif reactor_type == 'HPMR' and 'fuel_assembly' in img_path.lower() \
-                                              and 'zoomed' not in img_path.lower():
-                        _na = int(params.get('Number of Rings per Assembly', 6))
-                        _per_na_path = os.path.join(
-                            _ASSETS, f'HPMR_fuel_assembly_NA{_na}.png'
+                # HPMR: same pattern, swap to per-N_A assembly image.
+                elif reactor_type == 'HPMR' and 'fuel_assembly' in img_path.lower() \
+                                          and 'zoomed' not in img_path.lower():
+                    _na = int(params.get('Number of Rings per Assembly', 6))
+                    _per_na_path = os.path.join(
+                        _ASSETS, f'HPMR_fuel_assembly_NA{_na}.png'
+                    )
+                    if os.path.exists(_per_na_path):
+                        img_path = _per_na_path
+                        img_caption = (
+                            f"HPMR fuel assembly cross-section for N_A={_na} "
+                            f"(assembly rings). Homogenized-TRISO fuel pins "
+                            f"and sodium heat pipes embedded in a monolith-graphite "
+                            f"moderator block."
                         )
-                        if os.path.exists(_per_na_path):
-                            img_path = _per_na_path
-                            img_caption = (
-                                f"HPMR fuel assembly cross-section for N_A={_na} "
-                                f"(assembly rings). Homogenized-TRISO fuel pins "
-                                f"and sodium heat pipes embedded in a monolith-graphite "
-                                f"moderator block."
-                            )
-                    st.image(img_path, use_container_width=True)
-                    st.caption(img_caption)
+                st.image(img_path, use_container_width=True)
+                st.caption(img_caption)
 
-        with info_col:
-            ic1, ic2, ic3 = st.columns(3)
-            _info_card(ic1, 'Electric Power Output', f'{power_mwe:.1f} MW<sub>e</sub>',
-                       subtitle=f'Thermal input: {power_mwt} MW<sub>t</sub>')
-            _info_card(ic2, 'Fuel Lifetime', _fl_str, subtitle=_fl_days)
-            _info_card(ic3, 'Capacity Factor', _cf_str,
-                       subtitle='Accounts for refueling & shutdowns')
+    # ── Subsection 2: Performance ───────────────────────────────
+    st.markdown(
+        '<div style="font-size:1rem;font-weight:700;color:#0a2540;'
+        'border-left:4px solid #0a2540;padding:0.4rem 0 0.4rem 0.75rem;'
+        'margin:1.25rem 0 0.85rem 0;">Performance</div>',
+        unsafe_allow_html=True,
+    )
+    perf_left, perf_right = st.columns([1, 1], gap='large')
+    with perf_left:
+        ic1, ic2, ic3 = st.columns(3)
+        _info_card(ic1, 'Electric Power Output', f'{power_mwe:.1f} MW<sub>e</sub>',
+                   subtitle=f'Thermal input: {power_mwt} MW<sub>t</sub>')
+        _info_card(ic2, 'Fuel Lifetime', _fl_str, subtitle=_fl_days)
+        _info_card(ic3, 'Capacity Factor', _cf_str,
+                   subtitle='Accounts for refueling & shutdowns')
 
+        with st.popover('How is Fuel Lifetime estimated?', use_container_width=False):
             if reactor_type == 'LTMR':
-                st.caption(
-                    'Fuel Lifetime is estimated by KNN local regression on the LTMR '
-                    'parametric study. Typical error is **5-15%** for cases close to '
-                    'the trained design space, and may be larger for combinations '
-                    'with non-trained ring counts (marked * in the diameter slider) '
-                    'or near the criticality boundary.'
+                st.markdown(
+                    'We pre-ran a parametric set of **OpenMC depletion simulations** '
+                    'of the LTMR that swept active heights, active diameters '
+                    '(ring counts), enrichments, and thermal powers. From each '
+                    'simulation we extracted the time at which the core falls to '
+                    'k_eff = 1 (end of cycle). For your inputs, the Fuel Lifetime '
+                    'shown here is a **KNN local regression** over those simulations '
+                    '(4 nearest cases, distance-weighted). Typical error is '
+                    '**5-15%** for cases close to the trained design space, and '
+                    'may be larger for ring counts marked * in the diameter slider '
+                    '(outside the trained grid) or near the criticality boundary.'
                 )
             elif reactor_type == 'GCMR':
-                st.caption(
-                    'Fuel Lifetime is estimated by KNN local regression on the GCMR '
-                    'parametric study. Typical error is **5-15%** for cases close to '
-                    'the trained design space, and may be larger for combinations '
-                    'with non-trained (Assembly Rings, Core Rings) pairs (marked * in '
-                    'the diameter slider) or near the criticality boundary.'
+                st.markdown(
+                    'We pre-ran a parametric set of **OpenMC depletion simulations** '
+                    'of the GCMR that swept active heights, (Assembly Rings, Core '
+                    'Rings) geometry pairs, enrichments, and thermal powers. From '
+                    'each simulation we extracted the time at which the core falls '
+                    'to k_eff = 1 (end of cycle). For your inputs, the Fuel '
+                    'Lifetime shown here is a **KNN local regression** over those '
+                    'simulations (4 nearest cases, distance-weighted). Typical '
+                    'error is **5-15%** for cases close to the trained design '
+                    'space, and may be larger for (N_A, N_C) pairs marked * in '
+                    'the diameter slider (outside the trained grid) or near the '
+                    'criticality boundary.'
                 )
             elif reactor_type == 'HPMR':
-                st.caption(
-                    'Fuel Lifetime is estimated by KNN local regression on the HPMR '
-                    'parametric study (104 rows, K=4 distance-weighted). Typical '
-                    'error is **5-15%** for queries inside the trained envelope '
-                    '(N_A=6, N_C ∈ [3..7], H = 136-1056 cm, E = 10-19.75%, P = '
-                    '1-60 MWₜ). Mass U-235 / U-238 are derived from the exact '
-                    'HPMR mass formula (1.6116 g/(pin·cm) × N_pins(N_A, N_C) × H), '
-                    'so off-grid geometry queries are mass-consistent. The 8-10% '
-                    'enrichment band lets you see the subcritical region '
-                    'explicitly model returns 0 there because the nearest '
-                    'training point at E = 10% is itself subcritical.'
+                st.markdown(
+                    'We pre-ran a parametric set of **OpenMC depletion simulations** '
+                    'of the HPMR (104 cases) that swept active heights, core '
+                    'rings (N_C), enrichments, and thermal powers, with N_A '
+                    'locked at 6. From each simulation we extracted the time at '
+                    'which the core falls to k_eff = 1 (end of cycle). For your '
+                    'inputs, the Fuel Lifetime shown here is a **KNN local '
+                    'regression** over those simulations (4 nearest cases, '
+                    'distance-weighted). Typical error is **5-15%** inside the '
+                    'trained envelope (N_C ∈ [3..7], H = 136-1056 cm, E = 10-19.75%, '
+                    'P = 1-60 MWₜ). Mass U-235 / U-238 are derived from the exact '
+                    'HPMR mass formula, so off-grid geometry queries are mass-'
+                    'consistent. The 8-10% enrichment band lets you see the '
+                    'subcritical region explicitly &mdash; the model returns 0 '
+                    'there because the nearest training point at E = 10% is itself '
+                    'subcritical.'
                 )
 
-            st.markdown('<div style="height:1rem"></div>', unsafe_allow_html=True)
+    with perf_right:
+        # ── Reactivity vs Time (LTMR only) ──────────────────────────────
+        _reactivity_swing_pct = None # filled in for LTMR if curve available
+        if reactor_type == 'LTMR':
+            _times, _keffs = get_ltmr_keff_curve(
+                n_rings_per_assembly = params['Number of Rings per Assembly'],
+                active_height = params['Active Height'],
+                enrichment = params['Enrichment'],
+                power_mwt = params['Power MWt'],
+                anchor_lifetime_days = params.get('Fuel Lifetime', None),
+            )
+            if _times.size >= 2:
+                _k_bol = float(_keffs[0])
+                if _k_bol > 1.0:
+                    _reactivity_swing_pct = (_k_bol - 1.0) / _k_bol * 100.0
+            if _times.size >= 2:
+                st.markdown(
+                    '<div style="font-size:0.85rem;font-weight:600;color:#64748b;'
+                    'text-transform:uppercase;letter-spacing:0.09em;'
+                    'margin-bottom:0.6rem;">k_eff vs Time</div>',
+                    unsafe_allow_html=True,
+                )
+                _kfig, _kax = plt.subplots(figsize=(5.5, 2.8))
+                # Show discrete interpolated points (markers) connected
+                # by straight segments so the user can see we only
+                # have data at specific depletion timesteps, not a
+                # continuous curve.
+                _kax.plot(_times, _keffs, color='#1B4F8C', lw=1.5,
+                          marker='o', markersize=5, markerfacecolor='#1B4F8C',
+                          markeredgecolor='white', markeredgewidth=0.8)
+                _kax.axhline(1.0, color='#0a2540', lw=1.0, ls='--')
+                _kax.set_xlabel('Time (days)', fontsize=9)
+                _kax.set_ylabel(r'$k_{\rm eff}$', fontsize=10)
+                _kax.tick_params(axis='both', labelsize=8)
+                _kax.set_xlim(left=0)
+                # Pad the y-axis a hair above the highest value for readability
+                _kax.set_ylim(0.98, max(1.005, _keffs.max() + 0.005))
+                _kax.grid(True, alpha=0.3)
+                for _spine in ('top', 'right'):
+                    _kax.spines[_spine].set_visible(False)
+                _kfig.tight_layout()
+                st.pyplot(_kfig, use_container_width=True)
+                plt.close(_kfig)
+                st.caption(
+                    '**k_eff** (the neutron multiplication factor) measures '
+                    'whether the chain reaction sustains itself: > 1 it grows, '
+                    '= 1 critical (steady), < 1 it dies down. The curve shown '
+                    'comes from the parametric set of **OpenMC depletion '
+                    'simulations** of the LTMR (sweeping active heights, '
+                    'diameters, enrichments, and thermal powers). For your '
+                    'inputs, k_eff at each timestep is the distance-weighted '
+                    'average of the 4 nearest training cases. The time axis '
+                    'is anchored so the k_eff = 1 crossing matches the Fuel '
+                    'Lifetime above; the subcritical tail is omitted.'
+                )
+                st.markdown('<div style="height:1rem"></div>', unsafe_allow_html=True)
 
-            # ── Reactivity vs Time (LTMR only) ──────────────────────────────
-            _reactivity_swing_pct = None # filled in for LTMR if curve available
+        # ── Reactivity vs Time (GCMR same pattern as LTMR) ────────────
+        if reactor_type == 'GCMR':
+            _times, _keffs = get_gcmr_keff_curve(
+                assembly_rings = params['Assembly Rings'],
+                core_rings = params['Core Rings'],
+                active_height = params['Active Height'],
+                enrichment = params['Enrichment'],
+                power_mwt = params['Power MWt'],
+                anchor_lifetime_days = params.get('Fuel Lifetime', None),
+            )
+            if _times.size >= 2:
+                _k_bol = float(_keffs[0])
+                if _k_bol > 1.0:
+                    _reactivity_swing_pct = (_k_bol - 1.0) / _k_bol * 100.0
+            if _times.size >= 2:
+                st.markdown(
+                    '<div style="font-size:0.85rem;font-weight:600;color:#64748b;'
+                    'text-transform:uppercase;letter-spacing:0.09em;'
+                    'margin-bottom:0.6rem;">k_eff vs Time</div>',
+                    unsafe_allow_html=True,
+                )
+                _kfig, _kax = plt.subplots(figsize=(5.5, 2.8))
+                _kax.plot(_times, _keffs, color='#1B4F8C', lw=1.5,
+                          marker='o', markersize=5, markerfacecolor='#1B4F8C',
+                          markeredgecolor='white', markeredgewidth=0.8)
+                _kax.axhline(1.0, color='#0a2540', lw=1.0, ls='--')
+                _kax.set_xlabel('Time (days)', fontsize=9)
+                _kax.set_ylabel(r'$k_{\rm eff}$', fontsize=10)
+                _kax.tick_params(axis='both', labelsize=8)
+                _kax.set_xlim(left=0)
+                _kax.set_ylim(0.98, max(1.005, _keffs.max() + 0.005))
+                _kax.grid(True, alpha=0.3)
+                for _spine in ('top', 'right'):
+                    _kax.spines[_spine].set_visible(False)
+                _kfig.tight_layout()
+                st.pyplot(_kfig, use_container_width=True)
+                plt.close(_kfig)
+                st.caption(
+                    '**k_eff** (the neutron multiplication factor) measures '
+                    'whether the chain reaction sustains itself: > 1 it grows, '
+                    '= 1 critical (steady), < 1 it dies down. The curve shown '
+                    'comes from the parametric set of **OpenMC depletion '
+                    'simulations** of the GCMR (sweeping enrichment, assembly '
+                    'and core rings, active height, and thermal power). For '
+                    'your inputs, k_eff at each timestep is the distance-'
+                    'weighted average of the 4 nearest training cases in the '
+                    '(E, N_A, N_C, H, P) feature space. The time axis is '
+                    'anchored so the k_eff = 1 crossing matches the Fuel '
+                    'Lifetime above; the subcritical tail is omitted.'
+                )
+                st.markdown('<div style="height:1rem"></div>', unsafe_allow_html=True)
+
+        # ── Reactivity vs Time (HPMR same pattern as LTMR / GCMR) ─────
+        if reactor_type == 'HPMR':
+            _times, _keffs = get_hpmr_keff_curve(
+                n_rings_per_assembly = params['Number of Rings per Assembly'],
+                n_rings_per_core = params['Number of Rings per Core'],
+                active_height = params['Active Height'],
+                enrichment = params['Enrichment'],
+                power_mwt = params['Power MWt'],
+                anchor_lifetime_days = params.get('Fuel Lifetime', None),
+            )
+            if _times.size >= 2:
+                _k_bol = float(_keffs[0])
+                if _k_bol > 1.0:
+                    _reactivity_swing_pct = (_k_bol - 1.0) / _k_bol * 100.0
+            if _times.size >= 2:
+                st.markdown(
+                    '<div style="font-size:0.85rem;font-weight:600;color:#64748b;'
+                    'text-transform:uppercase;letter-spacing:0.09em;'
+                    'margin-bottom:0.6rem;">k_eff vs Time</div>',
+                    unsafe_allow_html=True,
+                )
+                _kfig, _kax = plt.subplots(figsize=(5.5, 2.8))
+                _kax.plot(_times, _keffs, color='#1B4F8C', lw=1.5,
+                          marker='o', markersize=5, markerfacecolor='#1B4F8C',
+                          markeredgecolor='white', markeredgewidth=0.8)
+                _kax.axhline(1.0, color='#0a2540', lw=1.0, ls='--')
+                _kax.set_xlabel('Time (days)', fontsize=9)
+                _kax.set_ylabel(r'$k_{\rm eff}$', fontsize=10)
+                _kax.tick_params(axis='both', labelsize=8)
+                _kax.set_xlim(left=0)
+                _kax.set_ylim(0.98, max(1.005, _keffs.max() + 0.005))
+                _kax.grid(True, alpha=0.3)
+                for _spine in ('top', 'right'):
+                    _kax.spines[_spine].set_visible(False)
+                _kfig.tight_layout()
+                st.pyplot(_kfig, use_container_width=True)
+                plt.close(_kfig)
+                st.caption(
+                    '**k_eff** (the neutron multiplication factor) measures '
+                    'whether the chain reaction sustains itself: > 1 it grows, '
+                    '= 1 critical (steady), < 1 it dies down. The curve shown '
+                    'comes from the parametric set of **OpenMC depletion '
+                    'simulations** of the HPMR (sweeping enrichment, core '
+                    'rings N_C, active height, and thermal power; N_A is '
+                    'locked at 6 in the training set). For your inputs, '
+                    'k_eff at each timestep is the distance-weighted average '
+                    'of the 4 nearest training cases in the (E, N_C, H, P) '
+                    'feature space. The time axis is anchored so the k_eff = '
+                    '1 crossing matches the Fuel Lifetime above; the '
+                    'subcritical tail is omitted.'
+                )
+                st.markdown('<div style="height:1rem"></div>', unsafe_allow_html=True)
+
+    # ── Subsection 3: Electricity Costs ───────────────────────
+    # Capital story on the left (OCC + TCI + OCC decomposition);
+    # operational + market story on the right (Annualized Cost +
+    # AC decomposition + Levelized Costs).
+    st.markdown(
+        '<div style="font-size:1rem;font-weight:700;color:#0a2540;'
+        'border-left:4px solid #0a2540;padding:0.4rem 0 0.4rem 0.75rem;'
+        'margin:1.25rem 0 0.4rem 0;">Electricity Costs</div>'
+        '<p style="color:#64748b;font-size:0.85rem;margin:0 0 0.85rem 0;">'
+        'Ranges shown are <strong>mean &minus; 1&sigma;</strong> to '
+        '<strong>mean + 1&sigma;</strong>.'
+        '</p>',
+        unsafe_allow_html=True,
+    )
+    econ_left, econ_right = st.columns([1, 1], gap='large')
+    with econ_left:
+        st.markdown(
+            '<div style="font-size:0.85rem;font-weight:600;color:#64748b;text-transform:uppercase;'
+            'letter-spacing:0.09em;margin-bottom:0.6rem;">Capital Costs</div>',
+            unsafe_allow_html=True,
+        )
+        cc1, cc2 = st.columns(2)
+        _kpi_card(
+            cc1, 'Overnight Capital Cost (OCC)',
+            _fmt_cost(occ_f, occ_f_std), _fmt_cost(occ_n, occ_n_std),
+            help_text=(
+                'Overnight Capital Cost: the total cost to build the plant '
+                'in reference-year dollars as if construction could happen '
+                'instantly. Sum of pre-construction, direct, indirect, and '
+                'training costs (Code of Accounts 10-40). Excludes financing '
+                'interest and escalation, so reactor designs can be compared '
+                'on a like-for-like basis.'
+            ),
+        )
+        _kpi_card(
+            cc2, 'Total Capital Investment (TCI)',
+            _fmt_cost(tci_f, tci_f_std), _fmt_cost(tci_n, tci_n_std),
+            help_text=(
+                'Total Capital Investment: OCC plus capitalized financial '
+                'costs accrued during construction (interest on debt-financed '
+                'portion, escalation). This is the real, time-value-of-money '
+                'amount needed to bring the plant to commercial operation.'
+            ),
+        )
+
+        # ── OCC decomposition (accounts 10/20/30/40) ──────────────
+        # Layout: a single 4-column × 6-row CSS grid so every element
+        # at the same grid-row (titles, FOAK badges, FOAK values,
+        # separator, NOAK badges, NOAK values) lines up horizontally
+        # across all 4 components no matter how tall any single cell
+        # gets (e.g. when "Pre-construction" wraps).
+        _pc_f, _pc_f_std = _get_mean_std(display_df, 10, 'FOAK')
+        _dc_f, _dc_f_std = _get_mean_std(display_df, 20, 'FOAK')
+        _ic_f, _ic_f_std = _get_mean_std(display_df, 30, 'FOAK')
+        _tc_f, _tc_f_std = _get_mean_std(display_df, 40, 'FOAK')
+        _pc_n, _pc_n_std = _get_mean_std(display_df, 10, 'NOAK')
+        _dc_n, _dc_n_std = _get_mean_std(display_df, 20, 'NOAK')
+        _ic_n, _ic_n_std = _get_mean_std(display_df, 30, 'NOAK')
+        _tc_n, _tc_n_std = _get_mean_std(display_df, 40, 'NOAK')
+
+        _cats = [
+            ('Preconstruction Cost',
+             _fmt_cost(_pc_f, _pc_f_std), _fmt_cost(_pc_n, _pc_n_std),
+             'Site selection, characterization, licensing and permitting, '
+             'owner’s costs, and early engineering studies incurred '
+             'before physical construction begins (Code of Accounts 10).'),
+            ('Direct Cost',
+             _fmt_cost(_dc_f, _dc_f_std), _fmt_cost(_dc_n, _dc_n_std),
+             'Materials, equipment, and labor for the physical plant: '
+             'reactor and containment, balance-of-plant systems, '
+             'structures, electrical and I&C. The largest bucket in most '
+             'cost estimates (Code of Accounts 20).'),
+            ('Indirect Cost',
+             _fmt_cost(_ic_f, _ic_f_std), _fmt_cost(_ic_n, _ic_n_std),
+             'Construction-support services that are not part of the '
+             'physical plant: engineering and design services, construction '
+             'management, temporary facilities, insurance and taxes during '
+             'construction (Code of Accounts 30).'),
+            ('Training Cost',
+             _fmt_cost(_tc_f, _tc_f_std), _fmt_cost(_tc_n, _tc_n_std),
+             'Initial training program for operations and maintenance '
+             'staff before commercial operation: operator training, '
+             'simulator costs, qualification programs, and training '
+             'materials (Code of Accounts 40).'),
+        ]
+        _title_row = ''.join(
+            f'<div style="font-size:0.85rem;font-weight:600;color:#64748b;'
+            f'line-height:1.25;">{c[0]}</div>'
+            for c in _cats
+        )
+        # Help icons live on their own grid row so they align across
+        # columns regardless of whether the title above wrapped.
+        _help_row = ''.join(
+            f'<div>{_help_icon(c[3])}</div>'
+            for c in _cats
+        )
+        _foak_badge_row = ''.join(
+            '<div><span style="background:#fff3ed;color:#c84b1e;font-size:0.85rem;'
+            'font-weight:700;padding:0.12rem 0.4rem;border-radius:4px;'
+            'letter-spacing:0.05em;">FOAK</span></div>'
+            for _ in _cats
+        )
+        _foak_val_row = ''.join(
+            f'<div style="font-size:0.85rem;font-weight:600;color:#0a2540;'
+            f'overflow-wrap:break-word;">{c[1]}</div>'
+            for c in _cats
+        )
+        _sep_row = ''.join(
+            '<div style="height:1px;background:#f1f3f5;"></div>'
+            for _ in _cats
+        )
+        _noak_badge_row = ''.join(
+            '<div><span style="background:#eff6ff;color:#1B4F8C;font-size:0.85rem;'
+            'font-weight:700;padding:0.12rem 0.4rem;border-radius:4px;'
+            'letter-spacing:0.05em;">NOAK</span></div>'
+            for _ in _cats
+        )
+        _noak_val_row = ''.join(
+            f'<div style="font-size:0.85rem;font-weight:600;color:#0a2540;'
+            f'overflow-wrap:break-word;">{c[2]}</div>'
+            for c in _cats
+        )
+        _decomp_html = (
+            f'<div style="background:white;border-radius:8px;padding:1.1rem 1.25rem;'
+            f'border:1px solid #bfdbfe;margin-top:0.75rem;">'
+            f'<div style="font-size:0.85rem;font-weight:600;color:#64748b;'
+            f'text-transform:uppercase;letter-spacing:0.09em;margin-bottom:1rem;">'
+            f'Overnight Capital Cost Decomposition</div>'
+            f'<div style="display:grid;grid-template-columns:repeat(4, minmax(0, 1fr));'
+            f'column-gap:1.25rem;row-gap:0.4rem;align-items:start;">'
+            f'{_title_row}'
+            f'{_help_row}'
+            f'{_foak_badge_row}'
+            f'{_foak_val_row}'
+            f'{_sep_row}'
+            f'{_noak_badge_row}'
+            f'{_noak_val_row}'
+            f'</div>'
+            f'</div>'
+        )
+        st.markdown(_decomp_html, unsafe_allow_html=True)
+
+    with econ_right:
+        # ── Annualized costs (total + O&M / Fuel decomposition) ────
+        st.markdown(
+            '<div style="font-size:0.85rem;font-weight:600;color:#64748b;text-transform:uppercase;'
+            'letter-spacing:0.09em;margin-bottom:0.6rem;">Annualized Costs</div>',
+            unsafe_allow_html=True,
+        )
+
+        _ac_f, _ac_f_std = _get_mean_std(display_df, 'AC', 'FOAK')
+        _ac_n, _ac_n_std = _get_mean_std(display_df, 'AC', 'NOAK')
+        _om_f, _om_f_std = _get_mean_std(display_df, 70, 'FOAK')
+        _om_n, _om_n_std = _get_mean_std(display_df, 70, 'NOAK')
+        _fuel_f, _fuel_f_std = _get_mean_std(display_df, 80, 'FOAK')
+        _fuel_n, _fuel_n_std = _get_mean_std(display_df, 80, 'NOAK')
+
+        _kpi_card(
+            st, 'Annualized Cost',
+            _fmt_cost(_ac_f, _ac_f_std), _fmt_cost(_ac_n, _ac_n_std),
+            help_text=(
+                'Total recurring yearly cost to operate the plant: O&M, fuel, '
+                'and capital plant expenditures, summed and annualized. The '
+                'numerator of LCOE before discounting.'
+            ),
+        )
+
+        _ac_cats = [
+            ('O&M Cost',
+             _fmt_cost(_om_f, _om_f_std), _fmt_cost(_om_n, _om_n_std),
+             'Annual operations and maintenance: staff salaries, routine '
+             'maintenance, consumables, insurance, regulatory fees, and '
+             'central-facility costs (Code of Accounts 70).'),
+            ('Fuel Cost',
+             _fmt_cost(_fuel_f, _fuel_f_std), _fmt_cost(_fuel_n, _fuel_n_std),
+             'Annual fuel cycle costs: fuel purchase, fabrication, '
+             'enrichment, and back-end disposal / storage charges '
+             '(Code of Accounts 80).'),
+        ]
+        _ac_title_row = ''.join(
+            f'<div style="font-size:0.85rem;font-weight:600;color:#64748b;'
+            f'line-height:1.25;">{c[0]}</div>'
+            for c in _ac_cats
+        )
+        _ac_help_row = ''.join(
+            f'<div>{_help_icon(c[3])}</div>'
+            for c in _ac_cats
+        )
+        _ac_foak_badge_row = ''.join(
+            '<div><span style="background:#fff3ed;color:#c84b1e;font-size:0.85rem;'
+            'font-weight:700;padding:0.12rem 0.4rem;border-radius:4px;'
+            'letter-spacing:0.05em;">FOAK</span></div>'
+            for _ in _ac_cats
+        )
+        _ac_foak_val_row = ''.join(
+            f'<div style="font-size:0.85rem;font-weight:600;color:#0a2540;'
+            f'overflow-wrap:break-word;">{c[1]}</div>'
+            for c in _ac_cats
+        )
+        _ac_sep_row = ''.join(
+            '<div style="height:1px;background:#f1f3f5;"></div>'
+            for _ in _ac_cats
+        )
+        _ac_noak_badge_row = ''.join(
+            '<div><span style="background:#eff6ff;color:#1B4F8C;font-size:0.85rem;'
+            'font-weight:700;padding:0.12rem 0.4rem;border-radius:4px;'
+            'letter-spacing:0.05em;">NOAK</span></div>'
+            for _ in _ac_cats
+        )
+        _ac_noak_val_row = ''.join(
+            f'<div style="font-size:0.85rem;font-weight:600;color:#0a2540;'
+            f'overflow-wrap:break-word;">{c[2]}</div>'
+            for c in _ac_cats
+        )
+        _ac_decomp_html = (
+            f'<div style="background:white;border-radius:8px;padding:1.1rem 1.25rem;'
+            f'border:1px solid #bfdbfe;margin-top:0.75rem;">'
+            f'<div style="font-size:0.85rem;font-weight:600;color:#64748b;'
+            f'text-transform:uppercase;letter-spacing:0.09em;margin-bottom:1rem;">'
+            f'Annualized Cost Decomposition</div>'
+            f'<div style="display:grid;grid-template-columns:repeat(2, minmax(0, 1fr));'
+            f'column-gap:1.25rem;row-gap:0.4rem;align-items:start;">'
+            f'{_ac_title_row}'
+            f'{_ac_help_row}'
+            f'{_ac_foak_badge_row}'
+            f'{_ac_foak_val_row}'
+            f'{_ac_sep_row}'
+            f'{_ac_noak_badge_row}'
+            f'{_ac_noak_val_row}'
+            f'</div>'
+            f'</div>'
+        )
+        st.markdown(_ac_decomp_html, unsafe_allow_html=True)
+
+        st.markdown('<div style="height:0.75rem"></div>', unsafe_allow_html=True)
+
+        st.markdown(
+            '<div style="font-size:0.85rem;font-weight:600;color:#64748b;text-transform:uppercase;'
+            'letter-spacing:0.09em;margin-bottom:0.6rem;">Levelized Costs</div>',
+            unsafe_allow_html=True,
+        )
+        # LCOE + LCOF only; LCOH moved to the "Heat Costs" subsection
+        # below so the electricity / heat tracks read cleanly apart.
+        lc1, lc2 = st.columns(2)
+        _kpi_card(lc1, 'LCOE ($/MW<sub>e</sub>h)',
+                  _fmt_lcoe(lcoe_f, lcoe_f_std), _fmt_lcoe(lcoe_n, lcoe_n_std))
+        _kpi_card(lc2, 'LCOF Fuel Only ($/MW<sub>e</sub>h)',
+                  _fmt_lcoe(lcof_f, lcof_f_std), _fmt_lcoe(lcof_n, lcof_n_std))
+
+        st.markdown('<div style="height:0.5rem"></div>', unsafe_allow_html=True)
+        with st.popover('What do FOAK and NOAK mean?', use_container_width=False):
+            st.markdown(
+                '**FOAK** — *First-of-a-Kind*. Includes learning-curve and '
+                'contingency premiums for an initial deployment.\n\n'
+                '**NOAK** — *Nth-of-a-Kind*. Reflects mature, serial-production '
+                'cost reductions at scale.'
+            )
+
+        # SECTION 3 fuel-cycle header was here; rendering moved
+        # to Band 3 (Fuel cycle column). Computation continues
+        # below so the _fuel_card queue is still populated.
+
+        # ── Fuel Inventory (uses st.metric so we get the built-in help icon) ──
+        _u235_g = float(params.get('Mass U235', 0.0))
+        _u238_g = float(params.get('Mass U238', 0.0))
+        _hm_g = _u235_g + _u238_g
+        _mwe = float(params.get('Power MWe', 0.0)) or float('nan')
+        _hm_kg = _hm_g / 1.0e3 # g → kg
+        _hm_kg_per_mwe = _hm_kg / _mwe # kg / MWe
+        _fis_kg = _u235_g / 1.0e3 # g → kg
+        _fis_kg_per_mwe = _fis_kg / _mwe # kg / MWe
+
+        # _section_cards is initialized above the tab declarations
+        # so it's visible from both tab_design and tab_physics.
+        def _fuel_card(title, value_str, help_text,
+                       accent=None, bg=None, border=None,
+                       status=None, section=3):
+            # QUEUE-MODE: appends to _section_cards[section] instead
+            # of rendering immediately. The actual render happens
+            # later inside the appropriate tab. Status/style choice
+            # is computed at queue time so callers don't need to
+            # think about it.
+            if status == 'warning':
+                _bg, _br, _tc = '#fffbeb', '#fcd34d', '#92400e'
+            elif status == 'error':
+                _bg, _br, _tc = '#fef2f2', '#fecaca', '#b91c1c'
+            else:
+                _bg, _br, _tc = '#ffffff', '#bfdbfe', '#1B4F8C'
+            _help_html = html.escape(help_text) if help_text else ''
+            _html = (
+                f'<div style="background:{_bg};border:1px solid {_br};'
+                f'border-radius:8px;padding:1.1rem 1.25rem;'
+                f'margin-bottom:0.85rem;">'
+                f'<div style="font-size:0.85rem;font-weight:600;color:{_tc};'
+                f'text-transform:uppercase;letter-spacing:0.09em;margin-bottom:0.35rem;">'
+                f'{title}</div>'
+                f'<div style="font-size:1rem;font-weight:700;color:#0a2540;'
+                f'line-height:1.3;margin-bottom:0.45rem;">{value_str}</div>'
+                f'<div style="font-size:0.85rem;font-weight:400;color:#64748b;'
+                f'line-height:1.45;">{_help_html}</div>'
+                f'</div>'
+            )
+            _section_cards.setdefault(section, []).append(_html)
+
+        def _scoping_callout(text):
+            st.markdown(
+                f'<div style="background:#fffbeb;border:1.5px solid #f59e0b;'
+                f'border-radius:8px;padding:0.85rem 1.1rem;margin-bottom:1rem;'
+                f'font-size:0.85rem;line-height:1.55;color:#92400e;">'
+                f'<strong style="color:#92400e;">Scoping-only note. </strong>'
+                f'{text}</div>',
+                unsafe_allow_html=True,
+            )
+
+        def _render_section_cards(section_num):
+            for _h in _section_cards.get(section_num, []):
+                st.markdown(_h, unsafe_allow_html=True)
+
+        _fuel_card(
+            'Fuel loading',
+            f'{_fmt_metric(_hm_kg)} kgHM | {_fmt_metric(_hm_kg_per_mwe)} kgHM/MWe',
+            ('Total mass of heavy metal (uranium) in the core. '
+             'HM = Heavy Metal = Mass U-235 + Mass U-238. '
+             'kgHM/MWe normalises by net electric output a specific fuel '
+             'inventory metric useful for comparing fuel-cycle requirements '
+             'across reactor types. Microreactors typically run '
+             '100-1,000 kgHM/MWe depending on technology.'),
+            section=3,
+        )
+        _fuel_card(
+            'Fissile loading',
+            f'{_fmt_metric(_fis_kg)} kg | {_fmt_metric(_fis_kg_per_mwe)} kg/MWe',
+            ('Mass of fissile material only (U-235 for LEU/HALEU fuel). '
+             'Drives enrichment cost (HALEU is expensive at ~$3k-$15k/kg) and '
+             'safeguards requirements. kg/MWe is one of the main metrics used '
+             'when comparing the economics of microreactors against larger '
+             'reactors microreactor values are typically much higher than '
+             'commercial LWRs (~5 kg/MWe).'),
+            section=3,
+        )
+
+        # Peaking factor + discharge burnup only meaningful for
+        # critical cases. Skip if HM mass or lifetime aren't available.
+        _lifetime_days = float(params.get('Fuel Lifetime', 0.0))
+        if _hm_kg > 0 and _lifetime_days > 0:
+            _pf = 0.0
             if reactor_type == 'LTMR':
-                _times, _keffs = get_ltmr_keff_curve(
+                _pf = get_ltmr_peaking_factor(
                     n_rings_per_assembly = params['Number of Rings per Assembly'],
                     active_height = params['Active Height'],
                     enrichment = params['Enrichment'],
                     power_mwt = params['Power MWt'],
-                    anchor_lifetime_days = params.get('Fuel Lifetime', None),
                 )
-                if _times.size >= 2:
-                    _k_bol = float(_keffs[0])
-                    if _k_bol > 1.0:
-                        _reactivity_swing_pct = (_k_bol - 1.0) / _k_bol * 100.0
-                if _times.size >= 2:
-                    st.markdown(
-                        '<div style="font-size:0.85rem;font-weight:600;color:#64748b;'
-                        'text-transform:uppercase;letter-spacing:0.09em;'
-                        'margin-bottom:0.6rem;">k_eff vs Time</div>',
-                        unsafe_allow_html=True,
-                    )
-                    _kfig, _kax = plt.subplots(figsize=(5.5, 2.8))
-                    # Show discrete interpolated points (markers) connected
-                    # by straight segments so the user can see we only
-                    # have data at specific depletion timesteps, not a
-                    # continuous curve.
-                    _kax.plot(_times, _keffs, color='#1d4ed8', lw=1.5,
-                              marker='o', markersize=5, markerfacecolor='#1d4ed8',
-                              markeredgecolor='white', markeredgewidth=0.8)
-                    _kax.fill_between(_times, _keffs, 1.0,
-                                      where=(_keffs >= 1.0),
-                                      color='#1d4ed8', alpha=0.10)
-                    _kax.axhline(1.0, color='#7f1d1d', lw=1.0, ls='--')
-                    _kax.set_xlabel('Time (days)', fontsize=9)
-                    _kax.set_ylabel(r'$k_{\rm eff}$', fontsize=10)
-                    _kax.tick_params(axis='both', labelsize=8)
-                    _kax.set_xlim(left=0)
-                    # Pad the y-axis a hair above the highest value for readability
-                    _kax.set_ylim(0.98, max(1.005, _keffs.max() + 0.005))
-                    _kax.grid(True, alpha=0.3)
-                    for _spine in ('top', 'right'):
-                        _kax.spines[_spine].set_visible(False)
-                    _kfig.tight_layout()
-                    st.pyplot(_kfig, use_container_width=True)
-                    plt.close(_kfig)
-                    st.caption(
-                        'k_eff vs depletion time, interpolated from the 4 nearest '
-                        'cases in the LTMR parametric study (distance-weighted '
-                        'average of time and k_eff at each timestep). The time '
-                        'axis is anchored so the k_eff = 1 crossing matches the '
-                        'estimated fuel lifetime above; the subcritical tail is '
-                        'omitted.'
-                    )
-                    st.markdown('<div style="height:1rem"></div>', unsafe_allow_html=True)
-
-            # ── Reactivity vs Time (GCMR same pattern as LTMR) ────────────
-            if reactor_type == 'GCMR':
-                _times, _keffs = get_gcmr_keff_curve(
+            elif reactor_type == 'GCMR':
+                _pf = get_gcmr_peaking_factor(
                     assembly_rings = params['Assembly Rings'],
                     core_rings = params['Core Rings'],
                     active_height = params['Active Height'],
                     enrichment = params['Enrichment'],
                     power_mwt = params['Power MWt'],
-                    anchor_lifetime_days = params.get('Fuel Lifetime', None),
                 )
-                if _times.size >= 2:
-                    _k_bol = float(_keffs[0])
-                    if _k_bol > 1.0:
-                        _reactivity_swing_pct = (_k_bol - 1.0) / _k_bol * 100.0
-                if _times.size >= 2:
-                    st.markdown(
-                        '<div style="font-size:0.85rem;font-weight:600;color:#64748b;'
-                        'text-transform:uppercase;letter-spacing:0.09em;'
-                        'margin-bottom:0.6rem;">k_eff vs Time</div>',
-                        unsafe_allow_html=True,
-                    )
-                    _kfig, _kax = plt.subplots(figsize=(5.5, 2.8))
-                    _kax.plot(_times, _keffs, color='#1d4ed8', lw=1.5,
-                              marker='o', markersize=5, markerfacecolor='#1d4ed8',
-                              markeredgecolor='white', markeredgewidth=0.8)
-                    _kax.fill_between(_times, _keffs, 1.0,
-                                      where=(_keffs >= 1.0),
-                                      color='#1d4ed8', alpha=0.10)
-                    _kax.axhline(1.0, color='#7f1d1d', lw=1.0, ls='--')
-                    _kax.set_xlabel('Time (days)', fontsize=9)
-                    _kax.set_ylabel(r'$k_{\rm eff}$', fontsize=10)
-                    _kax.tick_params(axis='both', labelsize=8)
-                    _kax.set_xlim(left=0)
-                    _kax.set_ylim(0.98, max(1.005, _keffs.max() + 0.005))
-                    _kax.grid(True, alpha=0.3)
-                    for _spine in ('top', 'right'):
-                        _kax.spines[_spine].set_visible(False)
-                    _kfig.tight_layout()
-                    st.pyplot(_kfig, use_container_width=True)
-                    plt.close(_kfig)
-                    st.caption(
-                        'k_eff vs depletion time, interpolated from the 4 nearest '
-                        'cases in the GCMR parametric study (distance-weighted '
-                        'average of time and k_eff at each timestep, in '
-                        '(E, N_A, N_C, H, P) feature space). The time axis is '
-                        'anchored so the k_eff = 1 crossing matches the estimated '
-                        'fuel lifetime above; the subcritical tail is omitted.'
-                    )
-                    st.markdown('<div style="height:1rem"></div>', unsafe_allow_html=True)
-
-            # ── Reactivity vs Time (HPMR same pattern as LTMR / GCMR) ─────
-            if reactor_type == 'HPMR':
-                _times, _keffs = get_hpmr_keff_curve(
+            elif reactor_type == 'HPMR':
+                _pf = get_hpmr_peaking_factor(
                     n_rings_per_assembly = params['Number of Rings per Assembly'],
                     n_rings_per_core = params['Number of Rings per Core'],
                     active_height = params['Active Height'],
                     enrichment = params['Enrichment'],
                     power_mwt = params['Power MWt'],
-                    anchor_lifetime_days = params.get('Fuel Lifetime', None),
-                )
-                if _times.size >= 2:
-                    _k_bol = float(_keffs[0])
-                    if _k_bol > 1.0:
-                        _reactivity_swing_pct = (_k_bol - 1.0) / _k_bol * 100.0
-                if _times.size >= 2:
-                    st.markdown(
-                        '<div style="font-size:0.85rem;font-weight:600;color:#64748b;'
-                        'text-transform:uppercase;letter-spacing:0.09em;'
-                        'margin-bottom:0.6rem;">k_eff vs Time</div>',
-                        unsafe_allow_html=True,
-                    )
-                    _kfig, _kax = plt.subplots(figsize=(5.5, 2.8))
-                    _kax.plot(_times, _keffs, color='#1d4ed8', lw=1.5,
-                              marker='o', markersize=5, markerfacecolor='#1d4ed8',
-                              markeredgecolor='white', markeredgewidth=0.8)
-                    _kax.fill_between(_times, _keffs, 1.0,
-                                      where=(_keffs >= 1.0),
-                                      color='#1d4ed8', alpha=0.10)
-                    _kax.axhline(1.0, color='#7f1d1d', lw=1.0, ls='--')
-                    _kax.set_xlabel('Time (days)', fontsize=9)
-                    _kax.set_ylabel(r'$k_{\rm eff}$', fontsize=10)
-                    _kax.tick_params(axis='both', labelsize=8)
-                    _kax.set_xlim(left=0)
-                    _kax.set_ylim(0.98, max(1.005, _keffs.max() + 0.005))
-                    _kax.grid(True, alpha=0.3)
-                    for _spine in ('top', 'right'):
-                        _kax.spines[_spine].set_visible(False)
-                    _kfig.tight_layout()
-                    st.pyplot(_kfig, use_container_width=True)
-                    plt.close(_kfig)
-                    st.caption(
-                        'k_eff vs depletion time, interpolated from the 4 nearest '
-                        'cases in the HPMR parametric study (distance-weighted '
-                        'average of time and k_eff at each timestep). KNN distance '
-                        'uses only the features that vary in the training data '
-                        'currently (E, N_C, H, P), since N_A is locked at 6. The '
-                        'time axis is anchored so the k_eff = 1 crossing matches '
-                        'the estimated fuel lifetime above; the subcritical tail '
-                        'is omitted.'
-                    )
-                    st.markdown('<div style="height:1rem"></div>', unsafe_allow_html=True)
-
-            # ─── SECTION 2 What does it look like? ───
-            # (cross-section image + side-view + reactivity-vs-time were
-            # rendered above; the Materials & Components panel completes
-            # the visual / structural picture of the design.)
-            _section_header_2 = (
-                '<div style="font-size:1rem;font-weight:700;color:#1B4F8C;'
-                'border-left:4px solid #1B4F8C;padding:0.4rem 0 0.4rem 0.75rem;'
-                'margin:0.5rem 0 0.85rem 0;">'
-                'What does it look like?</div>'
-            )
-            st.markdown(_section_header_2, unsafe_allow_html=True)
-
-            # ── Materials & Components (read directly from params) ──
-            _materials_section(reactor_type, params)
-
-            # ─── SECTION 3 How much fuel and how long does it last? ───
-            st.markdown(
-                '<div style="font-size:1rem;font-weight:700;color:#1B4F8C;'
-                'border-left:4px solid #1B4F8C;padding:0.4rem 0 0.4rem 0.75rem;'
-                'margin:1.2rem 0 0.85rem 0;">'
-                'How much fuel and how long does it last?</div>',
-                unsafe_allow_html=True,
-            )
-
-            # ── Fuel Inventory (uses st.metric so we get the built-in help icon) ──
-            _u235_g = float(params.get('Mass U235', 0.0))
-            _u238_g = float(params.get('Mass U238', 0.0))
-            _hm_g = _u235_g + _u238_g
-            _mwe = float(params.get('Power MWe', 0.0)) or float('nan')
-            _hm_kg = _hm_g / 1.0e3 # g → kg
-            _hm_kg_per_mwe = _hm_kg / _mwe # kg / MWe
-            _fis_kg = _u235_g / 1.0e3 # g → kg
-            _fis_kg_per_mwe = _fis_kg / _mwe # kg / MWe
-
-            # _section_cards is initialized above the tab declarations
-            # so it's visible from both tab_design and tab_physics.
-            def _fuel_card(title, value_str, help_text,
-                           accent=None, bg=None, border=None,
-                           status=None, section=3):
-                # QUEUE-MODE: appends to _section_cards[section] instead
-                # of rendering immediately. The actual render happens
-                # later inside the appropriate tab. Status/style choice
-                # is computed at queue time so callers don't need to
-                # think about it.
-                if status == 'warning':
-                    _bg, _br, _tc = '#fffbeb', '#fcd34d', '#b45309'
-                elif status == 'error':
-                    _bg, _br, _tc = '#fef2f2', '#fecaca', '#b91c1c'
-                else:
-                    _bg, _br, _tc = '#ffffff', '#bfdbfe', '#1B4F8C'
-                _help_html = html.escape(help_text) if help_text else ''
-                _html = (
-                    f'<div style="background:{_bg};border:1px solid {_br};'
-                    f'border-radius:8px;padding:1.0rem 1.25rem;'
-                    f'margin-bottom:0.6rem;">'
-                    f'<div style="font-size:0.85rem;font-weight:600;color:{_tc};'
-                    f'text-transform:uppercase;letter-spacing:0.09em;margin-bottom:0.35rem;">'
-                    f'{title}</div>'
-                    f'<div style="font-size:1rem;font-weight:700;color:#0a2540;'
-                    f'line-height:1.3;margin-bottom:0.45rem;">{value_str}</div>'
-                    f'<div style="font-size:0.85rem;font-weight:400;color:#64748b;'
-                    f'line-height:1.45;">{_help_html}</div>'
-                    f'</div>'
-                )
-                _section_cards.setdefault(section, []).append(_html)
-
-            def _section_header(label, accent='#1B4F8C'):
-                st.markdown(
-                    f'<div style="font-size:1rem;font-weight:700;color:{accent};'
-                    f'border-left:4px solid {accent};padding:0.35rem 0 0.35rem 0.7rem;'
-                    f'margin:1.5rem 0 0.85rem 0;letter-spacing:0.01em;">'
-                    f'{label}</div>',
-                    unsafe_allow_html=True,
                 )
 
-            def _scoping_callout(text):
-                st.markdown(
-                    f'<div style="background:#fffbeb;border:1.5px solid #f59e0b;'
-                    f'border-radius:8px;padding:0.95rem 1.15rem;margin-bottom:1rem;'
-                    f'font-size:0.85rem;line-height:1.55;color:#92400e;">'
-                    f'<strong style="color:#92400e;">Scoping-only note. </strong>'
-                    f'{text}</div>',
-                    unsafe_allow_html=True,
-                )
-
-            def _render_section_cards(section_num):
-                for _h in _section_cards.get(section_num, []):
-                    st.markdown(_h, unsafe_allow_html=True)
+            # Average discharge burnup: total energy / total HM mass.
+            # MWt × days = MW·d, divided by kg → MWd/kg.
+            _bu_avg = (float(params['Power MWt']) * _lifetime_days) / _hm_kg
+            _bu_max = _bu_avg * _pf if _pf > 0 else 0.0
 
             _fuel_card(
-                'Fuel loading',
-                f'{_hm_kg:,.1f} kgHM | {_hm_kg_per_mwe:,.1f} kgHM/MWe',
-                ('Total mass of heavy metal (uranium) in the core. '
-                 'HM = Heavy Metal = Mass U-235 + Mass U-238. '
-                 'kgHM/MWe normalises by net electric output a specific fuel '
-                 'inventory metric useful for comparing fuel-cycle requirements '
-                 'across reactor types. Microreactors typically run '
-                 '100-1,000 kgHM/MWe depending on technology.'),
-                section=3,
-            )
-            _fuel_card(
-                'Fissile loading',
-                f'{_fis_kg:,.1f} kg | {_fis_kg_per_mwe:,.1f} kg/MWe',
-                ('Mass of fissile material only (U-235 for LEU/HALEU fuel). '
-                 'Drives enrichment cost (HALEU is expensive at ~$3k-$15k/kg) and '
-                 'safeguards requirements. kg/MWe is one of the main metrics used '
-                 'when comparing the economics of microreactors against larger '
-                 'reactors microreactor values are typically much higher than '
-                 'commercial LWRs (~5 kg/MWe).'),
-                section=3,
+                'Peaking factor',
+                f'{_pf:.1f}' if _pf > 0 else 'N/A',
+                ('Power Peaking Factor (PPF) ratio of the maximum local '
+                 'fission rate to the core-average fission rate. Drives the '
+                 'difference between average and peak fuel pin temperatures, '
+                 'and between average and peak burnup. Lower is better; '
+                 'typical microreactor values are 1.5-3.0 depending on '
+                 'reflector design and fuel arrangement. Interpolated from '
+                 'the parametric study.'),
+                section=4,
             )
 
-            # Peaking factor + discharge burnup only meaningful for
-            # critical cases. Skip if HM mass or lifetime aren't available.
-            _lifetime_days = float(params.get('Fuel Lifetime', 0.0))
-            if _hm_kg > 0 and _lifetime_days > 0:
-                _pf = 0.0
-                if reactor_type == 'LTMR':
-                    _pf = get_ltmr_peaking_factor(
-                        n_rings_per_assembly = params['Number of Rings per Assembly'],
-                        active_height = params['Active Height'],
-                        enrichment = params['Enrichment'],
-                        power_mwt = params['Power MWt'],
-                    )
-                elif reactor_type == 'GCMR':
-                    _pf = get_gcmr_peaking_factor(
-                        assembly_rings = params['Assembly Rings'],
-                        core_rings = params['Core Rings'],
-                        active_height = params['Active Height'],
-                        enrichment = params['Enrichment'],
-                        power_mwt = params['Power MWt'],
-                    )
-                elif reactor_type == 'HPMR':
-                    _pf = get_hpmr_peaking_factor(
-                        n_rings_per_assembly = params['Number of Rings per Assembly'],
-                        n_rings_per_core = params['Number of Rings per Core'],
-                        active_height = params['Active Height'],
-                        enrichment = params['Enrichment'],
-                        power_mwt = params['Power MWt'],
-                    )
+            # Axial + total leakage (BOL, %). Inside the trained
+            # H range we use the KNN-interpolated value; outside we
+            # fall back to a one-group migration-area physics
+            # formula (which actually responds to the user's H).
+            _ax_lk, _tot_lk, _lk_src = 0.0, 0.0, None
+            _active_radius_cm = float(2.0 * params['Core Radius']) / 2.0
+            # active_radius excludes the reflector recompute from active diameter
+            _active_radius_cm = (float(2.0 * params['Core Radius'])
+                                 - 2.0 * float(params.get('Radial Reflector Thickness', 0.0))
+                                 ) / 2.0
+            _r_refl = float(params.get('Radial Reflector Thickness', 0.0))
+            _z_refl = float(params.get('Axial Reflector Thickness', 0.0))
+            if reactor_type == 'LTMR':
+                _ax_lk, _tot_lk, _lk_src = get_ltmr_leakage(
+                    n_rings_per_assembly = params['Number of Rings per Assembly'],
+                    active_height = params['Active Height'],
+                    enrichment = params['Enrichment'],
+                    power_mwt = params['Power MWt'],
+                    active_radius_cm = _active_radius_cm,
+                    radial_reflector_cm = _r_refl,
+                    axial_reflector_cm = _z_refl,
+                )
+            elif reactor_type == 'GCMR':
+                _ax_lk, _tot_lk, _lk_src = get_gcmr_leakage(
+                    assembly_rings = params['Assembly Rings'],
+                    core_rings = params['Core Rings'],
+                    active_height = params['Active Height'],
+                    enrichment = params['Enrichment'],
+                    power_mwt = params['Power MWt'],
+                    active_radius_cm = _active_radius_cm,
+                    radial_reflector_cm = _r_refl,
+                    axial_reflector_cm = _z_refl,
+                )
+            elif reactor_type == 'HPMR':
+                _ax_lk, _tot_lk, _lk_src = get_hpmr_leakage(
+                    n_rings_per_assembly = params['Number of Rings per Assembly'],
+                    n_rings_per_core = params['Number of Rings per Core'],
+                    active_height = params['Active Height'],
+                    enrichment = params['Enrichment'],
+                    power_mwt = params['Power MWt'],
+                    active_radius_cm = _active_radius_cm,
+                    radial_reflector_cm = _r_refl,
+                    axial_reflector_cm = _z_refl,
+                )
 
-                # Average discharge burnup: total energy / total HM mass.
-                # MWt × days = MW·d, divided by kg → MWd/kg.
-                _bu_avg = (float(params['Power MWt']) * _lifetime_days) / _hm_kg
-                _bu_max = _bu_avg * _pf if _pf > 0 else 0.0
+            _src_note = (
+                'This value is INTERPOLATED from nearby cases in the '
+                'parametric study (KNN, K=4, distance-weighted average) '
+                'the geometry sits inside the trained design space.'
+                if _lk_src == 'interpolated' else
+                'This value is COMPUTED from a one-group migration-area '
+                'physics formula because the requested geometry sits '
+                'outside the trained H range for this diameter KNN '
+                'would just saturate at the training boundary. The '
+                'formula uses '
+                'B² = (2.405/R_eff)² + (π/H_eff)², '
+                'P_NL = 1/(1 + M²·B²), where R_eff and H_eff include '
+                'reflector savings (~0.6 × reflector thickness). M² '
+                'is calibrated against the parametric study data.'
+            )
 
+            if _ax_lk > 0:
                 _fuel_card(
-                    'Peaking factor',
-                    f'{_pf:,.2f}' if _pf > 0 else 'N/A',
-                    ('Power Peaking Factor (PPF) ratio of the maximum local '
-                     'fission rate to the core-average fission rate. Drives the '
-                     'difference between average and peak fuel pin temperatures, '
-                     'and between average and peak burnup. Lower is better; '
-                     'typical microreactor values are 1.5-3.0 depending on '
-                     'reflector design and fuel arrangement. Interpolated from '
-                     'the parametric study.'),
+                    'Axial leakage (BOL)',
+                    f'{_fmt_metric(_ax_lk)} %',
+                    ('Fraction of neutrons that leak out of the active core '
+                     'through the top or bottom faces at beginning of life. '
+                     'Driven primarily by Active Height (shorter cores leak '
+                     'more axially) and the axial reflector thickness. The '
+                     'reflector and the control drums are accounted for: '
+                     'the parametric-study OpenMC runs include both, and '
+                     'the physics fallback uses the auto-resolved '
+                     'reflector thickness which already covers the drums. '
+                     + _src_note),
+                    section=4,
+                )
+            if _tot_lk > 0:
+                _fuel_card(
+                    'Total leakage (BOL)',
+                    f'{_fmt_metric(_tot_lk)} %',
+                    ('Total fraction of neutrons that escape the active '
+                     'core (axial + radial) at beginning of life. Driven '
+                     'by core dimensions both Active Height and active '
+                     'radius. The reflector and the control drums are '
+                     'accounted for the same way as above. Microreactors '
+                     'typically have higher total leakage (~5-35 %) than '
+                     'commercial LWRs (~3 %) because of their small size. '
+                     + _src_note),
+                    section=4,
+                )
+            _fuel_card(
+                'Discharge burnup (avg)',
+                f'{_fmt_metric(_bu_avg)} MWd/kgHM',
+                ('Average burnup of the fuel at end-of-life (when the reactor '
+                 'first becomes subcritical). Computed as Power [MWₜ] × Fuel '
+                 'Lifetime [days] / Heavy Metal mass [kg]. This is the '
+                 'headline economic metric higher discharge burnup means '
+                 'more energy extracted per kg of fuel, lowering fuel cost '
+                 'per MWh.'),
+                section=3,
+            )
+            if _bu_max > 0:
+                _fuel_card(
+                    'Discharge burnup (max)',
+                    f'{_fmt_metric(_bu_max)} MWd/kgHM',
+                    ('Peak burnup at end-of-life the burnup of the most '
+                     'heavily depleted region (= average × peaking factor). '
+                     'This is the design-limiting value: cladding integrity, '
+                     'fission gas release, and dimensional change all depend '
+                     'on the peak. Commercial LWRs are licensed to ~62 '
+                     'MWd/kgU peak. For TRISO-fuelled designs the peak burnup '
+                     'limit is typically much higher.'),
+                    section=3,
+                )
+
+            # Mining intensity uses MOUSE's existing 'Natural Uranium Mass'
+            # (computed in fuel_calculations using T=0.25% tails and natural
+            # U feed F=0.71%, the standard mass-balance formula).
+            _nat_u_kg = float(params.get('Natural Uranium Mass', 0.0))
+            _mwh_total = _mwe * _lifetime_days * 24.0
+            if _nat_u_kg > 0 and _mwh_total > 0:
+                _mining = (_nat_u_kg * 1000.0) / _mwh_total # kg→g, /MWh
+                _fuel_card(
+                    'Mining intensity',
+                    f'{_fmt_metric(_mining)} gU/MWh',
+                    ('Mass of natural uranium that must be mined and milled '
+                     'per MWh of electric energy produced. Computed from '
+                     'MOUSE\'s natural-uranium consumption '
+                     '(tails enrichment 0.25 %, feed enrichment 0.71 %), '
+                     'then divided by the total lifetime electrical energy '
+                     'produced. Typical values: commercial LWRs ~17-25 '
+                     'gU/MWh, HALEU microreactors ~30-80, natural-U reactors '
+                     '(CANDU) ~150-200. Lower means less front-end fuel-'
+                     'cycle resource demand.'),
+                    section=3,
+                )
+
+            if _reactivity_swing_pct is not None:
+                _fuel_card(
+                    'Reactivity swing',
+                    f'{_fmt_metric(_reactivity_swing_pct)} %Δk/k',
+                    ('Total reactivity consumed by burnup over the fuel '
+                     'cycle, in %Δk/k = (k_BOL − 1) / k_BOL × 100. k_BOL is '
+                     'the interpolated beginning-of-life k_eff (fresh fuel, '
+                     'before depletion). Drives control-drum sizing drum '
+                     'worth must exceed the swing to keep cold-clean k_eff '
+                     '< 1 with all drums in. Typical: commercial LWRs ~10-'
+                     '15 %, HALEU microreactors ~15-40 % (large because '
+                     'long cycles + high enrichment).'),
                     section=4,
                 )
 
-                # Axial + total leakage (BOL, %). Inside the trained
-                # H range we use the KNN-interpolated value; outside we
-                # fall back to a one-group migration-area physics
-                # formula (which actually responds to the user's H).
-                _ax_lk, _tot_lk, _lk_src = 0.0, 0.0, None
-                _active_radius_cm = float(2.0 * params['Core Radius']) / 2.0
-                # active_radius excludes the reflector recompute from active diameter
-                _active_radius_cm = (float(2.0 * params['Core Radius'])
-                                     - 2.0 * float(params.get('Radial Reflector Thickness', 0.0))
-                                     ) / 2.0
-                _r_refl = float(params.get('Radial Reflector Thickness', 0.0))
-                _z_refl = float(params.get('Axial Reflector Thickness', 0.0))
-                if reactor_type == 'LTMR':
-                    _ax_lk, _tot_lk, _lk_src = get_ltmr_leakage(
-                        n_rings_per_assembly = params['Number of Rings per Assembly'],
-                        active_height = params['Active Height'],
-                        enrichment = params['Enrichment'],
-                        power_mwt = params['Power MWt'],
-                        active_radius_cm = _active_radius_cm,
-                        radial_reflector_cm = _r_refl,
-                        axial_reflector_cm = _z_refl,
-                    )
-                elif reactor_type == 'GCMR':
-                    _ax_lk, _tot_lk, _lk_src = get_gcmr_leakage(
-                        assembly_rings = params['Assembly Rings'],
-                        core_rings = params['Core Rings'],
-                        active_height = params['Active Height'],
-                        enrichment = params['Enrichment'],
-                        power_mwt = params['Power MWt'],
-                        active_radius_cm = _active_radius_cm,
-                        radial_reflector_cm = _r_refl,
-                        axial_reflector_cm = _z_refl,
-                    )
-                elif reactor_type == 'HPMR':
-                    _ax_lk, _tot_lk, _lk_src = get_hpmr_leakage(
-                        n_rings_per_assembly = params['Number of Rings per Assembly'],
-                        n_rings_per_core = params['Number of Rings per Core'],
-                        active_height = params['Active Height'],
-                        enrichment = params['Enrichment'],
-                        power_mwt = params['Power MWt'],
-                        active_radius_cm = _active_radius_cm,
-                        radial_reflector_cm = _r_refl,
-                        axial_reflector_cm = _z_refl,
-                    )
-
-                _src_note = (
-                    'This value is INTERPOLATED from nearby cases in the '
-                    'parametric study (KNN, K=4, distance-weighted average) '
-                    'the geometry sits inside the trained design space.'
-                    if _lk_src == 'interpolated' else
-                    'This value is COMPUTED from a one-group migration-area '
-                    'physics formula because the requested geometry sits '
-                    'outside the trained H range for this diameter KNN '
-                    'would just saturate at the training boundary. The '
-                    'formula uses '
-                    'B² = (2.405/R_eff)² + (π/H_eff)², '
-                    'P_NL = 1/(1 + M²·B²), where R_eff and H_eff include '
-                    'reflector savings (~0.6 × reflector thickness). M² '
-                    'is calibrated against the parametric study data.'
+            # Heat flux at the fuel-pin surface (MW/m²) already in
+            # params from calculate_heat_flux: Power / total pin
+            # cylindrical surface area.
+            _hflux = float(params.get('Heat Flux', 0.0))
+            if _hflux > 0:
+                _fuel_card(
+                    'Heat flux (avg)',
+                    f'{_fmt_metric(_hflux * 100.0)} W/cm² ({_fmt_metric(_hflux)} MW/m²)',
+                    ('Average heat flux at the outer surface of the fuel '
+                     'pins = Power / (π × pin_diameter × H × pin_count). '
+                     'Sets the convective heat-transfer requirement the '
+                     'coolant has to pull this much heat per unit area off '
+                     'each pin. Typical microreactor values are 0.1-1 '
+                     'MW/m² (10-100 W/cm²). Watch for departure-from-'
+                     'nucleate-boiling (DNB) limits in liquid-cooled '
+                     'designs and burnout limits in gas-cooled designs.'),
+                    section=5,
                 )
 
-                if _ax_lk > 0:
-                    _fuel_card(
-                        'Axial leakage (BOL)',
-                        f'{_ax_lk:,.2f} %',
-                        ('Fraction of neutrons that leak out of the active core '
-                         'through the top or bottom faces at beginning of life. '
-                         'Driven primarily by Active Height (shorter cores leak '
-                         'more axially) and the axial reflector thickness. The '
-                         'reflector and the control drums are accounted for: '
-                         'the parametric-study OpenMC runs include both, and '
-                         'the physics fallback uses the auto-resolved '
-                         'reflector thickness which already covers the drums. '
-                         + _src_note),
-                        section=4,
-                    )
-                if _tot_lk > 0:
-                    _fuel_card(
-                        'Total leakage (BOL)',
-                        f'{_tot_lk:,.2f} %',
-                        ('Total fraction of neutrons that escape the active '
-                         'core (axial + radial) at beginning of life. Driven '
-                         'by core dimensions both Active Height and active '
-                         'radius. The reflector and the control drums are '
-                         'accounted for the same way as above. Microreactors '
-                         'typically have higher total leakage (~5-35 %) than '
-                         'commercial LWRs (~3 %) because of their small size. '
-                         + _src_note),
-                        section=4,
-                    )
+            # Separative Work Units (SWU): kg-SWU total and per MWh.
+            _swu = float(params.get('SWU', 0.0))
+            if _swu > 0 and _mwh_total > 0:
+                _swu_per_mwh = _swu * 1000.0 / _mwh_total # kg → g, /MWh
                 _fuel_card(
-                    'Discharge burnup (avg)',
-                    f'{_bu_avg:,.1f} MWd/kgHM',
-                    ('Average burnup of the fuel at end-of-life (when the reactor '
-                     'first becomes subcritical). Computed as Power [MWₜ] × Fuel '
-                     'Lifetime [days] / Heavy Metal mass [kg]. This is the '
-                     'headline economic metric higher discharge burnup means '
-                     'more energy extracted per kg of fuel, lowering fuel cost '
-                     'per MWh.'),
+                    'Enrichment SWU',
+                    f'{_fmt_metric(_swu)} kg-SWU | {_fmt_metric(_swu_per_mwh)} g-SWU/MWh',
+                    ('Separative Work Units consumed to produce the fuel '
+                     'in this core the standard metric for enrichment '
+                     'effort. Computed in MOUSE\'s fuel_calculations using '
+                     'the standard value-function method (tails 0.25 %, '
+                     'feed 0.71 %). g-SWU/MWh normalises by total '
+                     'electrical energy delivered. SWU directly drives '
+                     'enrichment cost ($/kg-SWU varies, typically $50-'
+                     '$200/kg-SWU). Higher enrichment products require '
+                     'disproportionately more SWU per kg.'),
                     section=3,
                 )
-                if _bu_max > 0:
-                    _fuel_card(
-                        'Discharge burnup (max)',
-                        f'{_bu_max:,.1f} MWd/kgHM',
-                        ('Peak burnup at end-of-life the burnup of the most '
-                         'heavily depleted region (= average × peaking factor). '
-                         'This is the design-limiting value: cladding integrity, '
-                         'fission gas release, and dimensional change all depend '
-                         'on the peak. Commercial LWRs are licensed to ~62 '
-                         'MWd/kgU peak. For TRISO-fuelled designs the peak burnup '
-                         'limit is typically much higher.'),
-                        section=3,
-                    )
 
-                # Mining intensity uses MOUSE's existing 'Natural Uranium Mass'
-                # (computed in fuel_calculations using T=0.25% tails and natural
-                # U feed F=0.71%, the standard mass-balance formula).
-                _nat_u_kg = float(params.get('Natural Uranium Mass', 0.0))
-                _mwh_total = _mwe * _lifetime_days * 24.0
-                if _nat_u_kg > 0 and _mwh_total > 0:
-                    _mining = (_nat_u_kg * 1000.0) / _mwh_total # kg→g, /MWh
-                    _fuel_card(
-                        'Mining intensity',
-                        f'{_mining:,.1f} gU/MWh',
-                        ('Mass of natural uranium that must be mined and milled '
-                         'per MWh of electric energy produced. Computed from '
-                         'MOUSE\'s natural-uranium consumption '
-                         '(tails enrichment 0.25 %, feed enrichment 0.71 %), '
-                         'then divided by the total lifetime electrical energy '
-                         'produced. Typical values: commercial LWRs ~17-25 '
-                         'gU/MWh, HALEU microreactors ~30-80, natural-U reactors '
-                         '(CANDU) ~150-200. Lower means less front-end fuel-'
-                         'cycle resource demand.'),
-                        section=3,
-                    )
-
-                if _reactivity_swing_pct is not None:
-                    _fuel_card(
-                        'Reactivity swing',
-                        f'{_reactivity_swing_pct:,.1f} %Δk/k',
-                        ('Total reactivity consumed by burnup over the fuel '
-                         'cycle, in %Δk/k = (k_BOL − 1) / k_BOL × 100. k_BOL is '
-                         'the interpolated beginning-of-life k_eff (fresh fuel, '
-                         'before depletion). Drives control-drum sizing drum '
-                         'worth must exceed the swing to keep cold-clean k_eff '
-                         '< 1 with all drums in. Typical: commercial LWRs ~10-'
-                         '15 %, HALEU microreactors ~15-40 % (large because '
-                         'long cycles + high enrichment).'),
-                        section=4,
-                    )
-
-                # Heat flux at the fuel-pin surface (MW/m²) already in
-                # params from calculate_heat_flux: Power / total pin
-                # cylindrical surface area.
-                _hflux = float(params.get('Heat Flux', 0.0))
-                if _hflux > 0:
-                    _fuel_card(
-                        'Heat flux (avg)',
-                        f'{_hflux * 100.0:,.1f} W/cm² ({_hflux:,.3f} MW/m²)',
-                        ('Average heat flux at the outer surface of the fuel '
-                         'pins = Power / (π × pin_diameter × H × pin_count). '
-                         'Sets the convective heat-transfer requirement the '
-                         'coolant has to pull this much heat per unit area off '
-                         'each pin. Typical microreactor values are 0.1-1 '
-                         'MW/m² (10-100 W/cm²). Watch for departure-from-'
-                         'nucleate-boiling (DNB) limits in liquid-cooled '
-                         'designs and burnout limits in gas-cooled designs.'),
-                        section=5,
-                    )
-
-                # Separative Work Units (SWU): kg-SWU total and per MWh.
-                _swu = float(params.get('SWU', 0.0))
-                if _swu > 0 and _mwh_total > 0:
-                    _swu_per_mwh = _swu * 1000.0 / _mwh_total # kg → g, /MWh
-                    _fuel_card(
-                        'Enrichment SWU',
-                        f'{_swu:,.0f} kg-SWU | {_swu_per_mwh:,.2f} g-SWU/MWh',
-                        ('Separative Work Units consumed to produce the fuel '
-                         'in this core the standard metric for enrichment '
-                         'effort. Computed in MOUSE\'s fuel_calculations using '
-                         'the standard value-function method (tails 0.25 %, '
-                         'feed 0.71 %). g-SWU/MWh normalises by total '
-                         'electrical energy delivered. SWU directly drives '
-                         'enrichment cost ($/kg-SWU varies, typically $50-'
-                         '$200/kg-SWU). Higher enrichment products require '
-                         'disproportionately more SWU per kg.'),
-                        section=3,
-                    )
-
-                # Onsite coolant inventory power-scaled, reactor-specific.
-                # LTMR: 1833 kg/MWₜ of NaK (Creys-Malville scaling).
-                # GCMR: 3.3 kg/MWₜ of helium (UNT 919556 tables 17 & 18).
-                # HPMR: 0 (heat pipes individually sealed; no bulk inventory).
-                #
-                # Display in tons with deliberately coarse rounding to signal
-                # this is a rough estimate, not a precision figure:
-                # >= 1 ton -> integer tons
-                # < 1 ton -> 1 significant figure
-                if reactor_type in ('LTMR', 'GCMR'):
-                    _inv_kg = float(params.get('Onsite Coolant Inventory', 0.0))
-                    if _inv_kg > 0:
-                        _coolant_label = {'LTMR': 'NaK', 'GCMR': 'Helium'}[reactor_type]
-                        _tons = _inv_kg / 1000.0
-                        if _tons >= 1:
-                            _val_str = f'{round(_tons):,d} ton'
-                        else:
-                            _val_str = f'{_tons:.1g} ton'
-                        _inv_help = {
-                            'LTMR': (
-                                'Rough estimate of the on-site primary NaK '
-                                'inventory (filled core + storage). Scales '
-                                'linearly with thermal power at ~1833 kg/MWₜ, '
-                                'derived from the Creys-Malville sodium plant '
-                                '(5,500 t Na for a 3,000 MWₜ core). NaK does '
-                                'not require periodic replacement the '
-                                'primary boundary is sealed and the coolant '
-                                'is not consumed. Drives the coolant '
-                                'procurement line in OCC. Value is rounded '
-                                'coarsely to reflect estimate-level accuracy.'
-                            ),
-                            'GCMR': (
-                                'Rough estimate of the on-site helium '
-                                'inventory. Scales linearly with thermal '
-                                'power at ~3.3 kg/MWₜ (UNT 919556 tables 17 '
-                                '& 18). He has a steady ~10 %/year leakage '
-                                'rate (NAS 12844), so one-tenth of this '
-                                'inventory is replaced annually. Drives both '
-                                'the OCC coolant line and the OPEX make-up '
-                                'term. Value is rounded coarsely to reflect '
-                                'estimate-level accuracy.'
-                            ),
-                        }[reactor_type]
-                        _fuel_card(
-                            'Coolant inventory',
-                            f'{_val_str} ({_coolant_label})',
-                            _inv_help,
-                            section=5,
-                        )
-
-                # Coolant mass flow rate + primary-loop power fraction.
-                # LTMR: NaK pump. GCMR: He compressor. HPMR: heat
-                # pipes (no flow, no card).
-                if reactor_type == 'LTMR':
-                    _mdot = float(params.get('Coolant Mass Flow Rate', 0.0))
-                    if _mdot > 0:
-                        _fuel_card(
-                            'Coolant mass flow rate',
-                            f'{_mdot:,.1f} kg/s',
-                            ('Primary-coolant mass flow rate computed from '
-                             'm_dot = Power_MWₜ × 10⁶ / (ΔT × c_p) with the '
-                             'LTMR\'s fixed ΔT = 90 °C across the core (Tin '
-                             '430 → Tout 520 °C) and the heat capacity of '
-                             'NaK eutectic. Sets the primary-pump and heat-'
-                             'exchanger sizing. Liquid-metal microreactor '
-                             'flow rates are typically 5-100 kg/s for the '
-                             '1-20 MWₜ range; higher powers scale linearly.'),
-                            section=5,
-                        )
-
-                    _pump_kW = float(params.get('Primary Pump Mechanical Power', 0.0))
-                    if _pump_kW > 0 and _mwe > 0:
-                        _pump_pct = 100.0 * _pump_kW / (_mwe * 1000.0)
-                        _fuel_card(
-                            'Primary pump fraction',
-                            f'{_pump_pct:,.2f} % ({_pump_kW:,.0f} kW)',
-                            ('Primary-loop pump mechanical power as a fraction '
-                             'of the gross electric output. Computed from a '
-                             'lumped pressure-drop model: P = m_dot × Δp / (ρ '
-                             '× η), with default Δp = 250 kPa, ρ = 750 kg/m³ '
-                             '(NaK at ~500 °C), η = 0.75. Typical liquid-metal '
-                             'primary-loop pump fractions are 1-3 %; higher '
-                             'values indicate an aggressively-loaded loop or '
-                             'oversized core, lower values suggest natural-'
-                             'circulation-dominated cooling.'),
-                            section=5,
-                        )
-
-                elif reactor_type == 'GCMR':
-                    # Coolant Mass Flow Rate is set by mass_flow_rate()
-                    # in tools.py and represents the TOTAL helium flow
-                    # across all primary loops (loop_factor adjustment
-                    # already applied). ΔT is 250 °C for the GCMR
-                    # configuration (300 → 550 °C).
-                    _mdot_gcmr = float(params.get('Coolant Mass Flow Rate', 0.0))
-                    if _mdot_gcmr > 0:
-                        _fuel_card(
-                            'Coolant mass flow rate',
-                            f'{_mdot_gcmr:,.2f} kg/s',
-                            ('Primary-coolant (helium) mass flow rate, total '
-                             'across all primary loops. Computed by '
-                             'tools.mass_flow_rate as '
-                             'm_dot = Power_MWₜ × 10⁶ / (ΔT × c_p) per loop, '
-                             'then ÷ loop_factor to get the reactor total. '
-                             'GCMR uses a fixed ΔT = 250 °C across the core '
-                             '(T_in 300 → T_out 550 °C) and the c_p of He '
-                             '(~5193 J/(kg·K)). Helium\'s low density makes '
-                             'these values much smaller than liquid-metal '
-                             'flows typically 1-10 kg/s for a 1-20 MWₜ '
-                             'GCMR. Sets compressor and PCHE sizing.'),
-                            section=5,
-                        )
-
-                    # Primary Loop Compressor Power is the per-loop
-                    # power in W (compressor_power in tools.py uses
-                    # Primary Loop Mass Flow Rate, which is per-loop).
-                    # Multiply by Primary Loop Count (2 for GCMR) to
-                    # get the total compressor power, then express as
-                    # a fraction of gross electric output.
-                    _comp_w_per_loop = float(params.get('Primary Loop Compressor Power', 0.0))
-                    _n_loops = float(params.get('Primary Loop Count', 1))
-                    _comp_kW_total = (_comp_w_per_loop * _n_loops) / 1000.0
-                    if _comp_kW_total > 0 and _mwe > 0:
-                        _comp_pct = 100.0 * _comp_kW_total / (_mwe * 1000.0)
-                        _fuel_card(
-                            'Primary compressor fraction',
-                            f'{_comp_pct:,.2f} % ({_comp_kW_total:,.0f} kW total)',
-                            ('Primary-loop helium-compressor mechanical power '
-                             'as a fraction of gross electric output. '
-                             'Computed from P_per_loop = Δp · m_dot_per_loop '
-                             '/ (η · ρ_He) using ρ_He = 3.33 kg/m³ '
-                             '(He at 4 MPa, 300 °C), Δp = 50 kPa, η_isentropic '
-                             '= 0.8, then multiplied by Primary Loop Count '
-                             '(=2 for GCMR) to get the total. Typical GCMR '
-                             'compressor fractions are 2-6 % higher than '
-                             'liquid-metal pumps because helium\'s low '
-                             'density needs more volumetric flow per unit '
-                             'thermal power.'),
-                            section=5,
-                        )
-
-                elif reactor_type == 'HPMR':
-                    # HPMR uses sealed Na heat pipes (no flowing primary
-                    # loop), so the relevant design metrics are per-pipe
-                    # thermal duty and linear heat rate rather than mass
-                    # flow / pump power.
-                    _n_hp = int(params.get('Number of Heatpipes', 0))
-                    if _n_hp > 0:
-                        _fuel_card(
-                            'Number of heat pipes',
-                            f'{_n_hp:,}',
-                            ('Total Na heat-pipe count across the core = '
-                             '(heat pipes per assembly) × (fuel assemblies '
-                             'per core). The per-assembly count comes from '
-                             'the hex-lattice positions not occupied by '
-                             'fuel pins. Typical microreactor HPMR designs '
-                             'have ~500-5,000 heat pipes depending on '
-                             'power and assembly count (e.g. eVinci-class '
-                             '~1,000-2,000). Drives the per-pipe thermal '
-                             'duty (the next card) and the manufacturing '
-                             'cost (each Na HP with wick + cladding costs '
-                             '$1-3k). More HPs lower the per-pipe duty '
-                             'but increase the BOP and fabrication cost.'),
-                            section=5,
-                        )
-
-                        _kw_per_hp = float(params['Power MWt']) * 1000.0 / _n_hp
-                        _fuel_card(
-                            'Power per heat pipe',
-                            f'{_kw_per_hp:,.2f} kW/HP',
-                            ('Thermal duty carried by each Na heat pipe = '
-                             'Power_MWₜ × 1000 / N_HP. Sets the operating '
-                             'point relative to the sodium heat-pipe '
-                             'capacity envelope, which is bounded by four '
-                             'physical limits: capillary (wick can\'t '
-                             'pump enough liquid), sonic (vapor velocity '
-                             'reaches Mach 1), entrainment (vapor shear '
-                             'rips droplets off the wick), and boiling '
-                             '(nucleation in the wick). For Na HPs at '
-                             '700-900 °C the practical envelope is '
-                             '~5-15 kW/HP for 1.5-3 cm diameter pipes; '
-                             'designs above ~20 kW/HP need exotic wick '
-                             'geometries (artery, composite). Below '
-                             '~3 kW/HP usually indicates the core is '
-                             'over-heat-piped (extra cost with no benefit).'),
-                            section=5,
-                        )
-
-                        _h_cm = float(params.get('Active Height', 0.0))
-                        if _h_cm > 0:
-                            _kw_per_cm = _kw_per_hp / _h_cm
-                            _fuel_card(
-                                'Linear heat rate',
-                                f'{_kw_per_cm:,.3f} kW/cm',
-                                ('Heat-pipe linear heat rate = (kW per HP) '
-                                 '/ Active Height. This is THE key sizing '
-                                 'metric for sodium heat pipes published '
-                                 'Na HP test data (LANL, INL) shows steady-'
-                                 'state operation up to ~0.20-0.30 kW/cm '
-                                 'for 1.5-2.5 cm diameter pipes at '
-                                 '700-900 °C, with the capillary limit '
-                                 'dominating at the low end of that '
-                                 'temperature range and the sonic limit at '
-                                 'the high end. Typical microreactor '
-                                 'designs target 0.05-0.20 kW/cm for '
-                                 'margin against transient overpower. '
-                                 'Above ~0.30 kW/cm the design is in the '
-                                 'limit-pushing regime where wick design '
-                                 'and Na inventory must be tuned together; '
-                                 'above ~0.5 kW/cm requires R&D-grade HPs.'),
-                                section=5,
-                            )
-
-                        _n_pins = int(params.get('Fuel Pin Count', 0))
-                        if _n_pins > 0:
-                            _pin_hp_ratio = _n_pins / _n_hp
-                            _fuel_card(
-                                'Pin-to-heat-pipe ratio',
-                                f'{_pin_hp_ratio:,.2f} (pins / HP)',
-                                ('Number of fuel pins served per heat '
-                                 'pipe = Fuel Pin Count / N_HP. Geometry '
-                                 'sanity check on the lattice: HPMR '
-                                 'designs typically run 1-6 pins per HP '
-                                 'depending on the assembly ring layout '
-                                 '(N_A=6 in MOUSE puts ~3 pins per HP). '
-                                 'Below 1.0 means more heat pipes than '
-                                 'fuel pins geometrically possible only '
-                                 'in very small assemblies and usually '
-                                 'over-conservative. Above ~6 means each '
-                                 'HP must drain heat from many pins '
-                                 'simultaneously, which raises the local '
-                                 'cladding-to-HP heat flux and forces '
-                                 'larger HP diameter or smaller pin '
-                                 'pitch. Drives the radial conduction '
-                                 'path length from fuel-pin cladding '
-                                 'through the graphite monolith to the '
-                                 'nearest HP evaporator wall.'),
-                                section=5,
-                            )
-
-                # Power density = Power_MWₜ / Active Core Volume.
-                # Active core is a hex prism with apothem = active_radius
-                # and height = Active Height. _active_radius_cm was already
-                # computed earlier in this block (Core Radius − reflector).
-                _vol_cm3 = (2.0 * _math.sqrt(3.0)
-                            * (_active_radius_cm ** 2)
-                            * float(params['Active Height']))
-                _vol_m3 = _vol_cm3 * 1.0e-6
-                if _vol_m3 > 0:
-                    _pd = float(params['Power MWt']) / _vol_m3
-                    _fuel_card(
-                        'Power density',
-                        f'{_pd:,.1f} MW/m³',
-                        ('Thermal power per unit active core volume = '
-                         'Power_MWₜ / (2√3 · R² · H), where R is the active '
-                         'core hex apothem (no reflector) and H is the active '
-                         'height. Tells you how aggressively the fuel is '
-                         'loaded relative to the core size. Typical ranges: '
-                         'eVinci/HPMR-class ~10-15 MW/m³, TRIGA/LTMR ~10-30, '
-                         'metal-fuel microreactors (Oklo, BANR) ~50-100, '
-                         'commercial LWRs ~100. Below ~5 MW/m³ means the core '
-                         'is over-fuelled (long lifetime, low utilization); '
-                         'above ~80 means the design is thermal-hydraulically '
-                         'aggressive also check the heat-flux card.'),
-                        section=5,
-                    )
-
-                # Aspect ratio = active height / active diameter.
-                # Uses the active fissioning region (excludes reflector
-                # and vessel) so it characterises the core itself.
-                _active_diam_cm = 2.0 * _active_radius_cm
-                if _active_diam_cm > 0:
-                    _aspect = float(params['Active Height']) / _active_diam_cm
-                    _fuel_card(
-                        'Aspect ratio',
-                        f'{_aspect:,.2f} (H/D)',
-                        ('Active height divided by active diameter (active '
-                         'fissioning region only no reflector, no vessel). '
-                         'A value of 1.0 means a "cube-like" cylinder where '
-                         'height equals diameter, which minimises neutron '
-                         'leakage per unit core volume. Tall, slender cores '
-                         '(H/D > 1.5) lose more axial neutrons; short, fat '
-                         'cores (H/D < 0.5) lose more radial neutrons. Most '
-                         'microreactor designs sit between 0.7 and 1.5. The '
-                         'webapp constrains H/D to [0.5, 2.0] via the '
-                         'active-height slider.'),
-                        section=5,
-                    )
-
-            # ── Render queued Section 3 cards inside Tab A here.
-            # Section 4 + 5 cards are rendered later in Tab B.
-            _render_section_cards(3)
-
-            st.markdown('<div style="height:0.75rem"></div>', unsafe_allow_html=True)
-
-            # ─────────────────────────────────────────────────────────────
-            # Transportability Considerations
-            # ─────────────────────────────────────────────────────────────
-            # Per-component dimensions (height, diameter) and dry mass for
-            # the four nested envelopes that make up a microreactor module.
-            # Per-mode badges compare the outermost (RVACS) envelope to
-            # three transport-mode dimensional limits. No total mass is
-            # computed (per design choice each component is shown alone).
+            # Onsite coolant inventory power-scaled, reactor-specific.
+            # LTMR: 1833 kg/MWₜ of NaK (Creys-Malville scaling).
+            # GCMR: 3.3 kg/MWₜ of helium (UNT 919556 tables 17 & 18).
+            # HPMR: 0 (heat pipes individually sealed; no bulk inventory).
             #
-            # Rounding rules (match the coolant-inventory card):
-            # weights ≥ 1 ton -> integer tons
-            # weights < 1 ton -> 1 significant figure
-            # dimensions -> meters with 1 decimal
-            st.markdown(
-                '<div style="font-size:1rem;font-weight:700;color:#1B4F8C;'
-                'border-left:4px solid #1B4F8C;padding:0.4rem 0 0.4rem 0.75rem;'
-                'margin:1.2rem 0 0.85rem 0;">'
-                'Can we ship it?</div>',
-                unsafe_allow_html=True,
-            )
-            st.markdown(
-                '<div style="background:#f7f8fa;border:1px solid #bfdbfe;border-radius:8px;'
-                'padding:0.85rem 1.1rem;margin-bottom:0.9rem;font-size:0.85rem;line-height:1.45;color:#3c4257;">'
-                'Transportability is one of the headline features of microreactors the option to '
-                'ship the reactor module in one piece on a truck, rail car, or sea container differentiates '
-                'them from large NPPs. The values below check the current MOUSE configuration against the '
-                'most relevant US transport-mode envelopes. Per-component masses are listed individually; '
-                'no rolled-up total mass is reported.'
-                '</div>',
-                unsafe_allow_html=True,
-            )
+            # Display in tons with deliberately coarse rounding to signal
+            # this is a rough estimate, not a precision figure:
+            # >= 1 ton -> integer tons
+            # < 1 ton -> 1 significant figure
+            if reactor_type in ('LTMR', 'GCMR'):
+                _inv_kg = float(params.get('Onsite Coolant Inventory', 0.0))
+                if _inv_kg > 0:
+                    _coolant_label = {'LTMR': 'NaK', 'GCMR': 'Helium'}[reactor_type]
+                    _tons = _inv_kg / 1000.0
+                    if _tons >= 1:
+                        _val_str = f'{round(_tons):,d} ton'
+                    else:
+                        _val_str = f'{_tons:.1g} ton'
+                    _inv_help = {
+                        'LTMR': (
+                            'Rough estimate of the on-site primary NaK '
+                            'inventory (filled core + storage). Scales '
+                            'linearly with thermal power at ~1833 kg/MWₜ, '
+                            'derived from the Creys-Malville sodium plant '
+                            '(5,500 t Na for a 3,000 MWₜ core). NaK does '
+                            'not require periodic replacement the '
+                            'primary boundary is sealed and the coolant '
+                            'is not consumed. Drives the coolant '
+                            'procurement line in OCC. Value is rounded '
+                            'coarsely to reflect estimate-level accuracy.'
+                        ),
+                        'GCMR': (
+                            'Rough estimate of the on-site helium '
+                            'inventory. Scales linearly with thermal '
+                            'power at ~3.3 kg/MWₜ (UNT 919556 tables 17 '
+                            '& 18). He has a steady ~10 %/year leakage '
+                            'rate (NAS 12844), so one-tenth of this '
+                            'inventory is replaced annually. Drives both '
+                            'the OCC coolant line and the OPEX make-up '
+                            'term. Value is rounded coarsely to reflect '
+                            'estimate-level accuracy.'
+                        ),
+                    }[reactor_type]
+                    _fuel_card(
+                        'Coolant inventory',
+                        f'{_val_str} ({_coolant_label})',
+                        _inv_help,
+                        section=5,
+                    )
 
-            # ── Build per-component rows (height_m, diameter_m, mass_kg) ──
-            def _ton_str(kg):
-                """Match the coolant-inventory rounding convention."""
-                if kg is None:
-                    return ''
-                try:
-                    kg = float(kg)
-                except (TypeError, ValueError):
-                    return ''
-                if kg <= 0:
-                    return ''
-                t = kg / 1000.0
-                if t >= 1:
-                    return f'{round(t):,d} ton'
-                return f'{t:.1g} ton'
+            # Coolant mass flow rate + primary-loop power fraction.
+            # LTMR: NaK pump. GCMR: He compressor. HPMR: heat
+            # pipes (no flow, no card).
+            if reactor_type == 'LTMR':
+                _mdot = float(params.get('Coolant Mass Flow Rate', 0.0))
+                if _mdot > 0:
+                    _fuel_card(
+                        'Coolant mass flow rate',
+                        f'{_fmt_metric(_mdot)} kg/s',
+                        ('Primary-coolant mass flow rate computed from '
+                         'm_dot = Power_MWₜ × 10⁶ / (ΔT × c_p) with the '
+                         'LTMR\'s fixed ΔT = 90 °C across the core (Tin '
+                         '430 → Tout 520 °C) and the heat capacity of '
+                         'NaK eutectic. Sets the primary-pump and heat-'
+                         'exchanger sizing. Liquid-metal microreactor '
+                         'flow rates are typically 5-100 kg/s for the '
+                         '1-20 MWₜ range; higher powers scale linearly.'),
+                        section=5,
+                    )
 
-            def _m1(cm):
-                if cm is None or cm <= 0:
-                    return ''
-                return f'{cm/100.0:.1f} m'
+                _pump_kW = float(params.get('Primary Pump Mechanical Power', 0.0))
+                if _pump_kW > 0 and _mwe > 0:
+                    _pump_pct = 100.0 * _pump_kW / (_mwe * 1000.0)
+                    _fuel_card(
+                        'Primary pump fraction',
+                        f'{_fmt_metric(_pump_pct)} % ({_fmt_metric(_pump_kW)} kW)',
+                        ('Primary-loop pump mechanical power as a fraction '
+                         'of the gross electric output. Computed from a '
+                         'lumped pressure-drop model: P = m_dot × Δp / (ρ '
+                         '× η), with default Δp = 250 kPa, ρ = 750 kg/m³ '
+                         '(NaK at ~500 °C), η = 0.75. Typical liquid-metal '
+                         'primary-loop pump fractions are 1-3 %; higher '
+                         'values indicate an aggressively-loaded loop or '
+                         'oversized core, lower values suggest natural-'
+                         'circulation-dominated cooling.'),
+                        section=5,
+                    )
 
-            # MOUSE label disambiguation:
-            # - LTMR: 'Vessel' = reactor vessel, 'Guard Vessel' = guard vessel
-            # - GCMR: 'Vessel' = core barrel (internal),
-            # 'Guard Vessel' = the actual RPV (He pressure boundary)
-            # - HPMR: 'Vessel' = reactor vessel, no guard vessel
-            _vessel_height_cm = float(params.get('Vessel Height', 0.0))
-            _bottom_depth_cm = float(params.get('Vessel Bottom Depth', 0.0))
-            _vessel_thk_cm = float(params.get('Vessel Thickness', 0.0))
-            _guard_thk_cm = float(params.get('Guard Vessel Thickness', 0.0))
-            _gap_v_g_cm = float(params.get('Gap Between Vessel And Guard Vessel', 0.0))
+            elif reactor_type == 'GCMR':
+                # Coolant Mass Flow Rate is set by mass_flow_rate()
+                # in tools.py and represents the TOTAL helium flow
+                # across all primary loops (loop_factor adjustment
+                # already applied). ΔT is 250 °C for the GCMR
+                # configuration (300 → 550 °C).
+                _mdot_gcmr = float(params.get('Coolant Mass Flow Rate', 0.0))
+                if _mdot_gcmr > 0:
+                    _fuel_card(
+                        'Coolant mass flow rate',
+                        f'{_fmt_metric(_mdot_gcmr)} kg/s',
+                        ('Primary-coolant (helium) mass flow rate, total '
+                         'across all primary loops. Computed by '
+                         'tools.mass_flow_rate as '
+                         'm_dot = Power_MWₜ × 10⁶ / (ΔT × c_p) per loop, '
+                         'then ÷ loop_factor to get the reactor total. '
+                         'GCMR uses a fixed ΔT = 250 °C across the core '
+                         '(T_in 300 → T_out 550 °C) and the c_p of He '
+                         '(~5193 J/(kg·K)). Helium\'s low density makes '
+                         'these values much smaller than liquid-metal '
+                         'flows typically 1-10 kg/s for a 1-20 MWₜ '
+                         'GCMR. Sets compressor and PCHE sizing.'),
+                        section=5,
+                    )
 
-            # Reactor (core + reflectors + drums). All component masses
-            # are in kg. Note: 'Uranium Mass' is already in kg in MOUSE;
-            # cladding mass is not separately tracked (small relative to
-            # the other terms).
-            _reactor_dia_cm = 2.0 * float(params.get('Core Radius', 0.0))
-            _reactor_h_cm = (float(params.get('Active Height', 0.0))
-                                + 2.0 * float(params.get('Axial Reflector Thickness', 0.0)))
-            _reactor_mass_kg = (
-                float(params.get('Uranium Mass', 0.0))
-                + float(params.get('Moderator Mass', 0.0))
-                + float(params.get('Moderator Booster Mass', 0.0))
-                + float(params.get('Radial Reflector Mass', 0.0))
-                + float(params.get('Axial Reflector Mass', 0.0))
-                + float(params.get('Control Drums Mass', 0.0))
-            )
+                # Primary Loop Compressor Power is the per-loop
+                # power in W (compressor_power in tools.py uses
+                # Primary Loop Mass Flow Rate, which is per-loop).
+                # Multiply by Primary Loop Count (2 for GCMR) to
+                # get the total compressor power, then express as
+                # a fraction of gross electric output.
+                _comp_w_per_loop = float(params.get('Primary Loop Compressor Power', 0.0))
+                _n_loops = float(params.get('Primary Loop Count', 1))
+                _comp_kW_total = (_comp_w_per_loop * _n_loops) / 1000.0
+                if _comp_kW_total > 0 and _mwe > 0:
+                    _comp_pct = 100.0 * _comp_kW_total / (_mwe * 1000.0)
+                    _fuel_card(
+                        'Primary compressor fraction',
+                        f'{_fmt_metric(_comp_pct)} % ({_fmt_metric(_comp_kW_total)} kW total)',
+                        ('Primary-loop helium-compressor mechanical power '
+                         'as a fraction of gross electric output. '
+                         'Computed from P_per_loop = Δp · m_dot_per_loop '
+                         '/ (η · ρ_He) using ρ_He = 3.33 kg/m³ '
+                         '(He at 4 MPa, 300 °C), Δp = 50 kPa, η_isentropic '
+                         '= 0.8, then multiplied by Primary Loop Count '
+                         '(=2 for GCMR) to get the total. Typical GCMR '
+                         'compressor fractions are 2-6 % higher than '
+                         'liquid-metal pumps because helium\'s low '
+                         'density needs more volumetric flow per unit '
+                         'thermal power.'),
+                        section=5,
+                    )
 
-            # Reactor vessel (the pressure boundary)
-            if reactor_type == 'GCMR':
-                # MOUSE 'Guard Vessel' is the RPV for GCMR
-                _rv_outer_r_cm = (float(params.get('Guard Vessel Radius', 0.0))
-                                  + _guard_thk_cm)
-                _rv_height_cm = (_vessel_height_cm
-                                  + _bottom_depth_cm + _vessel_thk_cm + _gap_v_g_cm
-                                  + _guard_thk_cm)
-                _rv_mass_kg = float(params.get('Guard Vessel Mass', 0.0))
-            else:
-                _rv_outer_r_cm = (float(params.get('Vessel Radius', 0.0)) + _vessel_thk_cm)
-                _rv_height_cm = _vessel_height_cm + _bottom_depth_cm
-                _rv_mass_kg = float(params.get('Vessel Mass', 0.0))
-            _rv_dia_cm = 2.0 * _rv_outer_r_cm
+            elif reactor_type == 'HPMR':
+                # HPMR uses sealed Na heat pipes (no flowing primary
+                # loop), so the relevant design metrics are per-pipe
+                # thermal duty and linear heat rate rather than mass
+                # flow / pump power.
+                _n_hp = int(params.get('Number of Heatpipes', 0))
+                if _n_hp > 0:
+                    _fuel_card(
+                        'Number of heat pipes',
+                        f'{_n_hp:,}',
+                        ('Total Na heat-pipe count across the core = '
+                         '(heat pipes per assembly) × (fuel assemblies '
+                         'per core). The per-assembly count comes from '
+                         'the hex-lattice positions not occupied by '
+                         'fuel pins. Typical microreactor HPMR designs '
+                         'have ~500-5,000 heat pipes depending on '
+                         'power and assembly count (e.g. eVinci-class '
+                         '~1,000-2,000). Drives the per-pipe thermal '
+                         'duty (the next card) and the manufacturing '
+                         'cost (each Na HP with wick + cladding costs '
+                         '$1-3k). More HPs lower the per-pipe duty '
+                         'but increase the BOP and fabrication cost.'),
+                        section=5,
+                    )
 
-            # Guard vessel only for LTMR
-            _has_guard = (reactor_type == 'LTMR'
-                          and float(params.get('Guard Vessel Thickness', 0.0)) > 0)
-            if _has_guard:
-                _gv_outer_r_cm = (float(params.get('Guard Vessel Radius', 0.0)) + _guard_thk_cm)
-                _gv_dia_cm = 2.0 * _gv_outer_r_cm
-                _gv_height_cm = (_vessel_height_cm
-                                  + _bottom_depth_cm + _vessel_thk_cm + _gap_v_g_cm
-                                  + _guard_thk_cm)
-                _gv_mass_kg = float(params.get('Guard Vessel Mass', 0.0))
-            else:
-                _gv_dia_cm = _gv_height_cm = _gv_mass_kg = 0.0
+                    _kw_per_hp = float(params['Power MWt']) * 1000.0 / _n_hp
+                    _fuel_card(
+                        'Power per heat pipe',
+                        f'{_fmt_metric(_kw_per_hp)} kW/HP',
+                        ('Thermal duty carried by each Na heat pipe = '
+                         'Power_MWₜ × 1000 / N_HP. Sets the operating '
+                         'point relative to the sodium heat-pipe '
+                         'capacity envelope, which is bounded by four '
+                         'physical limits: capillary (wick can\'t '
+                         'pump enough liquid), sonic (vapor velocity '
+                         'reaches Mach 1), entrainment (vapor shear '
+                         'rips droplets off the wick), and boiling '
+                         '(nucleation in the wick). For Na HPs at '
+                         '700-900 °C the practical envelope is '
+                         '~5-15 kW/HP for 1.5-3 cm diameter pipes; '
+                         'designs above ~20 kW/HP need exotic wick '
+                         'geometries (artery, composite). Below '
+                         '~3 kW/HP usually indicates the core is '
+                         'over-heat-piped (extra cost with no benefit).'),
+                        section=5,
+                    )
 
-            # RVACS (cooling vessel + intake vessel combined)
-            _rvacs_outer_r_cm = float(params.get('Vessels Total Radius', 0.0))
-            _rvacs_dia_cm = 2.0 * _rvacs_outer_r_cm
-            _rvacs_height_cm = float(params.get('Vessels Total Height', 0.0))
-            _rvacs_mass_kg = (float(params.get('Cooling Vessel Mass', 0.0))
-                                 + float(params.get('Intake Vessel Mass', 0.0)))
+                    _h_cm = float(params.get('Active Height', 0.0))
+                    if _h_cm > 0:
+                        _kw_per_cm = _kw_per_hp / _h_cm
+                        _fuel_card(
+                            'Linear heat rate',
+                            f'{_fmt_metric(_kw_per_cm)} kW/cm',
+                            ('Heat-pipe linear heat rate = (kW per HP) '
+                             '/ Active Height. This is THE key sizing '
+                             'metric for sodium heat pipes published '
+                             'Na HP test data (LANL, INL) shows steady-'
+                             'state operation up to ~0.20-0.30 kW/cm '
+                             'for 1.5-2.5 cm diameter pipes at '
+                             '700-900 °C, with the capillary limit '
+                             'dominating at the low end of that '
+                             'temperature range and the sonic limit at '
+                             'the high end. Typical microreactor '
+                             'designs target 0.05-0.20 kW/cm for '
+                             'margin against transient overpower. '
+                             'Above ~0.30 kW/cm the design is in the '
+                             'limit-pushing regime where wick design '
+                             'and Na inventory must be tuned together; '
+                             'above ~0.5 kW/cm requires R&D-grade HPs.'),
+                            section=5,
+                        )
 
-            # ── Render component table ──
-            # Each row carries an always-visible small-font description
-            # under the component name explaining what is included and
-            # what is excluded. The hover-only title= tooltip approach
-            # was unreliable across browsers/themes, so the notes are
-            # shown inline in the table itself. Explicit colors
-            # throughout so the table is readable regardless of the
-            # Streamlit theme.
-            _CELL = ('padding:0.55rem 0.8rem;color:#0a2540;'
-                     'border-bottom:1px solid #bfdbfe;'
-                     'vertical-align:top;')
-            _CELL_C = _CELL + 'text-align:center;'
-            _CELL_NAME = _CELL + 'font-weight:600;'
-            _DESC = ('font-size:0.85rem;font-weight:400;color:#64748b;'
-                     'line-height:1.4;margin-top:0.2rem;')
+                    _n_pins = int(params.get('Fuel Pin Count', 0))
+                    if _n_pins > 0:
+                        _pin_hp_ratio = _n_pins / _n_hp
+                        _fuel_card(
+                            'Pin-to-heat-pipe ratio',
+                            f'{_fmt_metric(_pin_hp_ratio)} (pins / HP)',
+                            ('Number of fuel pins served per heat '
+                             'pipe = Fuel Pin Count / N_HP. Geometry '
+                             'sanity check on the lattice: HPMR '
+                             'designs typically run 1-6 pins per HP '
+                             'depending on the assembly ring layout '
+                             '(N_A=6 in MOUSE puts ~3 pins per HP). '
+                             'Below 1.0 means more heat pipes than '
+                             'fuel pins geometrically possible only '
+                             'in very small assemblies and usually '
+                             'over-conservative. Above ~6 means each '
+                             'HP must drain heat from many pins '
+                             'simultaneously, which raises the local '
+                             'cladding-to-HP heat flux and forces '
+                             'larger HP diameter or smaller pin '
+                             'pitch. Drives the radial conduction '
+                             'path length from fuel-pin cladding '
+                             'through the graphite monolith to the '
+                             'nearest HP evaporator wall.'),
+                            section=5,
+                        )
 
-            _reactor_desc = (
-                'Includes: U235 + U238, moderator '
-                '(ZrH for LTMR; graphite ± ZrH booster for GCMR; '
-                'monolith graphite for HPMR), radial + axial reflector, '
-                'control drums. Excludes: fuel cladding (small, not '
-                'tracked in MOUSE).'
-                + (' <span style="color:#92400e;">HPMR heat-pipe '
-                   'steel cladding and Na working fluid not yet '
-                   'modeled.</span>' if reactor_type == 'HPMR' else '')
-            )
-            _rv_desc_extra = (
-                ' <span style="color:#1B4F8C;">For GCMR this maps to '
-                'MOUSE\'s internal "Guard Vessel" field (the RPV).</span>'
-                if reactor_type == 'GCMR' else ''
-            )
-            _rv_desc = (
-                'Diameter = 2 × (vessel radius + thickness). '
-                'Height = active core + axial reflector + lower '
-                f'plenum + upper plenum + bottom dish '
-                f'({_bottom_depth_cm:.1f} cm placeholder, flagged). '
-                '<span style="color:#92400e;">Top closure dome '
-                'not yet modeled.</span> Mass = vessel wall only.'
-                + _rv_desc_extra
-            )
-            _gv_desc = (
-                'Secondary containment shell around the reactor vessel '
-                'for primary-coolant leak containment. Mass = '
-                'guard-vessel wall only (no internals).'
-            )
-            _gv_na_desc = (
-                'Intentionally omitted for this reactor type He is '
-                'inert (GCMR) and heat pipes are individually sealed '
-                '(HPMR), so neither has a bulk primary coolant '
-                'requiring secondary containment.'
-            )
-            _rvacs_desc = (
-                'Cooling vessel + intake vessel treated as one shipping '
-                'envelope. Diameter = 2 × intake vessel outer radius; '
-                'height is the full external envelope. Mass = cooling-'
-                'vessel wall + intake-vessel wall only (no air, no '
-                'insulation, no support structure).'
-            )
-
-            _rows_html = []
-            _rows_html.append(
-                '<tr style="background:#ffffff;">'
-                f'<td style="{_CELL_NAME}">Reactor (core + reflectors + drums)'
-                f'<div style="{_DESC}">{_reactor_desc}</div></td>'
-                f'<td style="{_CELL_C}">{_m1(_reactor_h_cm)}</td>'
-                f'<td style="{_CELL_C}">{_m1(_reactor_dia_cm)}</td>'
-                f'<td style="{_CELL_C}">{_ton_str(_reactor_mass_kg)}</td>'
-                '</tr>'
-            )
-            _rows_html.append(
-                '<tr style="background:#f7f8fa;">'
-                f'<td style="{_CELL_NAME}">Reactor vessel'
-                f'<div style="{_DESC}">{_rv_desc}</div></td>'
-                f'<td style="{_CELL_C}">{_m1(_rv_height_cm)}</td>'
-                f'<td style="{_CELL_C}">{_m1(_rv_dia_cm)}</td>'
-                f'<td style="{_CELL_C}">{_ton_str(_rv_mass_kg)}</td>'
-                '</tr>'
-            )
-            if _has_guard:
-                _rows_html.append(
-                    '<tr style="background:#ffffff;">'
-                    f'<td style="{_CELL_NAME}">Guard vessel'
-                    f'<div style="{_DESC}">{_gv_desc}</div></td>'
-                    f'<td style="{_CELL_C}">{_m1(_gv_height_cm)}</td>'
-                    f'<td style="{_CELL_C}">{_m1(_gv_dia_cm)}</td>'
-                    f'<td style="{_CELL_C}">{_ton_str(_gv_mass_kg)}</td>'
-                    '</tr>'
-                )
-            else:
-                _rows_html.append(
-                    '<tr style="background:#ffffff;">'
-                    f'<td style="{_CELL_NAME};color:#64748b;">Guard vessel'
-                    f'<div style="{_DESC}">{_gv_na_desc}</div></td>'
-                    f'<td colspan="3" style="{_CELL_C};color:#64748b;">N/A not used for this reactor type</td>'
-                    '</tr>'
-                )
-            _rows_html.append(
-                '<tr style="background:#f7f8fa;">'
-                f'<td style="{_CELL_NAME}">RVACS (cooling + intake vessels)'
-                f'<div style="{_DESC}">{_rvacs_desc}</div></td>'
-                f'<td style="{_CELL_C}">{_m1(_rvacs_height_cm)}</td>'
-                f'<td style="{_CELL_C}">{_m1(_rvacs_dia_cm)}</td>'
-                f'<td style="{_CELL_C}">{_ton_str(_rvacs_mass_kg)}</td>'
-                '</tr>'
-            )
-
-            _TH = ('padding:0.6rem 0.8rem;font-size:0.85rem;'
-                   'text-transform:uppercase;letter-spacing:0.06em;'
-                   'color:#3c4257;font-weight:600;')
-            st.markdown(
-                '<div style="margin-bottom:0.9rem;">'
-                '<table style="width:100%;border-collapse:collapse;'
-                'font-size:0.85rem;background:#ffffff;color:#0a2540;'
-                'border:1px solid #bfdbfe;border-radius:8px;overflow:hidden;">'
-                '<thead style="background:#f1f3f5;">'
-                '<tr>'
-                f'<th style="{_TH};text-align:left;">Component</th>'
-                f'<th style="{_TH};text-align:center;">Height</th>'
-                f'<th style="{_TH};text-align:center;">Diameter</th>'
-                f'<th style="{_TH};text-align:center;">Mass (dry, no coolant)</th>'
-                '</tr></thead><tbody>'
-                + ''.join(_rows_html) +
-                '</tbody></table>'
-                '</div>',
-                unsafe_allow_html=True,
-            )
-
-            # ── Always-visible notes panel ──
-            # Hover tooltips on the (?) icons are easy to miss; spell out
-            # what each component includes/excludes and the global
-            # assumptions below the table.
-            _hpmr_note = (
-                '<li><strong>HPMR-specific:</strong> heat-pipe steel '
-                'cladding and the Na working fluid are <em>not</em> '
-                'currently modeled in MOUSE flagged for future addition.</li>'
-                if reactor_type == 'HPMR' else ''
-            )
-            _gcmr_note = (
-                '<li><strong>GCMR labeling note:</strong> what is shown '
-                'as "Reactor vessel" here maps to MOUSE\'s internal '
-                '<em>Guard Vessel</em> field, because for the GCMR the '
-                'outer pressure shell is the RPV, not the inner core barrel.</li>'
-                if reactor_type == 'GCMR' else ''
-            )
-            _gv_note = (
-                '<li><strong>Guard vessel:</strong> wall thickness and '
-                'gap; mass = wall only (no internals).</li>'
-                if _has_guard else
-                '<li><strong>Guard vessel N/A:</strong> intentionally '
-                'omitted for this reactor type (helium is inert for GCMR; '
-                'each heat pipe is individually sealed for HPMR neither '
-                'has a bulk primary coolant requiring secondary containment).</li>'
-            )
-            st.markdown(
-                '<div style="background:#eff6ff;border:1px solid #bfdbfe;'
-                'border-radius:8px;padding:0.85rem 1.1rem;margin-bottom:0.9rem;'
-                'font-size:0.85rem;line-height:1.55;color:#1B4F8C;">'
-                '<div style="font-weight:600;font-size:0.85rem;'
-                'text-transform:uppercase;letter-spacing:0.06em;'
-                'color:#1B4F8C;margin-bottom:0.45rem;">Notes &amp; assumptions</div>'
-                '<ul style="margin:0;padding-left:1.2rem;color:#1B4F8C;">'
-                '<li><strong>Reactor (core + reflectors + drums):</strong> '
-                'mass sums uranium (U235 + U238) + moderator (ZrH for LTMR; '
-                'graphite + ZrH booster for GCMR; monolith graphite for HPMR) '
-                '+ radial reflector + axial reflector + control drums. '
-                'Fuel-pin cladding is not separately tracked in MOUSE '
-                '(small relative to the other terms).</li>'
-                + _hpmr_note +
-                '<li><strong>Reactor vessel:</strong> diameter is '
-                '2 × (vessel radius + vessel thickness); height includes '
-                f'active core, axial reflector, lower plenum, upper plenum, '
-                f'and bottom dish (currently using the placeholder Vessel '
-                f'Bottom Depth = {_bottom_depth_cm:.1f} cm flagged for '
-                'review). Top closure dome is <em>not</em> currently '
-                'modeled in MOUSE flagged for future addition. Mass is '
-                'the vessel wall only, no internals.</li>'
-                + _gcmr_note
-                + _gv_note +
-                '<li><strong>RVACS (cooling + intake vessels):</strong> '
-                'treated as one shipping envelope. Diameter = 2 × intake '
-                'vessel outer radius; height is the full external envelope '
-                'including bottom dish. Mass = cooling-vessel wall + '
-                'intake-vessel wall only (no air, no insulation, no '
-                'support structure).</li>'
-                '<li><strong>Shielding excluded:</strong> in-vessel '
-                'shielding (B<sub>4</sub>C) and out-of-vessel shielding '
-                '(WEP / concrete biological shield) are <em>not</em> '
-                'considered in this section. Shielding adds significant '
-                'mass and outer dimension to the as-shipped or as-installed '
-                'module, depending on whether it ships with the reactor or '
-                'is built on site.</li>'
-                '<li><strong>Coolant excluded:</strong> primary coolant '
-                'inventory (NaK for LTMR, He for GCMR, heat-pipe Na for '
-                'HPMR) is <em>not</em> included in the dry-mass column.</li>'
-                '<li><strong>Other excluded items:</strong> support skirt, '
-                'lifting lugs, transport frame, control-rod drives, and '
-                'any auxiliary piping outside the four nested vessels.</li>'
-                '</ul>'
-                '</div>',
-                unsafe_allow_html=True,
-            )
-
-            # ── Transport-mode dimensional limits + badges ──
-            # Limits & references
-            _modes = [
-                {
-                    'name': 'US road, no permit',
-                    'width_m': 2.59, # 8.5 ft
-                    'height_m': 4.11, # 13.5 ft (state-varying)
-                    'length_m': None, # length rarely binding for a vessel module
-                    'weight_t': 36.3, # 80,000 lb GVW
-                    'cite_html': (
-                        'Federal Bridge Formula '
-                        '<a href="https://www.law.cornell.edu/uscode/text/23/127" '
-                        'target="_blank" style="color:#1B4F8C;">23 U.S.C. § 127</a>; '
-                        'FHWA "Federal Size Regulations for Commercial Motor Vehicles". '
-                        'State-by-state variations may permit larger envelopes on '
-                        'non-Interstate routes.'
-                    ),
-                },
-                {
-                    'name': 'US rail, AAR Plate F',
-                    'width_m': 5.18,
-                    'height_m': 5.18,
-                    'length_m': None,
-                    'weight_t': 130.0, # 286,000 lb gross car weight
-                    'cite_html': (
-                        'AAR Manual of Standards & Recommended Practices §C-II '
-                        '"Plate Drawings"; AAR Open Top Loading Rules. '
-                        'Plate F is the standard high-clearance envelope for '
-                        'oversized industrial cargo.'
-                    ),
-                },
-                {
-                    'name': '40 ft ISO HC sea container',
-                    'width_m': 2.352, # internal
-                    'height_m': 2.700, # internal
-                    'length_m': 12.032, # internal
-                    'weight_t': 30.5,
-                    'cite_html': (
-                        'ISO 668:2020 "Series 1 freight containers Classification, '
-                        'dimensions and ratings"; ISO 1496-1:2013 "Specification '
-                        'and testing Part 1: General-cargo containers".'
-                    ),
-                },
-            ]
-
-            # Compare the outermost RVACS envelope to each mode's
-            # dimensional limits AND weight limit. Weight comparison
-            # uses the sum of the four component masses (computed inline
-            # for badge logic only not displayed as a "total" row in
-            # the table per design choice).
-            _rvacs_dia_m = _rvacs_dia_cm / 100.0
-            _rvacs_h_m = _rvacs_height_cm / 100.0
-            _badge_total_kg = (_reactor_mass_kg + _rv_mass_kg
-                               + _gv_mass_kg + _rvacs_mass_kg)
-            _badge_total_t = _badge_total_kg / 1000.0
-
-            _mode_cards_html = []
-            for _mode in _modes:
-                _w_ok = _rvacs_dia_m <= _mode['width_m']
-                _h_ok = _rvacs_h_m <= _mode['height_m']
-                _len_ok = (_mode['length_m'] is None) or (_rvacs_h_m <= _mode['length_m'])
-                _wt_ok = _badge_total_t <= _mode['weight_t']
-                _fits = _w_ok and _h_ok and _len_ok and _wt_ok
-                _badge_color = ('#15803d', '#dcfce7', '#bbf7d0') if _fits else ('#b91c1c', '#fee2e2', '#fecaca')
-                _badge_text = '✓ fits envelope' if _fits else '✗ exceeds envelope'
-                _len_str = (f' &nbsp;|&nbsp; length ≤ {_mode["length_m"]:.2f} m'
-                            if _mode['length_m'] is not None else '')
-                _mode_cards_html.append(
-                    '<div style="background:#ffffff;border:1px solid #bfdbfe;border-radius:8px;'
-                    'padding:0.85rem 1.1rem;margin-bottom:0.6rem;color:#0a2540;">'
-                    '<div style="display:flex;justify-content:space-between;align-items:center;'
-                    'margin-bottom:0.35rem;">'
-                    f'<div style="font-weight:600;font-size:0.85rem;color:#0a2540;">{_mode["name"]}</div>'
-                    f'<div style="background:{_badge_color[1]};border:1px solid {_badge_color[2]};'
-                    f'color:{_badge_color[0]};font-size:0.85rem;font-weight:600;'
-                    f'padding:0.15rem 0.6rem;border-radius:8px;">{_badge_text}</div>'
-                    '</div>'
-                    f'<div style="font-size:0.85rem;color:#3c4257;margin-bottom:0.3rem;">'
-                    f'width ≤ {_mode["width_m"]:.2f} m &nbsp;|&nbsp; '
-                    f'height ≤ {_mode["height_m"]:.2f} m &nbsp;|&nbsp; '
-                    f'weight ≤ {_mode["weight_t"]:.1f} ton{_len_str}'
-                    f'</div>'
-                    f'<div style="font-size:0.85rem;color:#64748b;line-height:1.4;">{_mode["cite_html"]}</div>'
-                    '</div>'
+            # Power density = Power_MWₜ / Active Core Volume.
+            # Active core is a hex prism with apothem = active_radius
+            # and height = Active Height. _active_radius_cm was already
+            # computed earlier in this block (Core Radius − reflector).
+            _vol_cm3 = (2.0 * _math.sqrt(3.0)
+                        * (_active_radius_cm ** 2)
+                        * float(params['Active Height']))
+            _vol_m3 = _vol_cm3 * 1.0e-6
+            if _vol_m3 > 0:
+                _pd = float(params['Power MWt']) / _vol_m3
+                _fuel_card(
+                    'Power density',
+                    f'{_fmt_metric(_pd)} MW/m³',
+                    ('Thermal power per unit active core volume = '
+                     'Power_MWₜ / (2√3 · R² · H), where R is the active '
+                     'core hex apothem (no reflector) and H is the active '
+                     'height. Tells you how aggressively the fuel is '
+                     'loaded relative to the core size. Typical ranges: '
+                     'eVinci/HPMR-class ~10-15 MW/m³, LTMR ~10-30, '
+                     'metal-fuel microreactors (Oklo, BANR) ~50-100, '
+                     'commercial LWRs ~100. Below ~5 MW/m³ means the core '
+                     'is over-fuelled (long lifetime, low utilization); '
+                     'above ~80 means the design is thermal-hydraulically '
+                     'aggressive also check the heat-flux card.'),
+                    section=5,
                 )
 
-            st.markdown(''.join(_mode_cards_html), unsafe_allow_html=True)
+            # Aspect ratio moved out of the TH section into the
+            # "What does it look like" panel in img_col (Band 1).
 
-            # Footnote what each badge does and doesn't check
-            st.markdown(
-                '<div style="background:#fff7ed;border:1px solid #fcd34d;border-radius:8px;'
-                'padding:0.65rem 1rem;margin-bottom:1rem;font-size:0.85rem;line-height:1.45;color:#92400e;">'
-                '<strong>Note:</strong> Each badge compares the outermost RVACS envelope '
-                '(diameter, height) and the sum of all component masses against the mode\'s '
-                'limits. Per-component dimensions and masses are shown above; component-level '
-                'help icons (?) explain what is and isn\'t included for each row. Top closure '
-                'dome and bottom dish are not currently modeled in '
-                'MOUSE, so the height values are slight underestimates.'
-                '</div>',
-                unsafe_allow_html=True,
-            )
+        # Section 3 cards now rendered in Band 3 (Fuel cycle
+        # column) instead of inline here.
 
-            st.markdown(
-                '<div style="font-size:0.85rem;font-weight:600;color:#64748b;text-transform:uppercase;'
-                'letter-spacing:0.09em;margin-bottom:0.6rem;">Capital Costs</div>',
-                unsafe_allow_html=True,
-            )
-            cc1, cc2 = st.columns(2)
-            _kpi_card(cc1, 'Overnight Capital Cost (OCC)',
-                      _fmt_cost(occ_f, occ_f_std), _fmt_cost(occ_n, occ_n_std),
-                      color=_CARD_COLORS['occ'])
-            _kpi_card(cc2, 'Total Capital Investment (TCI)',
-                      _fmt_cost(tci_f, tci_f_std), _fmt_cost(tci_n, tci_n_std),
-                      color=_CARD_COLORS['tci'])
+        st.markdown('<div style="height:0.75rem"></div>', unsafe_allow_html=True)
 
-            st.markdown('<div style="height:0.75rem"></div>', unsafe_allow_html=True)
+    # ── Subsection 4: Heat Costs ────────────────────────────────
+    # Heat-application costs derived from the electricity numbers
+    # via factors from INL/RPT-23/72866 §8.3 Cost-Adjustment
+    # Methodology (data-set averages across 30+ designs). The same
+    # constants are used in cost/non_direct_cost.py to compute LCOH,
+    # so the values shown here are consistent with the LCOE→LCOH
+    # pipeline. Decomposition is not shown because the factors are
+    # applied as totals (Capital and O&M+fuel as aggregates), not
+    # per-account.
+    _HEAT_OCC_FACTOR = 0.795   # OCC_heat = OCC × 0.795
+    _HEAT_ANN_FACTOR = 0.966   # AC_heat = AC × 0.966
+    _ho_f,  _ho_f_std  = occ_f * _HEAT_OCC_FACTOR, occ_f_std * _HEAT_OCC_FACTOR
+    _ho_n,  _ho_n_std  = occ_n * _HEAT_OCC_FACTOR, occ_n_std * _HEAT_OCC_FACTOR
+    _hac_f, _hac_f_std = _ac_f * _HEAT_ANN_FACTOR, _ac_f_std * _HEAT_ANN_FACTOR
+    _hac_n, _hac_n_std = _ac_n * _HEAT_ANN_FACTOR, _ac_n_std * _HEAT_ANN_FACTOR
 
-            st.markdown(
-                '<div style="font-size:0.85rem;font-weight:600;color:#64748b;text-transform:uppercase;'
-                'letter-spacing:0.09em;margin-bottom:0.6rem;">Levelized Costs</div>',
-                unsafe_allow_html=True,
-            )
-            lc1, lc2, lc3 = st.columns(3)
-            _kpi_card(lc1, 'LCOE ($/MW<sub>e</sub>h)',
-                      _fmt_lcoe(lcoe_f, lcoe_f_std), _fmt_lcoe(lcoe_n, lcoe_n_std),
-                      color=_CARD_COLORS['lcoe'])
-            _kpi_card(lc2, 'LCOH ($/MW<sub>t</sub>h)',
-                      _fmt_lcoh(lcoh_f, lcoh_f_std), _fmt_lcoh(lcoh_n, lcoh_n_std),
-                      color=_CARD_COLORS['lcoh'])
-            _kpi_card(lc3, 'LCOF Fuel Only ($/MW<sub>e</sub>h)',
-                      _fmt_lcoe(lcof_f, lcof_f_std), _fmt_lcoe(lcof_n, lcof_n_std),
-                      color=_CARD_COLORS['lcof'])
+    st.markdown(
+        '<div style="font-size:1rem;font-weight:700;color:#0a2540;'
+        'border-left:4px solid #0a2540;padding:0.4rem 0 0.4rem 0.75rem;'
+        'margin:1.25rem 0 0.4rem 0;">Heat Costs</div>'
+        '<p style="color:#64748b;font-size:0.85rem;margin:0 0 0.85rem 0;">'
+        'Ranges shown are <strong>mean &minus; 1&sigma;</strong> to '
+        '<strong>mean + 1&sigma;</strong>.'
+        '</p>',
+        unsafe_allow_html=True,
+    )
+    # Same LCOH value, rendered in two unit systems: $/MWhth and
+    # $/MMBtu. Conversion: 1 MWh thermal = 3.4121 MMBtu (exact).
+    _MMBTU_PER_MWHT = 3.4121
 
-        st.markdown(
-            '<div style="margin-top:1.2rem;padding:0.7rem 1rem;background:#f7f8fa;'
-            'border-radius:8px;border:1px solid #bfdbfe;font-size:0.85rem;color:#64748b;">'
-            '<span style="background:#fff3ed;color:#c84b1e;font-size:0.85rem;font-weight:700;'
-            'padding:0.1rem 0.4rem;border-radius:4px;margin-right:0.4rem;">FOAK</span>'
-            'First-of-a-Kind includes learning curve and contingency premiums for an initial deployment.&emsp;'
-            '<span style="background:#eff6ff;color:#1B4F8C;font-size:0.85rem;font-weight:700;'
-            'padding:0.1rem 0.4rem;border-radius:4px;margin-right:0.4rem;">NOAK</span>'
-            'Nth-of-a-Kind reflects mature, serial production cost reductions at scale.'
-            '</div>',
-            unsafe_allow_html=True,
+    def _fmt_lcoh_mmbtu(mean, std):
+        if math.isnan(mean):
+            return 'N/A'
+        m = mean / _MMBTU_PER_MWHT
+        if math.isnan(std) or std == 0:
+            return f'${m:.1f}/MMBtu'
+        lo = (mean - std) / _MMBTU_PER_MWHT
+        hi = (mean + std) / _MMBTU_PER_MWHT
+        return (
+            f'${m:.1f}/MMBtu '
+            f'<span style="color:#64748b;font-weight:400;">'
+            f'[${lo:.1f} &ndash; ${hi:.1f}]'
+            f'</span>'
         )
 
-        # ─────────────────────────────────────────────────────────
-        # Costs in perspective: NOAK LCOE vs market benchmarks
-        # ─────────────────────────────────────────────────────────
-        st.markdown('<div style="height:1.2rem"></div>', unsafe_allow_html=True)
-        st.markdown(
-            '<div style="font-size:0.85rem;font-weight:600;color:#64748b;text-transform:uppercase;'
-            'letter-spacing:0.09em;margin-bottom:0.6rem;">Costs in Perspective</div>',
-            unsafe_allow_html=True,
-        )
-        st.markdown(
-            '<div style="background:#f7f8fa;border:1px solid #bfdbfe;border-radius:8px;'
-            'padding:0.85rem 1.1rem;margin-bottom:0.9rem;font-size:0.85rem;line-height:1.45;color:#3c4257;">'
-            'The curve is anchored at four deployment scales: N=1 (FOAK from the headline '
-            'card), N=2, N=10 (two extra cost-engine calls, cached), and N=user-set NOAK '
-            'Unit Number (default 100, NOAK from the headline card). The shaded band '
-            'reflects the one-sigma uncertainty around each anchor and is connected '
-            'piecewise-linearly between them. Overlaid against seven US-relevant '
-            'electricity-market price ranges to indicate where the reactor would be '
-            'cost-competitive at each scale.'
-            '</div>',
-            unsafe_allow_html=True,
-        )
+    hc1, hc2, hc3, hc4 = st.columns(4)
+    _kpi_card(
+        hc1, 'Capital Cost',
+        _fmt_cost(_ho_f, _ho_f_std), _fmt_cost(_ho_n, _ho_n_std),
+        help_text=(
+            'Capital cost for heat-only operation: electricity OCC × 0.795. '
+            'The 0.795 factor is the data-set average from INL/RPT-23/72866 '
+            '§8.3, accounting for removing the power-conversion system and '
+            'the related reduction in direct and indirect costs.'
+        ),
+    )
+    _kpi_card(
+        hc2, 'Annualized Cost',
+        _fmt_cost(_hac_f, _hac_f_std), _fmt_cost(_hac_n, _hac_n_std),
+        help_text=(
+            'Annual O&M + fuel for heat-only operation: electricity '
+            'Annualized Cost × 0.966. The 0.966 factor is the data-set '
+            'average from INL/RPT-23/72866 §8.3.'
+        ),
+    )
+    _kpi_card(
+        hc3, 'LCOH ($/MW<sub>t</sub>h)',
+        _fmt_lcoh(lcoh_f, lcoh_f_std), _fmt_lcoh(lcoh_n, lcoh_n_std),
+        help_text=(
+            'Levelized Cost of Heat in $/MWh thermal. Computed via the '
+            'full PV formula using OCC_heat and AC_heat, then multiplied '
+            'by the reactor\'s thermal efficiency to convert from '
+            '$/MWh-electric to $/MWh-thermal.'
+        ),
+    )
+    _kpi_card(
+        hc4, 'LCOH ($/MMBtu)',
+        _fmt_lcoh_mmbtu(lcoh_f, lcoh_f_std), _fmt_lcoh_mmbtu(lcoh_n, lcoh_n_std),
+        help_text=(
+            'Same LCOH expressed in $ per million BTU of thermal energy. '
+            'Conversion: 1 MWh-thermal = 3.4121 MMBtu, so $/MMBtu = '
+            '($/MWh-thermal) ÷ 3.4121. $/MMBtu is the conventional unit '
+            'for industrial process-heat purchasing.'
+        ),
+    )
 
-        # Use the headline FOAK (N=1) and NOAK (N=user_setting) values
-        # as anchors, and add ONE extra cost-engine call at N=10 to
-        # give an intermediate point. Same extraction path as the
-        # headline cards (bottom_up_cost_estimate ->
-        # cost_drivers_estimate -> transform_dataframe ->
-        # _get_mean_std), so values are consistent by construction.
-        # _mid_results and _N_user_pre were pre-computed above the
-        # tabs (under a single spinner) so the whole page renders at
-        # once. Re-bind the local names this block expects.
-        _N_user = _N_user_pre
-        _N_mids = _N_mids_pre
+    # ═══════════════════════════════════════════════════════════
+    # BAND 2 Can we ship it?
+    # ═══════════════════════════════════════════════════════════
+    _section_header(
+        '02',
+        'Transportability Check',
+        'Can we ship it?',
+    )
 
+    # ─────────────────────────────────────────────────────────────
+    # Transportability Considerations
+    # ─────────────────────────────────────────────────────────────
+    # Per-component dimensions (height, diameter) and dry mass for
+    # the four nested envelopes that make up a microreactor module.
+    # Per-mode badges compare the outermost (RVACS) envelope to
+    # three transport-mode dimensional limits. No total mass is
+    # computed (per design choice each component is shown alone).
+    #
+    # Rounding rules (match the coolant-inventory card):
+    # weights ≥ 1 ton -> integer tons
+    # weights < 1 ton -> 1 significant figure
+    # dimensions -> meters with 1 decimal
+    # Inner "Can we ship it?" sub-header removed; the band-level
+    # header above already announces the section.
+    st.markdown(
+        '<div style="background:#f7f8fa;border:1px solid #bfdbfe;border-radius:8px;'
+        'padding:0.85rem 1.1rem;margin-bottom:0.9rem;font-size:0.85rem;line-height:1.45;color:#3c4257;">'
+        'Transportability is one of the headline features of microreactors '
+        'they can move by truck, rail, or sea container, which differentiates '
+        'them from large NPPs. The numbers below check whether each component '
+        'of the current reactor design would fit through standard truck, '
+        'rail, and sea shipping limits. Whether the reactor ships in one '
+        'piece or as separate sub-assemblies is a design choice we don\'t '
+        'presume here.'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    # ── Module Geometry subsection header ──────────────────────
+    st.markdown(
+        '<div style="font-size:1rem;font-weight:700;color:#0a2540;'
+        'border-left:4px solid #0a2540;padding:0.4rem 0 0.4rem 0.75rem;'
+        'margin:0 0 0.4rem 0;">Module Geometry</div>'
+        '<p style="color:#64748b;font-size:0.85rem;margin:0 0 0.85rem 0;">'
+        'The reactor is built up from up to four nested layers, listed '
+        'below from innermost to outermost. Each layer is a separate '
+        'piece that could ship independently.'
+        '</p>',
+        unsafe_allow_html=True,
+    )
+
+    # ── Build per-component rows (height_m, diameter_m, mass_kg) ──
+    def _ton_str(kg):
+        """Match the coolant-inventory rounding convention."""
+        if kg is None:
+            return ''
         try:
-            _foak_m = float(lcoe_f)
-            _noak_m = float(lcoe_n)
+            kg = float(kg)
         except (TypeError, ValueError):
-            _foak_m = _noak_m = float('nan')
-        try:
-            _foak_s = float(lcoe_f_std) if lcoe_f_std == lcoe_f_std else 0.0
-            _noak_s = float(lcoe_n_std) if lcoe_n_std == lcoe_n_std else 0.0
-        except (TypeError, ValueError):
-            _foak_s = _noak_s = 0.0
+            return ''
+        if kg <= 0:
+            return ''
+        t = kg / 1000.0
+        if t >= 1:
+            return f'{round(t):,d} ton'
+        return f'{t:.1g} ton'
 
-        # Build the anchor list: FOAK + intermediates + NOAK, sorted
-        # by N ascending. Skip any intermediate with NaN.
-        _units = [1] + [_N for _N in _N_mids
-                        if _N in _mid_results
-                        and _mid_results[_N][0] == _mid_results[_N][0]] + [_N_user]
-        _means = [_foak_m]
-        _stds = [_foak_s]
-        for _N in _N_mids:
-            if _N in _mid_results and _mid_results[_N][0] == _mid_results[_N][0]:
-                _means.append(_mid_results[_N][0])
-                _stds.append(_mid_results[_N][1])
-        _means.append(_noak_m)
-        _stds.append(_noak_s)
+    def _m1(cm):
+        if cm is None or cm <= 0:
+            return ''
+        return f'{cm/100.0:.1f} m'
 
-        # NaN-tolerant gating: drop points where the LCOE came back
-        # NaN, plot whatever valid points remain. Scatter markers +
-        # mean line are always drawn (they don't need the spline).
-        _u_arr = np.array(_units, dtype=float) if _units else np.array([])
-        _m_arr = np.array(_means, dtype=float) if _means else np.array([])
-        _s_arr = np.array(_stds, dtype=float) if _stds else np.array([])
-        if _m_arr.size:
-            _valid = ~np.isnan(_m_arr)
-            _u_arr = _u_arr[_valid]
-            _m_arr = _m_arr[_valid]
-            _s_arr = _s_arr[_valid]
-            _s_arr = np.nan_to_num(_s_arr, nan=0.0)
+    # MOUSE label disambiguation:
+    # - LTMR: 'Vessel' = reactor vessel, 'Guard Vessel' = guard vessel
+    # - GCMR: 'Vessel' = core barrel (internal),
+    # 'Guard Vessel' = the actual RPV (He pressure boundary)
+    # - HPMR: 'Vessel' = reactor vessel, no guard vessel
+    _vessel_height_cm = float(params.get('Vessel Height', 0.0))
+    _bottom_depth_cm = float(params.get('Vessel Bottom Depth', 0.0))
+    _vessel_thk_cm = float(params.get('Vessel Thickness', 0.0))
+    _guard_thk_cm = float(params.get('Guard Vessel Thickness', 0.0))
+    _gap_v_g_cm = float(params.get('Gap Between Vessel And Guard Vessel', 0.0))
 
-        if _u_arr.size >= 2:
-            from matplotlib.patches import Patch as _Patch
+    # Reactor (core + reflectors + drums). All component masses
+    # are in kg. Note: 'Uranium Mass' is already in kg in MOUSE;
+    # cladding mass is not separately tracked (small relative to
+    # the other terms).
+    _reactor_dia_cm = 2.0 * float(params.get('Core Radius', 0.0))
+    _reactor_h_cm = (float(params.get('Active Height', 0.0))
+                        + 2.0 * float(params.get('Axial Reflector Thickness', 0.0)))
+    _reactor_mass_kg = (
+        float(params.get('Uranium Mass', 0.0))
+        + float(params.get('Moderator Mass', 0.0))
+        + float(params.get('Moderator Booster Mass', 0.0))
+        + float(params.get('Radial Reflector Mass', 0.0))
+        + float(params.get('Axial Reflector Mass', 0.0))
+        + float(params.get('Control Drums Mass', 0.0))
+    )
 
-            # Reactor-type-specific palette (matches the existing
-            # webapp accent colors for each reactor).
-            _palette = {
-                'LTMR': ('#4472C4', '#2E5090'), # blue
-                'GCMR': ('#FF6B6B', '#D94444'), # red
-                'HPMR': ('#7E57C2', '#4527A0'), # purple
-            }
-            _fill_color, _edge_color = _palette.get(reactor_type, _palette['LTMR'])
-            _legend_label = {
-                'LTMR': 'Liquid-Metal Microreactor',
-                'GCMR': 'Gas-Cooled Microreactor',
-                'HPMR': 'Heat Pipe Microreactor',
-            }.get(reactor_type, reactor_type)
+    # Reactor vessel (the pressure boundary)
+    if reactor_type == 'GCMR':
+        # MOUSE 'Guard Vessel' is the RPV for GCMR
+        _rv_outer_r_cm = (float(params.get('Guard Vessel Radius', 0.0))
+                          + _guard_thk_cm)
+        _rv_height_cm = (_vessel_height_cm
+                          + _bottom_depth_cm + _vessel_thk_cm + _gap_v_g_cm
+                          + _guard_thk_cm)
+        _rv_mass_kg = float(params.get('Guard Vessel Mass', 0.0))
+    else:
+        _rv_outer_r_cm = (float(params.get('Vessel Radius', 0.0)) + _vessel_thk_cm)
+        _rv_height_cm = _vessel_height_cm + _bottom_depth_cm
+        _rv_mass_kg = float(params.get('Vessel Mass', 0.0))
+    _rv_dia_cm = 2.0 * _rv_outer_r_cm
 
-            _fig, _ax = plt.subplots(figsize=(11, 5.8))
+    # Guard vessel only for LTMR
+    _has_guard = (reactor_type == 'LTMR'
+                  and float(params.get('Guard Vessel Thickness', 0.0)) > 0)
+    if _has_guard:
+        _gv_outer_r_cm = (float(params.get('Guard Vessel Radius', 0.0)) + _guard_thk_cm)
+        _gv_dia_cm = 2.0 * _gv_outer_r_cm
+        _gv_height_cm = (_vessel_height_cm
+                          + _bottom_depth_cm + _vessel_thk_cm + _gap_v_g_cm
+                          + _guard_thk_cm)
+        _gv_mass_kg = float(params.get('Guard Vessel Mass', 0.0))
+    else:
+        _gv_dia_cm = _gv_height_cm = _gv_mass_kg = 0.0
 
-            # Plain linear interpolation between the anchor points 
-            # no spline, no overshoot. np.interp gives straight line
-            # segments between consecutive anchors, which is the
-            # honest representation when we only have 2-3 anchors.
-            try:
-                _x_smooth = np.linspace(_u_arr.min(), _u_arr.max(), 300)
-                _m_smooth = np.interp(_x_smooth, _u_arr, _m_arr)
-                _s_smooth = np.interp(_x_smooth, _u_arr, _s_arr)
-            except Exception:
-                _x_smooth = _u_arr
-                _m_smooth = _m_arr
-                _s_smooth = _s_arr
+    # RVACS (cooling vessel + intake vessel combined)
+    _rvacs_outer_r_cm = float(params.get('Vessels Total Radius', 0.0))
+    _rvacs_dia_cm = 2.0 * _rvacs_outer_r_cm
+    _rvacs_height_cm = float(params.get('Vessels Total Height', 0.0))
+    _rvacs_mass_kg = (float(params.get('Cooling Vessel Mass', 0.0))
+                         + float(params.get('Intake Vessel Mass', 0.0)))
 
-            _ax.fill_between(_x_smooth,
-                             _m_smooth - _s_smooth,
-                             _m_smooth + _s_smooth,
-                             color=_fill_color, alpha=0.45, label=_legend_label,
-                             edgecolor=_edge_color, linewidth=1.5, zorder=2)
-            # Mean line + scatter markers at the actual computed
-            # sweep points so the LCOE curve is always visible even if
-            # the spline interpolation produces something degenerate.
-            _ax.plot(_x_smooth, _m_smooth, color=_edge_color,
-                     linewidth=2.0, linestyle='-', zorder=3)
-            _ax.scatter(_u_arr, _m_arr, s=42, color=_edge_color,
-                        edgecolor='white', linewidth=1.2, zorder=4)
+    # ── Render component table ──
+    # Each row carries an always-visible small-font description
+    # under the component name explaining what is included and
+    # what is excluded. The hover-only title= tooltip approach
+    # was unreliable across browsers/themes, so the notes are
+    # shown inline in the table itself. Explicit colors
+    # throughout so the table is readable regardless of the
+    # Streamlit theme.
+    _CELL = ('padding:0.55rem 0.8rem;color:#0a2540;'
+             'border-bottom:1px solid #bfdbfe;'
+             'vertical-align:top;')
+    _CELL_C = _CELL + 'text-align:center;'
+    _CELL_NAME = _CELL + 'font-weight:600;'
+    _DESC = ('font-size:0.85rem;font-weight:400;color:#64748b;'
+             'line-height:1.4;margin-top:0.2rem;')
 
-            # Market benchmark arrows (same coords as the reference figure)
-            _markets = {
-                'Remote communities': {'x': 2, 'y_start': 400, 'y_end': 290, 'color': '#C00000', 'arrow_only_down': True},
-                'Defense': {'x': 8, 'y_start': 316, 'y_end': 296, 'color': '#FFC000', 'arrow_only_down': False},
-                'Island & Mining': {'x': 30, 'y_start': 380, 'y_end': 190, 'color': '#ED7D31', 'arrow_only_down': False},
-                'Alaska railbelt electricity': {'x': 48, 'y_start': 313, 'y_end': 182, 'color': '#7030A0', 'arrow_only_down': False},
-                'Alaska railbelt generation': {'x': 60, 'y_start': 166, 'y_end': 62, 'color': '#A6A6A6', 'arrow_only_down': False},
-                'U.S. grid electricity': {'x': 75, 'y_start': 270, 'y_end': 79, 'color': '#92D050', 'arrow_only_down': False},
-                'U.S. grid generation': {'x': 88, 'y_start': 55, 'y_end': 29, 'color': '#00B050', 'arrow_only_down': False},
-            }
-            _bar_widths = {
-                'Remote communities': 4,
-                'Defense': 4,
-                'Island & Mining': 12,
-                'Alaska railbelt electricity': 8,
-                'Alaska railbelt generation': 8,
-                'U.S. grid electricity': 12,
-                'U.S. grid generation': 10,
-            }
-            _label_offsets = {
-                'Remote communities': +8,
-                'Defense': +25,
-                'Alaska railbelt generation': -15,
-                'U.S. grid generation': +20,
-            }
-            for _name, _d in _markets.items():
-                _x = _d['x']
-                _ys = min(_d['y_start'], 400)
-                _ye = _d['y_end']
-                _c = _d['color']
-                _down = _d['arrow_only_down']
-                _w = _bar_widths[_name]
-                _xa, _xb = _x, _x + _w
-                _xm = _x + _w / 2
+    _moderator_for_type = {
+        'LTMR': 'ZrH',
+        'GCMR': 'graphite (with ZrH booster pins)',
+        'HPMR': 'monolith graphite',
+    }.get(reactor_type, 'moderator')
+    _reactor_desc = (
+        f'Includes: U235 + U238, moderator ({_moderator_for_type}), '
+        'radial + axial reflector, control drums.'
+        + (' HPMR heat-pipe steel cladding and Na working fluid '
+           'not yet modeled.' if reactor_type == 'HPMR' else '')
+    )
+    _rv_desc_extra = (
+        ' <span style="color:#1B4F8C;">For GCMR this maps to '
+        'MOUSE\'s internal "Guard Vessel" field (the RPV).</span>'
+        if reactor_type == 'GCMR' else ''
+    )
+    _rv_desc = (
+        'Diameter = 2 × (vessel radius + thickness). '
+        'Height = active core + axial reflector + lower '
+        'plenum + upper plenum + bottom dish. '
+        'Top closure dome not modeled. Mass = vessel wall only.'
+        + _rv_desc_extra
+    )
+    _gv_desc = (
+        'Secondary containment shell around the reactor vessel '
+        'for primary-coolant leak containment. Mass = '
+        'guard-vessel wall only (no internals).'
+    )
+    _gv_na_desc = (
+        'Intentionally omitted for this reactor type He is '
+        'inert (GCMR) and heat pipes are individually sealed '
+        '(HPMR), so neither has a bulk primary coolant '
+        'requiring secondary containment.'
+    )
+    _rvacs_desc = (
+        'The two outer vessels that comprise the Reactor Vessel '
+        'Auxiliary Cooling System: the cooling vessel + the intake '
+        'vessel, treated here as one shipping envelope. Diameter = '
+        '2 × intake-vessel outer radius; height is the full external '
+        'envelope. Mass = cooling-vessel wall + intake-vessel wall '
+        'only (no air, no insulation, no support structure).'
+    )
 
-                if not _down:
-                    _ax.plot([_xa, _xb], [_ys, _ys], color=_c, linewidth=4,
-                             solid_capstyle='round', zorder=5)
-                _ax.plot([_xa, _xb], [_ye, _ye], color=_c, linewidth=4,
-                         solid_capstyle='round', zorder=5)
-                _astyle = '->' if _down else '<->'
-                if _down:
-                    _ax.plot([_xm, _xm], [_ys, _ye], color=_c, linewidth=2.8,
-                             solid_capstyle='round', zorder=5)
-                _ax.annotate('', xy=(_xm, _ye), xytext=(_xm, _ys),
-                             arrowprops=dict(arrowstyle=_astyle, color=_c,
-                                             lw=2.8, mutation_scale=16), zorder=5)
-
-                if _name == 'Alaska railbelt generation':
-                    _ly = _ye + _label_offsets[_name]
-                else:
-                    _ly = _ys + _label_offsets.get(_name, +15)
-                _ax.text(_xm, _ly, _name, fontsize=8.5, ha='center', color=_c,
-                         fontweight='bold',
-                         bbox=dict(facecolor='white', edgecolor=_c,
-                                   boxstyle='round,pad=0.25',
-                                   linewidth=1.0, alpha=0.9),
-                         zorder=6)
-
-            _ax.set_xlim(1, 100)
-            # Y-axis sizing use the 90th-percentile of (mean + std)
-            # rather than max, so a single outlier point doesn't blow
-            # up the y-range and squash the rest of the data. Hard
-            # cap at $800 so even outliers stay readable.
-            if _m_arr.size:
-                _band_vals = _m_arr + _s_arr
-                _band_p90 = float(np.nanpercentile(_band_vals, 90))
-            else:
-                _band_p90 = 0.0
-            _ymax = max(410.0, _band_p90 * 1.15)
-            _ymax = min(_ymax, 800.0)
-            _ax.set_ylim(0, _ymax)
-            _ax.set_xlabel('Number of Units Deployed', fontsize=12, fontweight='bold')
-            _ax.set_ylabel('LCOE ($/MWh)', fontsize=12, fontweight='bold')
-            _ax.set_xticks([1, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100])
-            from matplotlib.ticker import MaxNLocator
-            _ax.yaxis.set_major_locator(MaxNLocator(nbins=10, integer=True))
-            _ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
-            _ax.set_axisbelow(True)
-            _ax.set_facecolor('white')
-            _fig.patch.set_facecolor('white')
-
-            _legend_patch = _Patch(facecolor=_fill_color, edgecolor=_edge_color,
-                                   alpha=0.6, label=_legend_label)
-            _ax.legend(handles=[_legend_patch], fontsize=10, loc='upper right',
-                       framealpha=0.9, edgecolor='grey')
-
-            _fig.tight_layout()
-
-            # If the LCOE band sits entirely above the y-axis cap
-            # ($800 max), the band is invisible on the chart. Warn
-            # the user explicitly so they know why nothing is plotted
-            # for the reactor and what to do about it. Use a custom-
-            # colored markdown box rather than st.warning, which
-            # renders white text on yellow (illegible).
-            _band_min_visible = (_m_arr - _s_arr).min() if _m_arr.size else 0.0
-            if _band_min_visible > _ymax:
-                _band_lo = (_m_arr - _s_arr).min()
-                _band_hi = (_m_arr + _s_arr).max()
-                st.markdown(
-                    f'<div style="background:#fffbeb;border:1px solid #f59e0b;'
-                    f'border-radius:8px;padding:0.8rem 1rem;margin-bottom:0.6rem;'
-                    f'color:#92400e;font-size:0.85rem;line-height:1.55;">'
-                    f'<strong style="color:#92400e;">⚠️ Reactor LCOE off the chart.</strong> '
-                    f'The reactor LCOE band ranges roughly '
-                    f'<strong>${_band_lo:,.0f}-${_band_hi:,.0f}/MWh</strong>, which is above '
-                    f'the chart\'s <strong>${int(_ymax)}/MWh</strong> ceiling, so the curve is '
-                    f'not visible on the plot below. The market benchmarks remain visible for '
-                    f'reference. To bring the curve into the chart, try a higher reactor power, '
-                    f'higher enrichment, longer plant lifetime, or a larger NOAK Unit Number '
-                    f'any of those reduces the LCOE.'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
-
-            st.pyplot(_fig)
-            plt.close(_fig)
-
-            # Market definitions panel (matches the user-provided spec)
-            st.markdown(
-                '<div style="background:#eff6ff;border:1px solid #bfdbfe;'
-                'border-radius:8px;padding:0.85rem 1.1rem;margin-bottom:0.9rem;'
-                'font-size:0.85rem;line-height:1.55;color:#1B4F8C;">'
-                '<div style="font-weight:600;font-size:0.85rem;'
-                'text-transform:uppercase;letter-spacing:0.06em;'
-                'color:#1B4F8C;margin-bottom:0.45rem;">Market definitions</div>'
-                '<ul style="margin:0;padding-left:1.2rem;">'
-                '<li><strong>U.S. Grid Generation:</strong> regional average wholesale price; '
-                'excludes transmission, distribution, and customer charges.</li>'
-                '<li><strong>U.S. Grid Electricity:</strong> state-level average retail '
-                'electricity price, all sectors; excludes Alaska and Hawaii.</li>'
-                '<li><strong>Alaska Railbelt Generation:</strong> wholesale generation cost; '
-                'excludes transmission, distribution, and customer charges.</li>'
-                '<li><strong>Alaska Railbelt Electricity:</strong> retail price including '
-                'generation, transmission, distribution, and adjustments.</li>'
-                '<li><strong>Island &amp; Mining:</strong> all-in diesel- or LNG-based '
-                'electricity cost, including fuel delivery.</li>'
-                '<li><strong>Defense:</strong> remote base electricity cost plus a premium '
-                'for reliability and security.</li>'
-                '<li><strong>Remote Communities:</strong> off-road community diesel '
-                'generation cost.</li>'
-                '</ul>'
-                '</div>',
-                unsafe_allow_html=True,
-            )
-
-        # ─────────────────────────────────────────────────────────
-        # Behind-the-meter / Distributed Generation comparison:
-        # state-by-state retail electricity price vs FOAK / NOAK LCOE
-        # ─────────────────────────────────────────────────────────
-        # EIA "State Electricity Profiles" 2023 annual average
-        # retail price of electricity to ULTIMATE INDUSTRIAL
-        # CUSTOMERS (Industrial sector). This is more representative
-        # of the BTM/BYOG customer types listed below than the all-
-        # sectors average (industrials typically pay 30-50% less than
-        # the all-sectors number, so using the industrial column gives
-        # a more honest competitiveness check). Source:
-        # https://www.eia.gov/electricity/state/ Table 5.6.A,
-        # "Average Retail Price of Electricity to Ultimate Customers
-        # by End-Use Sector Industrial". Values in cents/kWh,
-        # converted to $/MWh by ×10.
-        _STATE_RETAIL_CENTS_PER_KWH_2023 = {
-            'AL': 6.77, 'AK': 18.46, 'AZ': 7.11, 'AR': 6.50,
-            'CA': 18.27, 'CO': 8.10, 'CT': 13.84, 'DE': 8.29,
-            'DC': 8.39, 'FL': 8.97, 'GA': 7.12, 'HI': 33.16,
-            'ID': 7.29, 'IL': 7.64, 'IN': 7.85, 'IA': 6.86,
-            'KS': 8.30, 'KY': 6.27, 'LA': 6.36, 'ME': 11.03,
-            'MD': 8.81, 'MA': 13.28, 'MI': 8.18, 'MN': 8.16,
-            'MS': 6.76, 'MO': 7.40, 'MT': 6.34, 'NE': 8.10,
-            'NV': 7.28, 'NH': 12.59, 'NJ': 11.83, 'NM': 7.39,
-            'NY': 7.34, 'NC': 6.92, 'ND': 8.46, 'OH': 7.13,
-            'OK': 6.40, 'OR': 7.95, 'PA': 7.79, 'RI': 14.13,
-            'SC': 6.86, 'SD': 8.44, 'TN': 6.77, 'TX': 6.97,
-            'UT': 6.80, 'VT': 9.91, 'VA': 7.74, 'WA': 6.10,
-            'WV': 7.54, 'WI': 8.17, 'WY': 6.77,
-        }
-        _STATE_FULL_NAMES = {
-            'AL': 'Alabama', 'AK': 'Alaska', 'AZ': 'Arizona',
-            'AR': 'Arkansas', 'CA': 'California', 'CO': 'Colorado',
-            'CT': 'Connecticut', 'DE': 'Delaware', 'DC': 'D.C.',
-            'FL': 'Florida', 'GA': 'Georgia', 'HI': 'Hawaii',
-            'ID': 'Idaho', 'IL': 'Illinois', 'IN': 'Indiana',
-            'IA': 'Iowa', 'KS': 'Kansas', 'KY': 'Kentucky',
-            'LA': 'Louisiana', 'ME': 'Maine', 'MD': 'Maryland',
-            'MA': 'Massachusetts', 'MI': 'Michigan', 'MN': 'Minnesota',
-            'MS': 'Mississippi', 'MO': 'Missouri', 'MT': 'Montana',
-            'NE': 'Nebraska', 'NV': 'Nevada', 'NH': 'New Hampshire',
-            'NJ': 'New Jersey', 'NM': 'New Mexico', 'NY': 'New York',
-            'NC': 'North Carolina', 'ND': 'North Dakota', 'OH': 'Ohio',
-            'OK': 'Oklahoma', 'OR': 'Oregon', 'PA': 'Pennsylvania',
-            'RI': 'Rhode Island', 'SC': 'South Carolina', 'SD': 'South Dakota',
-            'TN': 'Tennessee', 'TX': 'Texas', 'UT': 'Utah',
-            'VT': 'Vermont', 'VA': 'Virginia', 'WA': 'Washington',
-            'WV': 'West Virginia', 'WI': 'Wisconsin', 'WY': 'Wyoming',
-        }
-
-        st.markdown('<div style="height:1.2rem"></div>', unsafe_allow_html=True)
-        st.markdown(
-            '<div style="font-size:0.85rem;font-weight:600;color:#64748b;text-transform:uppercase;'
-            'letter-spacing:0.09em;margin-bottom:0.6rem;">Behind-the-Meter Comparison: '
-            'Reactor LCOE vs State Retail Electricity Prices</div>',
-            unsafe_allow_html=True,
+    _rows_html = []
+    _rows_html.append(
+        '<tr style="background:#ffffff;">'
+        f'<td style="{_CELL_NAME}">Reactor (core + reflectors + drums)'
+        f'<div style="{_DESC}">{_reactor_desc}</div></td>'
+        f'<td style="{_CELL_C}">{_m1(_reactor_h_cm)}</td>'
+        f'<td style="{_CELL_C}">{_m1(_reactor_dia_cm)}</td>'
+        f'<td style="{_CELL_C}">{_ton_str(_reactor_mass_kg)}</td>'
+        '</tr>'
+    )
+    _rows_html.append(
+        '<tr style="background:#f7f8fa;">'
+        f'<td style="{_CELL_NAME}">Reactor vessel'
+        f'<div style="{_DESC}">{_rv_desc}</div></td>'
+        f'<td style="{_CELL_C}">{_m1(_rv_height_cm)}</td>'
+        f'<td style="{_CELL_C}">{_m1(_rv_dia_cm)}</td>'
+        f'<td style="{_CELL_C}">{_ton_str(_rv_mass_kg)}</td>'
+        '</tr>'
+    )
+    if _has_guard:
+        _rows_html.append(
+            '<tr style="background:#ffffff;">'
+            f'<td style="{_CELL_NAME}">Guard vessel'
+            f'<div style="{_DESC}">{_gv_desc}</div></td>'
+            f'<td style="{_CELL_C}">{_m1(_gv_height_cm)}</td>'
+            f'<td style="{_CELL_C}">{_m1(_gv_dia_cm)}</td>'
+            f'<td style="{_CELL_C}">{_ton_str(_gv_mass_kg)}</td>'
+            '</tr>'
         )
-        st.markdown(
-            '<div style="background:#f7f8fa;border:1px solid #bfdbfe;border-radius:8px;'
-            'padding:0.85rem 1.1rem;margin-bottom:0.9rem;font-size:0.85rem;line-height:1.45;color:#3c4257;">'
-            'For behind-the-meter (BTM) and bring-your-own-generator (BYOG) deployments '
-            'data centers, industrial loads, mining, defense a useful '
-            '<em>first-order</em> cost benchmark is the average retail electricity price '
-            'the customer would otherwise pay. The chart compares the FOAK and NOAK LCOE '
-            '(with one-sigma bands) against the 2023 average retail price for the '
-            '<strong>industrial sector</strong> by state from the U.S. Energy Information '
-            'Administration. States are color-coded by competitiveness:'
-            '<ul style="margin:0.4rem 0 0 1.2rem;">'
-            '<li><span style="color:#15803d;font-weight:600;">Green:</span> retail price '
-            'exceeds the FOAK upper band reactor wins even at FOAK.</li>'
-            '<li><span style="color:#92400e;font-weight:600;">Yellow:</span> retail price '
-            'between NOAK and FOAK bands reactor wins only at NOAK scale.</li>'
-            '<li><span style="color:#64748b;font-weight:600;">Gray:</span> retail price '
-            'below the NOAK band not competitive even at scale.</li>'
-            '</ul>'
-            '<div style="margin-top:0.5rem;font-size:0.85rem;color:#64748b;line-height:1.45;">'
-            '<strong>Caveat:</strong> this is a simplified comparison. Actual avoided cost '
-            'depends on customer sector, demand charges, standby tariffs, time-of-use '
-            'structure, and ancillary value streams. Defense and remote sites often have '
-            'reliability/security premiums; large data centers commonly have direct PPAs '
-            'rather than retail tariffs.'
+    else:
+        _rows_html.append(
+            '<tr style="background:#ffffff;">'
+            f'<td style="{_CELL_NAME};color:#64748b;">Guard vessel'
+            f'<div style="{_DESC}">{_gv_na_desc}</div></td>'
+            f'<td colspan="3" style="{_CELL_C};color:#64748b;">N/A not used for this reactor type</td>'
+            '</tr>'
+        )
+    _rows_html.append(
+        '<tr style="background:#f7f8fa;">'
+        f'<td style="{_CELL_NAME}">RVACS (cooling vessel + intake vessel)'
+        f'<div style="{_DESC}">{_rvacs_desc}</div></td>'
+        f'<td style="{_CELL_C}">{_m1(_rvacs_height_cm)}</td>'
+        f'<td style="{_CELL_C}">{_m1(_rvacs_dia_cm)}</td>'
+        f'<td style="{_CELL_C}">{_ton_str(_rvacs_mass_kg)}</td>'
+        '</tr>'
+    )
+
+    _TH = ('padding:0.55rem 0.8rem;font-size:0.85rem;'
+           'text-transform:uppercase;letter-spacing:0.06em;'
+           'color:#3c4257;font-weight:600;')
+    st.markdown(
+        '<div style="margin-bottom:0.9rem;">'
+        '<table style="width:100%;border-collapse:collapse;'
+        'font-size:0.85rem;background:#ffffff;color:#0a2540;'
+        'border:1px solid #bfdbfe;border-radius:8px;overflow:hidden;">'
+        '<thead style="background:#f1f3f5;">'
+        '<tr>'
+        f'<th style="{_TH};text-align:left;">Component</th>'
+        f'<th style="{_TH};text-align:center;">Height</th>'
+        f'<th style="{_TH};text-align:center;">Diameter</th>'
+        f'<th style="{_TH};text-align:center;">Mass (dry, no coolant)</th>'
+        '</tr></thead><tbody>'
+        + ''.join(_rows_html) +
+        '</tbody></table>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    # ── Notes panel ──
+    # Only items NOT already covered by the per-row descriptions in
+    # the table above: global exclusions (shielding, coolant, support
+    # gear), reactor-specific caveats (GCMR labeling, HPMR not-yet-
+    # modeled parts), and the "Guard vessel N/A" note for reactor
+    # types without a bulk primary coolant.
+    _gcmr_note = (
+        '<li><strong>GCMR labeling:</strong> what is shown as '
+        '"Reactor vessel" here maps to MOUSE\'s internal '
+        '<em>Guard Vessel</em> field, because for the GCMR the '
+        'outer pressure shell is the RPV, not the inner core '
+        'barrel.</li>'
+        if reactor_type == 'GCMR' else ''
+    )
+    _hpmr_note = (
+        '<li><strong>HPMR not-yet-modeled:</strong> heat-pipe '
+        'steel cladding and the Na working fluid are not currently '
+        'tracked in MOUSE.</li>'
+        if reactor_type == 'HPMR' else ''
+    )
+    _gv_na_note = (
+        ''
+        if _has_guard else
+        '<li><strong>Guard vessel intentionally omitted:</strong> '
+        'helium is inert (GCMR) and each heat pipe is individually '
+        'sealed (HPMR), so neither has a bulk primary coolant '
+        'requiring secondary containment.</li>'
+    )
+    st.markdown(
+        '<div style="background:#eff6ff;border:1px solid #bfdbfe;'
+        'border-radius:8px;padding:0.85rem 1.1rem;margin-bottom:0.9rem;'
+        'font-size:0.85rem;line-height:1.55;color:#1B4F8C;">'
+        '<div style="font-weight:600;font-size:0.85rem;'
+        'text-transform:uppercase;letter-spacing:0.06em;'
+        'color:#1B4F8C;margin-bottom:0.45rem;">Notes &amp; assumptions</div>'
+        '<ul style="margin:0;padding-left:1.2rem;color:#1B4F8C;">'
+        '<li><strong>Shielding excluded:</strong> in-vessel '
+        'shielding (B<sub>4</sub>C) and out-of-vessel shielding '
+        '(WEP / concrete biological shield) are not included. '
+        'Shielding adds significant mass and outer dimension to '
+        'the as-shipped or as-installed module depending on '
+        'whether it ships with the reactor or is built on site.</li>'
+        '<li><strong>Coolant excluded:</strong> primary coolant '
+        'inventory (NaK for LTMR, He for GCMR, heat-pipe Na for '
+        'HPMR) is not included in the dry-mass column.</li>'
+        '<li><strong>Support gear excluded:</strong> support skirt, '
+        'lifting lugs, transport frame, control-rod drives, and any '
+        'auxiliary piping outside the four nested vessels.</li>'
+        '<li><strong>Fuel-pin cladding:</strong> not separately '
+        'tracked in MOUSE (small relative to fuel and structural '
+        'masses).</li>'
+        + _gcmr_note
+        + _hpmr_note
+        + _gv_na_note +
+        '</ul>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    # ── Transport-mode subsection header ──────────────────────
+    st.markdown(
+        '<div style="font-size:1rem;font-weight:700;color:#0a2540;'
+        'border-left:4px solid #0a2540;padding:0.4rem 0 0.4rem 0.75rem;'
+        'margin:1.25rem 0 0.85rem 0;">Transport-Mode Compatibility</div>',
+        unsafe_allow_html=True,
+    )
+
+    # Caveat panel: the fit-check is a scoping geometry/mass test
+    # against generic shipping envelopes; it does NOT model the
+    # real constraints that govern actual nuclear shipments.
+    st.markdown(
+        '<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;'
+        'padding:0.85rem 1.1rem;margin-bottom:0.9rem;'
+        'font-size:0.85rem;line-height:1.45;color:#92400e;">'
+        '<strong>Caveat:</strong> this is a scoping geometry/mass check '
+        'against generic shipping envelopes. Real nuclear shipments use '
+        'specialised <strong>Type B / HAC casks</strong> '
+        '(thick-walled radiation-shielding containers required by '
+        'regulation, much heavier than the bare reactor module), almost '
+        'always require heavy-haul permits above ~36 t '
+        '<strong>GVW</strong> (Gross Vehicle Weight = truck + trailer '
+        '+ cargo combined), and are constrained by route-specific '
+        'factors not modelled here (bridge ratings, axle loads, turning '
+        'radius, road / track class, route engineering). Treat '
+        '<strong>&#x2713; module fits</strong> as "geometry could '
+        'conceivably fit," not "this can ship without engineering '
+        'work."'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    # ── "How to read this" panel ──
+    # Plain-English primer on what the cards below actually check, so
+    # non-specialist readers don't have to reverse-engineer the
+    # comparison from the badge labels.
+    st.markdown(
+        '<div style="background:#f7f8fa;border:1px solid #bfdbfe;border-radius:8px;'
+        'padding:0.85rem 1.1rem;margin-bottom:0.9rem;'
+        'font-size:0.85rem;line-height:1.45;color:#3c4257;">'
+        '<strong>How to read this:</strong> the three columns below '
+        '(Road, Rail, Sea) each list standard shipping limits used in '
+        'that mode. Each card compares your reactor module\'s outer '
+        'dimensions and mass to one limit. A green <strong>&#x2713; '
+        'module fits</strong> means the geometry could fit; a red '
+        '<strong>&#x2717; module exceeds</strong> tells you which '
+        'dimension is the problem (width, height, length, or weight). '
+        'Boxes labelled "ISO container" check whether the module fits '
+        'inside a standard shipping container; boxes labelled "AAR '
+        'Plate F" or "no-permit" check whether it fits a mode-specific '
+        'regulatory limit.'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    # ── Transport-mode envelope limits ──
+    # Organised by mode (Road / Rail / Sea), each column listing
+    # the envelopes that apply to that mode. ISO containers appear
+    # under all three modes (they're multimodal); AAR Plate F is
+    # rail-only; US road no-permit is truck-only. Project-specific
+    # heavy options (Schnabel rail, breakbulk sea) get a closing
+    # note per mode rather than a fit-check.
+    # Each envelope carries:
+    # - `gross_t`: the number SHOWN to the user (container structural
+    #   rating for ISOs, Gross Vehicle Weight for US road).
+    # - `payload_t`: what the fit-check actually compares against
+    #   (container gross − tare for ISOs; GVW − tractor+trailer tare
+    #   for US road). This is the realistic cargo mass available.
+    # - `height_note`: optional small qualifier shown after the
+    #   height number (e.g. "(route-dep.)" for state-set limits).
+    _envelopes = {
+        'iso20': {
+            'name': 'ISO 20-ft container',
+            'width_m': 2.35,   # internal
+            'height_m': 2.39,  # internal
+            'length_m': 5.90,  # internal
+            'gross_t': 24.0,   # typical practical operating limit
+            'payload_t': 21.7, # gross 24.0 − tare ~2.3 t
+            'help_text': (
+                'Standard 20-ft general-purpose shipping container. '
+                'Numbers shown are the INTERNAL envelope the cargo '
+                'must fit within and the GROSS-mass operating limit. '
+                'ISO 668:2020 allows up to 30.48 t structural rating, '
+                'but ~24 t is the typical practical limit for 20-ft '
+                'containers (older units rated lower; road haulage '
+                'and many sea routes cap at this value). The '
+                'fit-check internally subtracts ~2.3 t of container '
+                'tare to estimate cargo payload (~21.7 t). Multimodal: '
+                'same container moves on truck chassis, rail '
+                'intermodal well-cars, and container ships.'
+            ),
+            'cite_html': (
+                '<a href="https://www.iso.org/standard/76912.html" '
+                'target="_blank" style="color:#1B4F8C;">ISO 668:2020</a> '
+                'rates 1CC containers up to 30.48 t structurally; '
+                '~24 t is the typical operational gross-mass cap '
+                'still in widespread use.'
+            ),
+            # Trucking-specific note shown ONLY under the Road mode group.
+            'road_note_html': (
+                '<strong>Typical operational payload in US trucking:</strong> '
+                '~21&ndash;22 t (gross 24 t minus ~2.3 t container tare).'
+            ),
+            # Rail-specific intermodal weight context.
+            'rail_note_html': (
+                '<strong>On rail intermodal:</strong> the container\'s '
+                '24 t gross is the binding weight constraint railcars '
+                'can carry much more (~100+ t payload per car).'
+            ),
+            # Sea-specific framing context.
+            'sea_note_html': (
+                'Badge reflects fit inside an ISO container, not '
+                'vessel capability. If the module exceeds ISO limits, '
+                'breakbulk or heavy-lift sea shipping remains '
+                'available (see note below).'
+            ),
+        },
+        'iso40': {
+            'name': 'ISO 40-ft container',
+            'width_m': 2.35,
+            'height_m': 2.39,
+            'length_m': 12.03,
+            'gross_t': 30.48,
+            'payload_t': 26.78, # gross 30.48 − tare ~3.7 t
+            'help_text': (
+                'Standard 40-ft general-purpose container. Same '
+                'internal width and height as the 20-ft, roughly '
+                'double the length. Gross-mass cap 30.48 t per '
+                'ISO 668:2020 is both the structural rating and the '
+                'typical operating limit. Fit-check subtracts ~3.7 t '
+                'of container tare to estimate cargo payload (~26.8 t). '
+                'In US trucking the cap is further reduced in practice '
+                'by the 80,000 lb (~36.3 t) federal Gross Vehicle '
+                'Weight law: ~30 t cargo + ~17 t tractor+trailer tare '
+                'exceeds 80,000 lb, so the loaded 40-ft container '
+                'can\'t legally ride a standard truck at full ISO '
+                'mass without an overweight permit.'
+            ),
+            'cite_html': (
+                '<a href="https://www.iso.org/standard/76912.html" '
+                'target="_blank" style="color:#1B4F8C;">ISO 668:2020</a>, '
+                'Table 1 (40-ft 1AA).'
+            ),
+            'road_note_html': (
+                '<strong>Typical operational payload in US trucking:</strong> '
+                '~26&ndash;28 t (gross 30.48 t minus ~3.7 t tare; further '
+                'capped in practice by the US 80,000 lb GVW law).'
+            ),
+            'rail_note_html': (
+                '<strong>On rail intermodal:</strong> the container\'s '
+                '30.48 t gross is the binding weight constraint '
+                'railcars can carry much more (~100+ t payload per car).'
+            ),
+            'sea_note_html': (
+                'Badge reflects fit inside an ISO container, not '
+                'vessel capability. If the module exceeds ISO limits, '
+                'breakbulk or heavy-lift sea shipping remains '
+                'available (see note below).'
+            ),
+        },
+        'iso40hc': {
+            'name': 'ISO 40-ft High-Cube',
+            'width_m': 2.35,
+            'height_m': 2.70,
+            'length_m': 12.03,
+            'gross_t': 30.48,
+            'payload_t': 26.58, # gross 30.48 − tare ~3.9 t
+            'help_text': (
+                '40-ft container ~30 cm (1 ft) taller than the '
+                'standard 40-ft: external 2.90 m, internal 2.70 m. '
+                'The most common pick when vertical clearance is '
+                'binding. Same 30.48 t gross-mass rating as standard '
+                '40-ft; fit-check subtracts ~3.9 t of container tare '
+                'for payload (~26.6 t). Same US trucking caveat as '
+                'standard 40-ft: 80,000 lb GVW law caps real-world '
+                'load below the ISO max.'
+            ),
+            'cite_html': (
+                '<a href="https://www.iso.org/standard/76912.html" '
+                'target="_blank" style="color:#1B4F8C;">ISO 668:2020</a> '
+                '(1AAA / High-Cube).'
+            ),
+            # Two road-specific notes combined into one block since both
+            # only apply when rendered under "Road".
+            'road_note_html': (
+                '<strong>Typical operational payload in US trucking:</strong> '
+                '~26&ndash;27 t (gross 30.48 t minus ~3.9 t tare; further '
+                'capped by the US 80,000 lb GVW law).<br>'
+                '<strong>Height-sensitive on road:</strong> external '
+                '2.90 m + truck chassis deck ~1.2 m &approx; 4.10 m total '
+                'right at the 4.11 m US no-permit clearance limit. '
+                'Sensitive to chassis selection.'
+            ),
+            'rail_note_html': (
+                '<strong>On rail intermodal:</strong> the container\'s '
+                '30.48 t gross is the binding weight constraint '
+                'railcars can carry much more (~100+ t payload per car).'
+            ),
+            'sea_note_html': (
+                'Badge reflects fit inside an ISO container, not '
+                'vessel capability. If the module exceeds ISO limits, '
+                'breakbulk or heavy-lift sea shipping remains '
+                'available (see note below).'
+            ),
+        },
+        'us_no_permit': {
+            'name': 'US road no-permit (open / oversized)',
+            'width_m': 2.59,
+            'height_m': 4.11,
+            'height_note': '(planning)',
+            'length_m': None,
+            # GVW shown for context but NOT used as a cargo-mass cap
+            # the 80,000 lb envelope doesn't govern reactor-scale loads
+            # (those go through state overweight permits + heavy-haul
+            # configurations where axle load and Bridge Formula B
+            # constraints dominate). Setting payload_t = None makes the
+            # weight fit-check skip; the badge then reflects only width
+            # and height.
+            'gross_t': 36.3,
+            'gross_note': '(GVW, total vehicle)',
+            'payload_t': None,
+            'help_text': (
+                'BASELINE federal Interstate legal envelope heavy '
+                'industrial cargo (including reactor modules) routinely '
+                'exceeds it and ships under state overweight permits '
+                'with multi-axle heavy-haul configurations. '
+                'WIDTH 2.59 m (8.5 ft) is the hard federal limit per '
+                'the Bridge Formula. '
+                'HEIGHT 4.11 m (13.5 ft) is a common state clearance '
+                'limit and a planning value, NOT a legal guarantee '
+                '(older bridges and tunnels can be lower; heavy-haul '
+                'planners treat this as planning max). '
+                'WEIGHT 36.3 t (80,000 lb) is GROSS VEHICLE WEIGHT '
+                '(truck + trailer + fuel + cargo COMBINED), NOT a '
+                'cargo cap. The fit-check evaluates width and height '
+                'only; weight is not meaningfully bounded by this '
+                'envelope for reactor-scale modules.'
+            ),
+            'cite_html': (
+                '<a href="https://www.law.cornell.edu/uscode/text/23/127" '
+                'target="_blank" style="color:#1B4F8C;">23 U.S.C. '
+                '§ 127</a> (Interstate size/weight limits; state '
+                'enforcement applies). '
+                '<a href="https://ops.fhwa.dot.gov/freight/sw/overview/index.htm" '
+                'target="_blank" style="color:#1B4F8C;">FHWA size '
+                'regulations</a>.'
+            ),
+            'note_html': (
+                'Effective cargo limit is not meaningful under the '
+                '80,000 lb envelope for reactor-scale loads; such '
+                'modules typically require overweight permits and '
+                'multi-axle heavy-haul trailers where axle load and '
+                'Bridge Formula B constraints govern rather than '
+                'gross tare subtraction.'
+            ),
+        },
+        'aar_plate_f': {
+            'name': 'AAR Plate F rail loading gauge',
+            'width_m': 3.25,
+            'height_m': 5.18,
+            'height_note': '(above rail)',
+            'length_m': None,
+            'gross_t': None,
+            'payload_t': None,
+            'help_text': (
+                'For cargo that does not fit inside a standard '
+                'container, ship on an open rail flatcar. AAR Plate F '
+                'is the standard high-clearance loading envelope used '
+                'by US/Canadian railroads for oversized industrial '
+                'cargo. Important framing: Plate F is a PROFILE-BASED '
+                'clearance envelope (a stepped silhouette above the '
+                'rail), NOT a fixed 3.25 × 5.18 m rectangle. The '
+                '3.25 m width applies at the lower part of the '
+                'envelope only; allowable width narrows as height '
+                'increases. The 5.18 m height includes the flatcar '
+                'deck (~1.0-1.3 m), so usable cargo height above the '
+                'deck is closer to ~4 m. The fit-check here treats '
+                'Plate F as a flat rectangle for simplicity and is '
+                'therefore optimistic for tall and/or wide-near-the-'
+                'top cargo proper clearance verification requires '
+                'the AAR profile curve. No fixed weight cap '
+                'geometrically; per-route limits (typically 100-150 t '
+                'payload, sometimes higher) depend on track class '
+                'and bridge ratings.'
+            ),
+            'cite_html': (
+                'AAR Manual of Standards &amp; Recommended Practices '
+                '(MSRP), §C-II clearance diagrams. Free reference: '
+                '<a href="https://en.wikipedia.org/wiki/Loading_gauge#North_American_loading_gauges" '
+                'target="_blank" style="color:#1B4F8C;">North American '
+                'loading gauges</a>.'
+            ),
+            'note_html': (
+                '<strong>Profile-based envelope, not a fixed box:</strong> '
+                'allowable width narrows as height increases. The '
+                'rectangular fit-check shown here is an approximation.'
+            ),
+        },
+    }
+
+    _mode_groups = [
+        {
+            'name': 'Road',
+            'envelope_keys': ['iso20', 'iso40', 'iso40hc', 'us_no_permit'],
+            'closing_note': (
+                'Loads beyond these envelopes ship by road using '
+                'oversize/overweight state permits, escort vehicles, '
+                'route surveys, and multi-axle heavy-haul configurations. '
+                'The governing constraint in practice is often <strong>'
+                'axle-load distribution and Bridge Formula B compliance'
+                '</strong> (the federal law &mdash; 23 USC § 127 &mdash; '
+                'that sets how much weight a truck can carry as a '
+                'function of axle spacing), and bridge-specific load '
+                'ratings, rather than total gross vehicle weight or '
+                'container dimensions. For nuclear-class payloads in '
+                'Type B / HAC casks, ISO container limits are largely '
+                'irrelevant since the cask itself is the transport '
+                'package the binding constraints become axle load '
+                '→ GVW → height → width, in that order.'
+            ),
+        },
+        {
+            'name': 'Rail',
+            'envelope_keys': ['iso20', 'iso40', 'iso40hc', 'aar_plate_f'],
+            'closing_note': (
+                '"Intermodal" above means: one container that moves '
+                'between truck chassis, rail well-cars, and ship '
+                'without unpacking. "Plate F" is the standard rail '
+                'clearance silhouette used by US/Canadian railroads '
+                'for non-containerised oversized cargo. '
+                '<br><br>'
+                'For modules too big for either, heavy specialised '
+                'rail (e.g. <strong>Schnabel-type cars</strong>, '
+                '~300-500+ t capability) is <strong>geometry-adaptive'
+                '</strong>: the load becomes part of the car '
+                'structure, articulating around curves with the '
+                'railcar ends, so geometry and clearance are steered '
+                'per-shipment. Multi-car modular consists handle '
+                'larger modules similarly. All such options are '
+                'project-specific, with constraints set by bridge '
+                'loading, curve radius, and clearance profiles per '
+                'route rather than ISO container geometry.'
+            ),
+        },
+        {
+            'name': 'Sea',
+            'envelope_keys': ['iso20', 'iso40', 'iso40hc'],
+            'closing_note': (
+                'Sea transport has THREE regimes; the cards above '
+                'cover only <strong>(1) containerised</strong> '
+                'shipping (ISO 20/40/HC). Beyond ISO containers, two '
+                'further regimes apply: '
+                '<strong>(2) breakbulk</strong> crated cargo loaded '
+                'individually into general-cargo or multi-purpose '
+                'vessels, used for modules larger than standard '
+                'containers; and '
+                '<strong>(3) heavy-lift / project / Ro-Ro</strong> '
+                'specialised vessels with single-lift capability of '
+                'several hundred to 1000+ tons, and Ro-Ro '
+                '(Roll-on/Roll-off) for self-propelled or wheeled '
+                'cargo. All non-container options are project-'
+                'specific vessel selection, port crane capacity, '
+                'lashing engineering, and routing are engineered '
+                'per shipment.'
+            ),
+        },
+    ]
+
+    # Reactor envelope + total mass used by every fit-check.
+    _rvacs_dia_m = _rvacs_dia_cm / 100.0
+    _rvacs_h_m = _rvacs_height_cm / 100.0
+    _badge_total_kg = (_reactor_mass_kg + _rv_mass_kg
+                       + _gv_mass_kg + _rvacs_mass_kg)
+    _badge_total_t = _badge_total_kg / 1000.0
+
+    def _render_envelope_card(env, mode_name=''):
+        # Fit-check uses payload_t (realistic cargo capacity) for the
+        # weight comparison; the displayed number is gross_t (standard
+        # rating for ISOs, GVW for US road). When payload_t is None
+        # the weight fit-check is SKIPPED and the badge reflects
+        # only width/height/length (e.g. US road no-permit, AAR Plate F).
+        _w_ok = _rvacs_dia_m <= env['width_m']
+        _h_ok = _rvacs_h_m <= env['height_m']
+        _len_ok = (env['length_m'] is None) or (_rvacs_h_m <= env['length_m'])
+        _wt_ok = (env.get('payload_t') is None) or (_badge_total_t <= env['payload_t'])
+        _fits = _w_ok and _h_ok and _len_ok and _wt_ok
+        _bc = ('#15803d', '#dcfce7', '#bbf7d0') if _fits else ('#b91c1c', '#fee2e2', '#fecaca')
+        if _fits:
+            _badge_text = '✓ module fits'
+        else:
+            _fails = []
+            if not _w_ok:   _fails.append('width')
+            if not _h_ok:   _fails.append('height')
+            if not _len_ok: _fails.append('length')
+            if not _wt_ok:  _fails.append('weight')
+            _badge_text = '✗ module exceeds ' + ' + '.join(_fails)
+        _height_note = env.get('height_note', '')
+        _height_note_str = f' <span style="color:#64748b;">{_height_note}</span>' if _height_note else ''
+        _gross_note = env.get('gross_note', '')
+        _gross_note_str = f' <span style="color:#64748b;">{_gross_note}</span>' if _gross_note else ''
+        _len_str = (f' &nbsp;|&nbsp; len ≤ {env["length_m"]:.2f} m'
+                    if env['length_m'] is not None else '')
+        _wt_str = (f' &nbsp;|&nbsp; gross ≤ {env["gross_t"]:.2f} t{_gross_note_str}'
+                   if env.get('gross_t') is not None else
+                   ' &nbsp;|&nbsp; wt: route-dep.')
+        # Mode-specific extra note (e.g. road_note_html on HC) is
+        # appended after the regular note_html. Only shown when this
+        # envelope is rendered under the matching mode group.
+        _mode_key = (mode_name or '').lower() + '_note_html'
+        _mode_note = env.get(_mode_key, '')
+        return (
+            '<div style="background:#ffffff;border:1px solid #bfdbfe;'
+            'border-radius:8px;padding:0.7rem 0.85rem;margin-bottom:0.6rem;'
+            'color:#0a2540;">'
+            '<div style="display:flex;justify-content:space-between;'
+            'align-items:center;gap:0.5rem;margin-bottom:0.3rem;">'
+            f'<div style="font-weight:600;font-size:0.85rem;color:#0a2540;">'
+            f'{env["name"]}{_help_icon(env["help_text"])}'
+            f'</div>'
+            f'<div style="background:{_bc[1]};border:1px solid {_bc[2]};'
+            f'color:{_bc[0]};font-size:0.85rem;font-weight:600;'
+            f'padding:0.15rem 0.5rem;border-radius:8px;flex-shrink:0;">'
+            f'{_badge_text}</div>'
             '</div>'
-            '</div>',
-            unsafe_allow_html=True,
+            f'<div style="font-size:0.85rem;color:#3c4257;margin-bottom:0.25rem;">'
+            f'w ≤ {env["width_m"]:.2f} m &nbsp;|&nbsp; '
+            f'h ≤ {env["height_m"]:.2f} m{_height_note_str}{_len_str}{_wt_str}'
+            f'</div>'
+            + (f'<div style="font-size:0.85rem;color:#3c4257;line-height:1.4;'
+               f'margin-bottom:0.25rem;">{env["note_html"]}</div>'
+               if env.get('note_html') else '')
+            + (f'<div style="font-size:0.85rem;color:#3c4257;line-height:1.4;'
+               f'margin-bottom:0.25rem;">{_mode_note}</div>'
+               if _mode_note else '')
+            + f'<div style="font-size:0.85rem;color:#64748b;line-height:1.4;">'
+              f'{env["cite_html"]}</div>'
+            + '</div>'
         )
 
-        try:
-            _foak_m_btm = float(lcoe_f)
-            _noak_m_btm = float(lcoe_n)
-            _foak_s_btm = float(lcoe_f_std) if lcoe_f_std == lcoe_f_std else 0.0
-            _noak_s_btm = float(lcoe_n_std) if lcoe_n_std == lcoe_n_std else 0.0
-        except (TypeError, ValueError):
-            _foak_m_btm = _noak_m_btm = float('nan')
-            _foak_s_btm = _noak_s_btm = 0.0
-
-        if (_foak_m_btm == _foak_m_btm and _noak_m_btm == _noak_m_btm):
-            # Convert cents/kWh -> $/MWh (multiply by 10) and sort
-            # descending (highest-priced states at the top).
-            _state_prices = {s: c * 10.0 for s, c
-                             in _STATE_RETAIL_CENTS_PER_KWH_2023.items()}
-            _sorted = sorted(_state_prices.items(),
-                             key=lambda kv: kv[1], reverse=True)
-            _state_codes = [s for s, _ in _sorted]
-            _state_vals = [v for _, v in _sorted]
-
-            # Competitiveness thresholds: use the LOWER edge of each
-            # uncertainty band so any state whose retail price falls
-            # inside the FOAK or NOAK band counts as competitive.
-            # - State price >= FOAK_low -> green (potentially wins
-            # even at FOAK; price intersects or exceeds the FOAK
-            # band)
-            # - State price >= NOAK_low -> yellow (potentially wins
-            # at NOAK; price intersects or exceeds the NOAK band)
-            # - State price < NOAK_low -> gray (clearly loses)
-            _foak_low = _foak_m_btm - _foak_s_btm
-            _noak_low = _noak_m_btm - _noak_s_btm
-
-            # Per-state classification + bar colors
-            _GREEN = '#16a34a'
-            _YELLOW = '#d97706'
-            _GRAY = '#94a3b8'
-            _bar_colors = []
-            _foak_winners, _noak_winners = [], []
-            for s, v in _sorted:
-                if v >= _foak_low:
-                    _bar_colors.append(_GREEN)
-                    _foak_winners.append(s)
-                    _noak_winners.append(s)
-                elif v >= _noak_low:
-                    _bar_colors.append(_YELLOW)
-                    _noak_winners.append(s)
-                else:
-                    _bar_colors.append(_GRAY)
-
-            # Vertical column chart: states on X, price on Y. Each
-            # column carries the state's 2-letter code rotated 90°,
-            # rendered in white bold so it's legible on every column
-            # color (green / yellow / gray).
-            _fig_btm, _ax_btm = plt.subplots(figsize=(15, 6.5))
-            _x = np.arange(len(_state_codes))
-            _bars = _ax_btm.bar(_x, _state_vals, color=_bar_colors,
-                                edgecolor='white', linewidth=0.6, width=0.86)
-
-            # Horizontal reference bands for FOAK and NOAK LCOE (±1σ).
-            _ax_btm.axhspan(_foak_m_btm - _foak_s_btm,
-                            _foak_m_btm + _foak_s_btm,
-                            color='#dc2626', alpha=0.16, zorder=0)
-            _ax_btm.axhline(_foak_m_btm, color='#dc2626',
-                            linewidth=1.8, linestyle='--', zorder=2,
-                            label=f'FOAK LCOE ${_foak_m_btm:.0f}/MWh')
-            _ax_btm.axhspan(_noak_m_btm - _noak_s_btm,
-                            _noak_m_btm + _noak_s_btm,
-                            color='#1d4ed8', alpha=0.16, zorder=0)
-            _ax_btm.axhline(_noak_m_btm, color='#1d4ed8',
-                            linewidth=1.8, linestyle='--', zorder=2,
-                            label=f'NOAK LCOE ${_noak_m_btm:.0f}/MWh')
-
-            # Y-axis must accommodate the FOAK and NOAK reference
-            # bands even when they exceed the highest state retail
-            # price (e.g. high-power FOAK at $800+/MWh against a
-            # max state of ~$330/MWh). Use the larger of (max state
-            # price, FOAK upper band) as the basis.
-            _band_top_btm = max(
-                _foak_m_btm + _foak_s_btm,
-                _noak_m_btm + _noak_s_btm,
-                max(_state_vals),
-            )
-            _ymax_chart = _band_top_btm * 1.18
-
-            # Place full state name vertically OVERLAPPING each
-            # column. Anchor just above the x-axis (small positive
-            # offset so the label doesn't collide with the baseline)
-            # and extend UPWARD with rotation=90 / va='bottom' so the
-            # name reads bottom-to-top. Each label gets a dark-blue
-            # rounded-rectangle bbox with WHITE bold text much
-            # higher contrast than the previous dark-on-light-with-
-            # halo approach. Long names ("Massachusetts", "North
-            # Carolina") that exceed the column top extend into the
-            # white plot background; the blue pill keeps them
-            # crisply legible there too.
-            _baseline_offset = _ymax_chart * 0.015
-            _label_bbox = dict(
-                facecolor='#1e3a8a', # deep navy blue
-                edgecolor='none',
-                pad=2.2,
-                boxstyle='round,pad=0.18',
-            )
-            for _i, (_code, _val) in enumerate(zip(_state_codes, _state_vals)):
-                _full_name = _STATE_FULL_NAMES.get(_code, _code)
-                _ax_btm.text(
-                    _i, _baseline_offset, _full_name,
-                    rotation=90, ha='center', va='bottom',
-                    fontsize=10.5, fontweight='bold',
-                    color='white',
-                    bbox=_label_bbox,
-                    zorder=4,
-                )
-
-            _ax_btm.set_xticks([]) # state names are on the columns themselves
-            _ax_btm.set_xlim(-0.7, len(_state_codes) - 0.3)
-            _ax_btm.set_ylim(0, _ymax_chart)
-            _ax_btm.set_ylabel('Average retail price ($/MWh) EIA 2023, industrial sector',
-                               fontsize=11, fontweight='bold')
-            _ax_btm.set_xlabel('U.S. States and DC (sorted by retail price, high → low)',
-                               fontsize=11, fontweight='bold')
-            _ax_btm.grid(True, axis='y', alpha=0.3, linestyle='--', linewidth=0.5)
-            _ax_btm.set_axisbelow(True)
-            _ax_btm.set_facecolor('white')
-            _fig_btm.patch.set_facecolor('white')
-            _ax_btm.legend(loc='upper right', fontsize=10, framealpha=0.95,
-                           edgecolor='grey')
-            _fig_btm.tight_layout()
-            st.pyplot(_fig_btm)
-            plt.close(_fig_btm)
-
-            # Summary line + competitive-states lists
-            _summary_html = (
-                f'Of <strong>{len(_sorted)}</strong> jurisdictions, the reactor beats '
-                f'the average retail price in <strong style="color:#15803d;">'
-                f'{len(_foak_winners)}</strong> at FOAK (red band) and '
-                f'<strong style="color:#92400e;">{len(_noak_winners)}</strong> at NOAK '
-                f'(blue band).'
-            )
-            _foak_list_html = (', '.join(_foak_winners) if _foak_winners
-                               else '<em>none</em>')
-            _noak_only = [s for s in _noak_winners if s not in _foak_winners]
-            _noak_only_html = (', '.join(_noak_only) if _noak_only
-                               else '<em>none</em>')
-
+    # Three columns: Road / Rail / Sea. Each column gets a small
+    # uppercase mode-group label followed by the envelope cards and
+    # a project-specific closing note for that mode.
+    _mode_cols = st.columns(3, gap='medium')
+    for _col, _group in zip(_mode_cols, _mode_groups):
+        with _col:
             st.markdown(
-                f'<div style="background:#f7f8fa;border:1px solid #bfdbfe;'
-                f'border-radius:8px;padding:0.85rem 1.1rem;margin-bottom:0.9rem;'
-                f'font-size:0.85rem;line-height:1.55;color:#3c4257;">'
-                f'{_summary_html}'
-                f'<div style="margin-top:0.55rem;">'
-                f'<span style="display:inline-block;width:0.85rem;height:0.85rem;'
-                f'background:{_GREEN};border-radius:3px;margin-right:0.35rem;'
-                f'vertical-align:middle;"></span>'
-                f'<strong>FOAK-competitive ({len(_foak_winners)}):</strong> '
-                f'{_foak_list_html}'
-                f'</div>'
-                f'<div style="margin-top:0.35rem;">'
-                f'<span style="display:inline-block;width:0.85rem;height:0.85rem;'
-                f'background:{_YELLOW};border-radius:3px;margin-right:0.35rem;'
-                f'vertical-align:middle;"></span>'
-                f'<strong>NOAK-only competitive ({len(_noak_only)}):</strong> '
-                f'{_noak_only_html}'
-                f'</div>'
-                f'<div style="margin-top:0.55rem;font-size:0.85rem;color:#64748b;">'
-                f'Source: U.S. EIA, <em>State Electricity Profiles</em>, 2023 annual '
-                f'average retail price to ultimate customers industrial sector. '
-                f'<a href="https://www.eia.gov/electricity/state/" target="_blank" '
-                f'style="color:#1B4F8C;">eia.gov/electricity/state</a>'
-                f'</div>'
-                f'</div>',
+                f'<div style="font-size:0.85rem;font-weight:600;'
+                f'color:#64748b;text-transform:uppercase;'
+                f'letter-spacing:0.09em;margin-bottom:0.6rem;">'
+                f'{_group["name"]}</div>',
                 unsafe_allow_html=True,
             )
+            _cards_html = ''.join(
+                _render_envelope_card(_envelopes[k], mode_name=_group['name'])
+                for k in _group['envelope_keys']
+            )
+            st.markdown(_cards_html, unsafe_allow_html=True)
+            st.markdown(
+                '<div style="background:#f7f8fa;border:1px solid #bfdbfe;'
+                'border-radius:8px;padding:0.7rem 0.85rem;margin-bottom:0.9rem;'
+                'font-size:0.85rem;line-height:1.45;color:#3c4257;">'
+                f'<strong>Beyond the envelopes above:</strong> '
+                f'{_group["closing_note"]}'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+
+    # Footnote — what each badge does and doesn't check.
+    st.markdown(
+        '<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;'
+        'padding:0.85rem 1.1rem;margin-bottom:1rem;font-size:0.85rem;line-height:1.45;color:#92400e;">'
+        '<strong>Note:</strong> each badge compares the outermost RVACS '
+        'envelope (diameter, height) and the sum of all component masses '
+        'against the listed envelope. Per-component dimensions and masses '
+        'are shown in the table above.'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    # Cost hero (Capital + Levelized cards + FOAK/NOAK legend)
+    # was here; moved up into info_col under the k_eff plot as
+    # part of the Band 1 layout.
 
     # ═══════════════════════════════════════════════════════════════
     # TAB 2 PHYSICS & THERMAL
@@ -4042,398 +4426,957 @@ with streamlit_analytics.track():
     # thermal-hydraulic conditions at a glance (Section 6 Transportability
     # is rendered in the Design & Economics tab.)
     # ═══════════════════════════════════════════════════════════════
-    with tab_physics:
-        # Section 4 Neutronics
+    # ═══════════════════════════════════════════════════════════
+    # BAND 3 Microreactor Design & Performance Metrics
+    # 3 columns: Neutronics · Thermal-Hydraulics · Fuel cycle.
+    # ═══════════════════════════════════════════════════════════
+    _section_header(
+        '03',
+        'Microreactor Scoping Metrics',
+        'How does the design perform across neutronics, thermal-hydraulics, '
+        'and fuel cycle?',
+    )
+
+    # Helper: render a stacked subsection with a header, optional
+    # scoping-caveat popover, and the queued cards in a 2-column grid.
+    def _render_metric_subsection(title, section_num, caveat_md=None,
+                                  empty_msg=None, top_margin='0'):
         st.markdown(
-            '<div style="font-size:1rem;font-weight:700;color:#1B4F8C;'
-            'border-left:4px solid #1B4F8C;padding:0.4rem 0 0.4rem 0.75rem;'
-            'margin:0.5rem 0 0.85rem 0;">'
-            'Core neutronics at glance</div>',
+            f'<div style="font-size:1rem;font-weight:700;color:#0a2540;'
+            f'border-left:4px solid #0a2540;padding:0.4rem 0 0.4rem 0.75rem;'
+            f'margin:{top_margin} 0 0.6rem 0;">'
+            f'{title}</div>',
             unsafe_allow_html=True,
         )
-        st.markdown(
-            '<div style="background:#fffbeb;border:1.5px solid #f59e0b;'
-            'border-radius:8px;padding:0.95rem 1.15rem;margin-bottom:1rem;'
-            'font-size:0.85rem;line-height:1.55;color:#92400e;">'
-            '<strong style="color:#92400e;">Scoping-only note. </strong>'
+        if caveat_md is not None:
+            with st.popover('⚠ Scoping caveat', use_container_width=False):
+                st.markdown(caveat_md)
+        cards = _section_cards.get(section_num, [])
+        if not cards:
+            st.info(empty_msg or 'No metrics available for this case.')
+            return
+        # Cards split alternately between the left and right columns
+        # so reading order goes top-left → top-right → next row → …
+        _left, _right = st.columns(2, gap='medium')
+        for i, _h in enumerate(cards):
+            target = _left if i % 2 == 0 else _right
+            with target:
+                st.markdown(_h, unsafe_allow_html=True)
+
+    _render_metric_subsection(
+        'Neutronics',
+        section_num=4,
+        caveat_md=(
             'These are first-pass scoping designs for initial economic '
-            'analysis. They have NOT been checked for shutdown margin, '
-            'reactivity coefficients, kinetics, control-drum worth, or '
-            'transient response. The k_eff, peaking factor, and leakage '
-            'values shown below are sufficient to size the fuel cycle '
+            'analysis. They have **NOT** been checked for shutdown '
+            'margin, reactivity coefficients, kinetics, control-drum '
+            'worth, or transient response. The k_eff, peaking factor, '
+            'and leakage values are sufficient to size the fuel cycle '
             'and bound discharge burnup, but a full safety / licensing '
-            'analysis would require additional Monte Carlo and depletion '
-            'calculations.'
-            '</div>',
-            unsafe_allow_html=True,
-        )
-        for _h in _section_cards.get(4, []):
-            st.markdown(_h, unsafe_allow_html=True)
-        if not _section_cards.get(4):
-            st.info('No neutronics metrics available this typically '
-                    'means the case is subcritical. See the Design & '
-                    'Economics tab for the subcritical warning.')
+            'analysis would require additional Monte Carlo and '
+            'depletion calculations.'
+        ),
+        empty_msg='No neutronics metrics available — typically means '
+                  'the case is subcritical.',
+        top_margin='0',
+    )
 
-        # Section 5 Thermal-hydraulics
-        st.markdown(
-            '<div style="font-size:1rem;font-weight:700;color:#1B4F8C;'
-            'border-left:4px solid #1B4F8C;padding:0.4rem 0 0.4rem 0.75rem;'
-            'margin:1.5rem 0 0.85rem 0;">'
-            'Core thermal-hydraulic conditions at a glance</div>',
-            unsafe_allow_html=True,
-        )
-        st.markdown(
-            '<div style="background:#fffbeb;border:1.5px solid #f59e0b;'
-            'border-radius:8px;padding:0.95rem 1.15rem;margin-bottom:1rem;'
-            'font-size:0.85rem;line-height:1.55;color:#92400e;">'
-            '<strong style="color:#92400e;">Scoping-only note. </strong>'
+    _render_metric_subsection(
+        'Thermal-Hydraulics',
+        section_num=5,
+        caveat_md=(
             'Heat flux, power density, and per-component thermal duty '
-            'are reported for first-order sizing only. The app does NOT '
-            'verify passive heat-removal capability, peak fuel / cladding '
-            '/ coolant temperatures, transient cooling under loss-of-flow '
-            'or loss-of-heat-sink, or material temperature limits. '
-            'Steady-state design margins must be confirmed with a coupled '
-            'thermal-hydraulics analysis before relying on these numbers.'
+            'are reported for first-order sizing only. The app does '
+            '**NOT** verify passive heat-removal capability, peak '
+            'fuel / cladding / coolant temperatures, transient cooling '
+            'under loss-of-flow or loss-of-heat-sink, or material '
+            'temperature limits. Steady-state design margins must be '
+            'confirmed with a coupled thermal-hydraulics analysis '
+            'before relying on these numbers.'
+        ),
+        empty_msg='No thermal-hydraulic metrics available for this case.',
+        top_margin='1.25rem',
+    )
+
+    _render_metric_subsection(
+        'Fuel cycle',
+        section_num=3,
+        caveat_md=None,
+        empty_msg='No fuel-cycle metrics available for this case.',
+        top_margin='1.25rem',
+    )
+
+    # ═══════════════════════════════════════════════════════════════
+    # BAND 4 Cost Detail (cost drivers, full breakdown, costs in
+    # perspective). Rendered as a single column with successive rows.
+    # ═══════════════════════════════════════════════════════════════
+    _section_header(
+        '04',
+        'Cost Decomposition',
+        'What&#39;s driving the cost?',
+    )
+
+    st.markdown(
+        '<div style="font-size:1rem;font-weight:700;color:#0a2540;'
+        'border-left:4px solid #0a2540;padding:0.4rem 0 0.4rem 0.75rem;'
+        'margin:0 0 0.85rem 0;">Cost drivers</div>',
+        unsafe_allow_html=True,
+    )
+    _drv = enriched_df[enriched_df['Account'].apply(
+        is_double_digit_excluding_multiples_of_10)].copy()
+    _drv = _drv.sort_values('FOAK LCOE', ascending=False)
+    _drv = _drv[_drv['FOAK LCOE'] >= 5]
+    _drv = _drv.head(10)
+
+    if _drv.empty:
+        st.info('No accounts with FOAK LCOE >= 5 $/MWh found.')
+    else:
+        st.markdown(
+            '<p style="color:#64748b;font-size:0.85rem;margin-bottom:1rem;">'
+            'Per-account LCOE contributions ($/MWh) sorted by FOAK impact. '
+            'Error bars show +/-1 standard deviation across Monte Carlo samples.</p>',
+            unsafe_allow_html=True,
+        )
+
+        bar_width = 0.38
+        r1 = np.arange(len(_drv))
+        r2 = r1 + bar_width
+
+        matplotlib.rcParams.update({
+            'font.family': 'DejaVu Sans',
+            'font.size': 13,
+            'axes.titlesize': 15,
+            'axes.labelsize': 13,
+            'xtick.labelsize': 12,
+            'ytick.labelsize': 12,
+        })
+
+        fig, ax = plt.subplots(figsize=(max(13, len(_drv) * 1.6), 7))
+        fig.patch.set_facecolor('white')
+        ax.set_facecolor('#f8fafc')
+
+        foak_err = _drv['FOAK LCOE_std'] if 'FOAK LCOE_std' in _drv.columns else None
+        noak_err = _drv['NOAK LCOE_std'] if 'NOAK LCOE_std' in _drv.columns else None
+
+        ax.bar(r1, _drv['FOAK LCOE'], width=bar_width,
+               color='#c84b1e', edgecolor='white', linewidth=0.8,
+               label='FOAK', zorder=3,
+               yerr=foak_err, capsize=5,
+               error_kw=dict(elinewidth=1.8, ecolor='#9a3412', capthick=1.8))
+        ax.bar(r2, _drv['NOAK LCOE'], width=bar_width,
+               color='#1B4F8C', edgecolor='white', linewidth=0.8,
+               label='NOAK', zorder=3,
+               yerr=noak_err, capsize=5,
+               error_kw=dict(elinewidth=1.8, ecolor='#0a2540', capthick=1.8))
+
+        ax.set_xticks(r1 + bar_width / 2)
+        ax.set_xticklabels(_drv['Account Title'], rotation=35, ha='right',
+                           fontsize=12, color='#0a2540', fontweight='500')
+        ax.set_ylabel('LCOE Contribution ($/MWh)', fontsize=13,
+                      color='#0a2540', labelpad=10)
+        ax.yaxis.set_tick_params(labelcolor='#0a2540', labelsize=12)
+        ax.set_xlim(-0.4, len(_drv) - 0.15)
+
+        for spine in ['top', 'right', 'left']:
+            ax.spines[spine].set_visible(False)
+        ax.spines['bottom'].set_color('#cbd5e1')
+        ax.yaxis.grid(True, linestyle='--', linewidth=0.7,
+                      alpha=0.7, color='#cbd5e1', zorder=0)
+        ax.set_axisbelow(True)
+
+        legend = ax.legend(fontsize=12, frameon=True, framealpha=1,
+                           edgecolor='#bfdbfe', facecolor='white',
+                           loc='upper right', handlelength=1.5,
+                           borderpad=0.8, labelspacing=0.5)
+        legend.get_frame().set_linewidth(1.0)
+
+        plt.tight_layout(pad=2.0)
+        buf = io.BytesIO()
+        fig.savefig(buf, format='png', dpi=200, bbox_inches='tight', facecolor='white')
+        buf.seek(0)
+        st.image(buf, use_container_width=True)
+        plt.close(fig)
+        matplotlib.rcParams.update(matplotlib.rcParamsDefault)
+
+    # --- Detailed cost drivers (one level deeper) ---
+    _det = detailed_sorted_df.copy() if not detailed_sorted_df.empty else pd.DataFrame()
+
+    if _det.empty:
+        st.info('No detailed accounts with FOAK LCOE >= 5 $/MWh found.')
+    else:
+        st.markdown('---')
+        st.markdown(
+            '<p style="color:#64748b;font-size:0.85rem;margin-bottom:1rem;">'
+            '<strong>Detailed cost drivers</strong> one level deeper than the chart above. '
+            '3-digit sub-accounts are shown where available; otherwise the 2-digit parent is kept.</p>',
+            unsafe_allow_html=True,
+        )
+
+        bar_width = 0.38
+        r1 = np.arange(len(_det))
+        r2 = r1 + bar_width
+
+        matplotlib.rcParams.update({
+            'font.family': 'DejaVu Sans',
+            'font.size': 13,
+            'axes.titlesize': 15,
+            'axes.labelsize': 13,
+            'xtick.labelsize': 12,
+            'ytick.labelsize': 12,
+        })
+
+        fig2, ax2 = plt.subplots(figsize=(max(13, len(_det) * 1.6), 7))
+        fig2.patch.set_facecolor('white')
+        ax2.set_facecolor('#f8fafc')
+
+        foak_err2 = _det['FOAK LCOE_std'] if 'FOAK LCOE_std' in _det.columns else None
+        noak_err2 = _det['NOAK LCOE_std'] if 'NOAK LCOE_std' in _det.columns else None
+
+        ax2.bar(r1, _det['FOAK LCOE'], width=bar_width,
+                color='#c84b1e', edgecolor='white', linewidth=0.8,
+                label='FOAK', zorder=3,
+                yerr=foak_err2, capsize=5,
+                error_kw=dict(elinewidth=1.8, ecolor='#9a3412', capthick=1.8))
+        ax2.bar(r2, _det['NOAK LCOE'], width=bar_width,
+                color='#1B4F8C', edgecolor='white', linewidth=0.8,
+                label='NOAK', zorder=3,
+                yerr=noak_err2, capsize=5,
+                error_kw=dict(elinewidth=1.8, ecolor='#0a2540', capthick=1.8))
+
+        ax2.set_xticks(r1 + bar_width / 2)
+        ax2.set_xticklabels(_det['Account Title'], rotation=35, ha='right',
+                            fontsize=12, color='#0a2540', fontweight='500')
+        ax2.set_ylabel('LCOE Contribution ($/MWh)', fontsize=13,
+                       color='#0a2540', labelpad=10)
+        ax2.yaxis.set_tick_params(labelcolor='#0a2540', labelsize=12)
+        ax2.set_xlim(-0.4, len(_det) - 0.15)
+
+        for spine in ['top', 'right', 'left']:
+            ax2.spines[spine].set_visible(False)
+        ax2.spines['bottom'].set_color('#cbd5e1')
+        ax2.yaxis.grid(True, linestyle='--', linewidth=0.7,
+                       alpha=0.7, color='#cbd5e1', zorder=0)
+        ax2.set_axisbelow(True)
+
+        legend2 = ax2.legend(fontsize=12, frameon=True, framealpha=1,
+                             edgecolor='#bfdbfe', facecolor='white',
+                             loc='upper right', handlelength=1.5,
+                             borderpad=0.8, labelspacing=0.5)
+        legend2.get_frame().set_linewidth(1.0)
+
+        plt.tight_layout(pad=2.0)
+        buf2 = io.BytesIO()
+        fig2.savefig(buf2, format='png', dpi=200, bbox_inches='tight', facecolor='white')
+        buf2.seek(0)
+        st.image(buf2, use_container_width=True)
+        plt.close(fig2)
+        matplotlib.rcParams.update(matplotlib.rcParamsDefault)
+
+    # ─── Band 4 (cont.) Full breakdown ──────────────────────────────
+    st.markdown(
+        '<div style="font-size:1rem;font-weight:700;color:#0a2540;'
+        'border-left:4px solid #0a2540;padding:0.4rem 0 0.4rem 0.75rem;'
+        'margin:1.25rem 0 0.85rem 0;">Full breakdown</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        f'<p style="color:#64748b;font-size:0.85rem;margin-bottom:1rem;">'
+        f'Full cost breakdown by Code of Accounts. Highlighted rows are parent accounts. '
+        f'Cost ranges (e.g. <em>36M - 42M</em>) show mean ± 1σ from the uncertainty analysis; '
+        f'a single value means no uncertainty was computed for that account. '
+        f'All dollar values in {ESCALATION_YEAR} USD.</p>',
+        unsafe_allow_html=True,
+    )
+
+    _foak_col = next((c for c in display_df.columns
+                      if c.startswith('FOAK Estimated Cost (') and 'std' not in c), None)
+    _noak_col = next((c for c in display_df.columns
+                      if c.startswith('NOAK Estimated Cost (') and 'std' not in c), None)
+    _foak_std = next((c for c in display_df.columns if 'FOAK Estimated Cost std' in c), None)
+    _noak_std = next((c for c in display_df.columns if 'NOAK Estimated Cost std' in c), None)
+    _have_lcoe = 'FOAK LCOE' in enriched_df.columns
+
+    def _pm(mean_val, std_val):
+        m = _fmt_table_val(mean_val)
+        if m == '-':
+            return '-'
+        try:
+            mn = float(mean_val)
+            sd = float(std_val)
+        except (TypeError, ValueError):
+            return m
+        if sd == 0 or np.isnan(sd):
+            return m
+        lo = _fmt_table_val(max(0, mn - sd))
+        hi = _fmt_table_val(mn + sd)
+        return f'{lo} - {hi}' if lo != hi else lo
+
+    def _fmt_lcoe_tab(v):
+        try:
+            v = float(v)
+        except (TypeError, ValueError):
+            return '-'
+        if np.isnan(v) or v <= 0:
+            return '-'
+        if v < 1:
+            return '< 1'
+        if v < 10:
+            return f'{v:.1f}'
+        return str(int(round(v)))
+
+    def _pm_lcoe(mean_val, std_val):
+        m = _fmt_lcoe_tab(mean_val)
+        if m == '-':
+            return '-'
+        try:
+            mn = float(mean_val)
+            sd = float(std_val)
+        except (TypeError, ValueError):
+            return m
+        if np.isnan(sd) or sd <= 0:
+            return m
+        lo = _fmt_lcoe_tab(max(0.0, mn - sd))
+        hi = _fmt_lcoe_tab(mn + sd)
+        return lo if lo == hi else f'{lo} - {hi}'
+
+    def _fmt_account(x):
+        if isinstance(x, str):
+            return x
+        try:
+            v = float(x)
+            return str(int(v)) if v == int(v) else f'{v:g}'
+        except (TypeError, ValueError):
+            return str(x)
+
+    table_df = display_df[['Account', 'Account Title']].copy()
+    table_df['Account'] = table_df['Account'].apply(_fmt_account)
+
+    _sf = display_df[_foak_std] if _foak_std else pd.Series('-', index=display_df.index)
+    _sn = display_df[_noak_std] if _noak_std else pd.Series('-', index=display_df.index)
+    table_df['FOAK Cost ($)'] = [_pm(m, s) for m, s in zip(display_df[_foak_col], _sf)]
+    table_df['NOAK Cost ($)'] = [_pm(m, s) for m, s in zip(display_df[_noak_col], _sn)]
+
+    if _have_lcoe:
+        _ei = display_df.index
+        _e_fl = enriched_df['FOAK LCOE'].reindex(_ei)
+        _e_nl = enriched_df['NOAK LCOE'].reindex(_ei)
+        _e_fls = enriched_df['FOAK LCOE_std'].reindex(_ei) \
+                 if 'FOAK LCOE_std' in enriched_df.columns else pd.Series(np.nan, index=_ei)
+        _e_nls = enriched_df['NOAK LCOE_std'].reindex(_ei) \
+                 if 'NOAK LCOE_std' in enriched_df.columns else pd.Series(np.nan, index=_ei)
+        table_df['FOAK LCOE ($/MWh)'] = [_pm_lcoe(m, s) for m, s in zip(_e_fl, _e_fls)]
+        table_df['NOAK LCOE ($/MWh)'] = [_pm_lcoe(m, s) for m, s in zip(_e_nl, _e_nls)]
+
+    def _account_level(acct_str):
+        try:
+            v = float(str(acct_str).strip())
+        except (ValueError, TypeError):
+            return '-'
+        ip = int(v)
+        n = len(str(ip))
+        if n <= 2:
+            return 0 if ip % 10 == 0 else 1
+        elif n == 3:
+            return 3 if v != ip else 2
+        return 4
+
+    _acct_levels = [_account_level(a) for a in table_df['Account']]
+    _idx_to_pos = {idx: pos for pos, idx in enumerate(table_df.index)}
+
+    _EM = '\u2003'
+    _PREFIX = {'-': '', 0: '', 1: f'{_EM}> ', 2: f'{_EM}{_EM}> ',
+               3: f'{_EM}{_EM}{_EM}. ', 4: f'{_EM}{_EM}{_EM}{_EM}. '}
+    table_df['Account Title'] = [
+        f"{_PREFIX.get(lv, _EM * 4)}{title}"
+        for lv, title in zip(_acct_levels, display_df['Account Title'])
+    ]
+
+    _LEVEL_STYLE = {
+        '-': ('background-color:#fffbeb', 'color:#92400e', 'font-weight:600'),
+         0: ('background-color:#0a2540', 'color:#ffffff', 'font-weight:600'),
+         1: ('background-color:#cfe2f3', 'color:#0a2540', 'font-weight:600'),
+         2: ('background-color:#eaf4fb', 'color:#0a2540', 'font-weight:500'),
+         3: ('background-color:#ffffff', 'color:#3c4257', 'font-weight:400'),
+         4: ('background-color:#ffffff', 'color:#3c4257', 'font-weight:400'),
+    }
+
+    def _row_style(row):
+        lv = _acct_levels[_idx_to_pos[row.name]]
+        bg, fg, fw = _LEVEL_STYLE.get(lv, ('background-color:#ffffff', 'color:#3c4257', ''))
+        cell = f'{bg};{fg};{fw}'
+        return [cell] * len(row)
+
+    _num_cols = [c for c in table_df.columns if c not in ('Account', 'Account Title')]
+    styled = (
+        table_df.style
+        .apply(_row_style, axis=1)
+        .set_properties(subset=_num_cols, **{'text-align': 'right', 'padding': '2px 8px'})
+        .set_table_styles([{
+            'selector': 'thead tr th',
+            'props': ('background-color:#0a2540;color:#ffffff;'
+                      'font-weight:600;font-size:0.85rem;'
+                      'text-transform:uppercase;letter-spacing:0.05em;')
+        }])
+    )
+
+    _col_cfg = {
+        'Account': st.column_config.TextColumn(width='small'),
+        'Account Title': st.column_config.TextColumn(width='medium'),
+        'FOAK Cost ($)': st.column_config.TextColumn(width='small'),
+        'NOAK Cost ($)': st.column_config.TextColumn(width='small'),
+    }
+    if _have_lcoe:
+        _col_cfg['FOAK LCOE ($/MWh)'] = st.column_config.TextColumn(width='small')
+        _col_cfg['NOAK LCOE ($/MWh)'] = st.column_config.TextColumn(width='small')
+
+    st.dataframe(styled, use_container_width=True, height=580,
+                 hide_index=True, column_config=_col_cfg)
+
+    st.markdown('<div style="height:1rem"></div>', unsafe_allow_html=True)
+
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+        display_df.to_excel(writer, index=False, sheet_name='Cost Estimate')
+    buffer.seek(0)
+
+    dl_col, _ = st.columns([1, 3])
+    dl_col.download_button(
+        label='⬇ Download Full Excel',
+        data=buffer.getvalue(),
+        file_name=f'MOUSE_cost_estimate_{reactor_type}.xlsx',
+        mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        use_container_width=True,
+    )
+    # ═══════════════════════════════════════════════════════════════
+    # SECTION 05 Costs in Perspective
+    # ═══════════════════════════════════════════════════════════════
+    _section_header(
+        '05',
+        'Market &amp; Geographic Competitiveness',
+        'Is it competitive?',
+    )
+    st.markdown(
+        '<div style="font-size:1rem;font-weight:700;color:#0a2540;'
+        'border-left:4px solid #0a2540;padding:0.4rem 0 0.4rem 0.75rem;'
+        'margin:0 0 0.85rem 0;">LCOE vs Units Deployed</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<div style="background:#f7f8fa;border:1px solid #bfdbfe;border-radius:8px;'
+        'padding:0.85rem 1.1rem;margin-bottom:0.9rem;font-size:0.85rem;line-height:1.45;color:#3c4257;">'
+        'The curve is anchored at four deployment scales: N=1 (FOAK from the headline '
+        'card), N=2, N=10 (two extra cost-engine calls, cached), and N=user-set NOAK '
+        'Unit Number (default 100, NOAK from the headline card). The shaded band '
+        'reflects the one-sigma uncertainty around each anchor and is connected '
+        'piecewise-linearly between them. Overlaid against seven US-relevant '
+        'electricity-market price ranges to indicate where the reactor would be '
+        'cost-competitive at each scale.'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    # Use the headline FOAK (N=1) and NOAK (N=user_setting) values
+    # as anchors, and add ONE extra cost-engine call at N=10 to
+    # give an intermediate point. Same extraction path as the
+    # headline cards (bottom_up_cost_estimate ->
+    # cost_drivers_estimate -> transform_dataframe ->
+    # _get_mean_std), so values are consistent by construction.
+    # _mid_results and _N_user_pre were pre-computed above the
+    # tabs (under a single spinner) so the whole page renders at
+    # once. Re-bind the local names this block expects.
+    _N_user = _N_user_pre
+    _N_mids = _N_mids_pre
+
+    try:
+        _foak_m = float(lcoe_f)
+        _noak_m = float(lcoe_n)
+    except (TypeError, ValueError):
+        _foak_m = _noak_m = float('nan')
+    try:
+        _foak_s = float(lcoe_f_std) if lcoe_f_std == lcoe_f_std else 0.0
+        _noak_s = float(lcoe_n_std) if lcoe_n_std == lcoe_n_std else 0.0
+    except (TypeError, ValueError):
+        _foak_s = _noak_s = 0.0
+
+    # Build the anchor list: FOAK + intermediates + NOAK, sorted
+    # by N ascending. Skip any intermediate with NaN.
+    _units = [1] + [_N for _N in _N_mids
+                    if _N in _mid_results
+                    and _mid_results[_N][0] == _mid_results[_N][0]] + [_N_user]
+    _means = [_foak_m]
+    _stds = [_foak_s]
+    for _N in _N_mids:
+        if _N in _mid_results and _mid_results[_N][0] == _mid_results[_N][0]:
+            _means.append(_mid_results[_N][0])
+            _stds.append(_mid_results[_N][1])
+    _means.append(_noak_m)
+    _stds.append(_noak_s)
+
+    # NaN-tolerant gating: drop points where the LCOE came back
+    # NaN, plot whatever valid points remain. Scatter markers +
+    # mean line are always drawn (they don't need the spline).
+    _u_arr = np.array(_units, dtype=float) if _units else np.array([])
+    _m_arr = np.array(_means, dtype=float) if _means else np.array([])
+    _s_arr = np.array(_stds, dtype=float) if _stds else np.array([])
+    if _m_arr.size:
+        _valid = ~np.isnan(_m_arr)
+        _u_arr = _u_arr[_valid]
+        _m_arr = _m_arr[_valid]
+        _s_arr = _s_arr[_valid]
+        _s_arr = np.nan_to_num(_s_arr, nan=0.0)
+
+    if _u_arr.size >= 2:
+        _fill_color, _edge_color = '#1B4F8C', '#0a2540'
+
+        _fig, _ax = plt.subplots(figsize=(11, 5.8))
+
+        # Plain linear interpolation between the anchor points 
+        # no spline, no overshoot. np.interp gives straight line
+        # segments between consecutive anchors, which is the
+        # honest representation when we only have 2-3 anchors.
+        try:
+            _x_smooth = np.linspace(_u_arr.min(), _u_arr.max(), 300)
+            _m_smooth = np.interp(_x_smooth, _u_arr, _m_arr)
+            _s_smooth = np.interp(_x_smooth, _u_arr, _s_arr)
+        except Exception:
+            _x_smooth = _u_arr
+            _m_smooth = _m_arr
+            _s_smooth = _s_arr
+
+        _ax.fill_between(_x_smooth,
+                         _m_smooth - _s_smooth,
+                         _m_smooth + _s_smooth,
+                         color=_fill_color, alpha=0.45,
+                         edgecolor=_edge_color, linewidth=1.5, zorder=2)
+        # Mean line + scatter markers at the actual computed
+        # sweep points so the LCOE curve is always visible even if
+        # the spline interpolation produces something degenerate.
+        _ax.plot(_x_smooth, _m_smooth, color=_edge_color,
+                 linewidth=2.0, linestyle='-', zorder=3)
+        _ax.scatter(_u_arr, _m_arr, s=42, color=_edge_color,
+                    edgecolor='white', linewidth=1.2, zorder=4)
+
+        # Market benchmark arrows. Markets are grouped by category;
+        # within a group all entries share one color so the legend
+        # reads "Premium / Alaska / U.S. grid" rather than 7 hues.
+        _PREMIUM = '#92400e'   # Remote, Defense, Island & Mining
+        _ALASKA = '#64748b'    # Alaska railbelt (electricity + generation)
+        _US_GRID = '#15803d'   # U.S. grid (electricity + generation)
+        _markets = {
+            'Remote communities': {'x': 2, 'y_start': 400, 'y_end': 290, 'color': _PREMIUM, 'arrow_only_down': True},
+            'Defense': {'x': 8, 'y_start': 316, 'y_end': 296, 'color': _PREMIUM, 'arrow_only_down': False},
+            'Island & Mining': {'x': 30, 'y_start': 380, 'y_end': 190, 'color': _PREMIUM, 'arrow_only_down': False},
+            'Alaska railbelt electricity': {'x': 48, 'y_start': 313, 'y_end': 182, 'color': _ALASKA, 'arrow_only_down': False},
+            'Alaska railbelt generation': {'x': 60, 'y_start': 166, 'y_end': 62, 'color': _ALASKA, 'arrow_only_down': False},
+            'U.S. grid electricity': {'x': 75, 'y_start': 270, 'y_end': 79, 'color': _US_GRID, 'arrow_only_down': False},
+            'U.S. grid generation': {'x': 88, 'y_start': 55, 'y_end': 29, 'color': _US_GRID, 'arrow_only_down': False},
+        }
+        _bar_widths = {
+            'Remote communities': 4,
+            'Defense': 4,
+            'Island & Mining': 12,
+            'Alaska railbelt electricity': 8,
+            'Alaska railbelt generation': 8,
+            'U.S. grid electricity': 12,
+            'U.S. grid generation': 10,
+        }
+        _label_offsets = {
+            'Remote communities': +8,
+            'Defense': +25,
+            'Alaska railbelt generation': -15,
+            'U.S. grid generation': +20,
+        }
+        for _name, _d in _markets.items():
+            _x = _d['x']
+            _ys = min(_d['y_start'], 400)
+            _ye = _d['y_end']
+            _c = _d['color']
+            _down = _d['arrow_only_down']
+            _w = _bar_widths[_name]
+            _xa, _xb = _x, _x + _w
+            _xm = _x + _w / 2
+
+            if not _down:
+                _ax.plot([_xa, _xb], [_ys, _ys], color=_c, linewidth=4,
+                         solid_capstyle='round', zorder=5)
+            _ax.plot([_xa, _xb], [_ye, _ye], color=_c, linewidth=4,
+                     solid_capstyle='round', zorder=5)
+            _astyle = '->' if _down else '<->'
+            if _down:
+                _ax.plot([_xm, _xm], [_ys, _ye], color=_c, linewidth=2.8,
+                         solid_capstyle='round', zorder=5)
+            _ax.annotate('', xy=(_xm, _ye), xytext=(_xm, _ys),
+                         arrowprops=dict(arrowstyle=_astyle, color=_c,
+                                         lw=2.8, mutation_scale=16), zorder=5)
+
+            if _name == 'Alaska railbelt generation':
+                _ly = _ye + _label_offsets[_name]
+            else:
+                _ly = _ys + _label_offsets.get(_name, +15)
+            _ax.text(_xm, _ly, _name, fontsize=8.5, ha='center', color=_c,
+                     fontweight='bold',
+                     bbox=dict(facecolor='white', edgecolor=_c,
+                               boxstyle='round,pad=0.25',
+                               linewidth=1.0, alpha=0.9),
+                     zorder=6)
+
+        _ax.set_xlim(1, 100)
+        # Y-axis sizing use the 90th-percentile of (mean + std)
+        # rather than max, so a single outlier point doesn't blow
+        # up the y-range and squash the rest of the data. Hard
+        # cap at $800 so even outliers stay readable.
+        if _m_arr.size:
+            _band_vals = _m_arr + _s_arr
+            _band_p90 = float(np.nanpercentile(_band_vals, 90))
+        else:
+            _band_p90 = 0.0
+        _ymax = max(410.0, _band_p90 * 1.15)
+        _ymax = min(_ymax, 800.0)
+        _ax.set_ylim(0, _ymax)
+        _ax.set_xlabel('Number of Units Deployed', fontsize=12, fontweight='bold')
+        _ax.set_ylabel('LCOE ($/MWh)', fontsize=12, fontweight='bold')
+        _ax.set_xticks([1, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100])
+        from matplotlib.ticker import MaxNLocator
+        _ax.yaxis.set_major_locator(MaxNLocator(nbins=10, integer=True))
+        _ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
+        _ax.set_axisbelow(True)
+        _ax.set_facecolor('white')
+        _fig.patch.set_facecolor('white')
+
+        _fig.tight_layout()
+
+        # If the LCOE band sits entirely above the y-axis cap
+        # ($800 max), the band is invisible on the chart. Warn
+        # the user explicitly so they know why nothing is plotted
+        # for the reactor and what to do about it. Use a custom-
+        # colored markdown box rather than st.warning, which
+        # renders white text on yellow (illegible).
+        _band_min_visible = (_m_arr - _s_arr).min() if _m_arr.size else 0.0
+        if _band_min_visible > _ymax:
+            _band_lo = (_m_arr - _s_arr).min()
+            _band_hi = (_m_arr + _s_arr).max()
+            st.markdown(
+                f'<div style="background:#fffbeb;border:1px solid #f59e0b;'
+                f'border-radius:8px;padding:0.85rem 1.1rem;margin-bottom:0.6rem;'
+                f'color:#92400e;font-size:0.85rem;line-height:1.55;">'
+                f'<strong style="color:#92400e;">⚠️ Reactor LCOE off the chart.</strong> '
+                f'The reactor LCOE band ranges roughly '
+                f'<strong>${_band_lo:,.0f}-${_band_hi:,.0f}/MWh</strong>, which is above '
+                f'the chart\'s <strong>${int(_ymax)}/MWh</strong> ceiling, so the curve is '
+                f'not visible on the plot below. The market benchmarks remain visible for '
+                f'reference. To bring the curve into the chart, try a higher reactor power, '
+                f'higher enrichment, longer plant lifetime, or a larger NOAK Unit Number '
+                f'any of those reduces the LCOE.'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+        st.pyplot(_fig)
+        plt.close(_fig)
+
+        # Market definitions panel (matches the user-provided spec)
+        st.markdown(
+            '<div style="background:#eff6ff;border:1px solid #bfdbfe;'
+            'border-radius:8px;padding:0.85rem 1.1rem;margin-bottom:0.9rem;'
+            'font-size:0.85rem;line-height:1.55;color:#1B4F8C;">'
+            '<div style="font-weight:600;font-size:0.85rem;'
+            'text-transform:uppercase;letter-spacing:0.06em;'
+            'color:#1B4F8C;margin-bottom:0.45rem;">Market definitions</div>'
+            '<ul style="margin:0;padding-left:1.2rem;">'
+            '<li><strong>U.S. Grid Generation:</strong> regional average wholesale price; '
+            'excludes transmission, distribution, and customer charges.</li>'
+            '<li><strong>U.S. Grid Electricity:</strong> state-level average retail '
+            'electricity price, all sectors; excludes Alaska and Hawaii.</li>'
+            '<li><strong>Alaska Railbelt Generation:</strong> wholesale generation cost; '
+            'excludes transmission, distribution, and customer charges.</li>'
+            '<li><strong>Alaska Railbelt Electricity:</strong> retail price including '
+            'generation, transmission, distribution, and adjustments.</li>'
+            '<li><strong>Island &amp; Mining:</strong> all-in diesel- or LNG-based '
+            'electricity cost, including fuel delivery.</li>'
+            '<li><strong>Defense:</strong> remote base electricity cost plus a premium '
+            'for reliability and security.</li>'
+            '<li><strong>Remote Communities:</strong> off-road community diesel '
+            'generation cost.</li>'
+            '</ul>'
             '</div>',
             unsafe_allow_html=True,
         )
-        for _h in _section_cards.get(5, []):
-            st.markdown(_h, unsafe_allow_html=True)
-        if not _section_cards.get(5):
-            st.info('No thermal-hydraulic metrics available for this case.')
 
-    # ═══════════════════════════════════════════════════════════════
-    # TAB 3 COST DRIVERS
-    # ═══════════════════════════════════════════════════════════════
-    with tab_drivers:
-        _drv = enriched_df[enriched_df['Account'].apply(
-            is_double_digit_excluding_multiples_of_10)].copy()
-        _drv = _drv.sort_values('FOAK LCOE', ascending=False)
-        _drv = _drv[_drv['FOAK LCOE'] >= 5]
-        _drv = _drv.head(10)
+    # ─────────────────────────────────────────────────────────
+    # Behind-the-meter / Distributed Generation comparison:
+    # state-by-state retail electricity price vs FOAK / NOAK LCOE
+    # ─────────────────────────────────────────────────────────
+    # EIA "State Electricity Profiles" 2023 annual average
+    # retail price of electricity to ULTIMATE INDUSTRIAL
+    # CUSTOMERS (Industrial sector). This is more representative
+    # of the BTM/BYOG customer types listed below than the all-
+    # sectors average (industrials typically pay 30-50% less than
+    # the all-sectors number, so using the industrial column gives
+    # a more honest competitiveness check). Source:
+    # https://www.eia.gov/electricity/state/ Table 5.6.A,
+    # "Average Retail Price of Electricity to Ultimate Customers
+    # by End-Use Sector Industrial". Values in cents/kWh,
+    # converted to $/MWh by ×10.
+    _STATE_RETAIL_CENTS_PER_KWH_2023 = {
+        'AL': 6.77, 'AK': 18.46, 'AZ': 7.11, 'AR': 6.50,
+        'CA': 18.27, 'CO': 8.10, 'CT': 13.84, 'DE': 8.29,
+        'DC': 8.39, 'FL': 8.97, 'GA': 7.12, 'HI': 33.16,
+        'ID': 7.29, 'IL': 7.64, 'IN': 7.85, 'IA': 6.86,
+        'KS': 8.30, 'KY': 6.27, 'LA': 6.36, 'ME': 11.03,
+        'MD': 8.81, 'MA': 13.28, 'MI': 8.18, 'MN': 8.16,
+        'MS': 6.76, 'MO': 7.40, 'MT': 6.34, 'NE': 8.10,
+        'NV': 7.28, 'NH': 12.59, 'NJ': 11.83, 'NM': 7.39,
+        'NY': 7.34, 'NC': 6.92, 'ND': 8.46, 'OH': 7.13,
+        'OK': 6.40, 'OR': 7.95, 'PA': 7.79, 'RI': 14.13,
+        'SC': 6.86, 'SD': 8.44, 'TN': 6.77, 'TX': 6.97,
+        'UT': 6.80, 'VT': 9.91, 'VA': 7.74, 'WA': 6.10,
+        'WV': 7.54, 'WI': 8.17, 'WY': 6.77,
+    }
+    _STATE_FULL_NAMES = {
+        'AL': 'Alabama', 'AK': 'Alaska', 'AZ': 'Arizona',
+        'AR': 'Arkansas', 'CA': 'California', 'CO': 'Colorado',
+        'CT': 'Connecticut', 'DE': 'Delaware', 'DC': 'D.C.',
+        'FL': 'Florida', 'GA': 'Georgia', 'HI': 'Hawaii',
+        'ID': 'Idaho', 'IL': 'Illinois', 'IN': 'Indiana',
+        'IA': 'Iowa', 'KS': 'Kansas', 'KY': 'Kentucky',
+        'LA': 'Louisiana', 'ME': 'Maine', 'MD': 'Maryland',
+        'MA': 'Massachusetts', 'MI': 'Michigan', 'MN': 'Minnesota',
+        'MS': 'Mississippi', 'MO': 'Missouri', 'MT': 'Montana',
+        'NE': 'Nebraska', 'NV': 'Nevada', 'NH': 'New Hampshire',
+        'NJ': 'New Jersey', 'NM': 'New Mexico', 'NY': 'New York',
+        'NC': 'North Carolina', 'ND': 'North Dakota', 'OH': 'Ohio',
+        'OK': 'Oklahoma', 'OR': 'Oregon', 'PA': 'Pennsylvania',
+        'RI': 'Rhode Island', 'SC': 'South Carolina', 'SD': 'South Dakota',
+        'TN': 'Tennessee', 'TX': 'Texas', 'UT': 'Utah',
+        'VT': 'Vermont', 'VA': 'Virginia', 'WA': 'Washington',
+        'WV': 'West Virginia', 'WI': 'Wisconsin', 'WY': 'Wyoming',
+    }
 
-        if _drv.empty:
-            st.info('No accounts with FOAK LCOE >= 5 $/MWh found.')
-        else:
-            st.markdown(
-                '<p style="color:#64748b;font-size:0.85rem;margin-bottom:1rem;">'
-                'Per-account LCOE contributions ($/MWh) sorted by FOAK impact. '
-                'Error bars show +/-1 standard deviation across Monte Carlo samples.</p>',
-                unsafe_allow_html=True,
+    st.markdown('<div style="height:1.2rem"></div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div style="font-size:1rem;font-weight:700;color:#0a2540;'
+        'border-left:4px solid #0a2540;padding:0.4rem 0 0.4rem 0.75rem;'
+        'margin:1.25rem 0 0.85rem 0;">Behind-the-Meter Comparison: '
+        'Reactor LCOE vs State Retail Electricity Prices</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<div style="background:#f7f8fa;border:1px solid #bfdbfe;border-radius:8px;'
+        'padding:0.85rem 1.1rem;margin-bottom:0.9rem;font-size:0.85rem;line-height:1.45;color:#3c4257;">'
+        'For behind-the-meter (BTM) and bring-your-own-generator (BYOG) deployments '
+        'data centers, industrial loads, mining, defense a useful '
+        '<em>first-order</em> cost benchmark is the average retail electricity price '
+        'the customer would otherwise pay. The chart compares the FOAK and NOAK LCOE '
+        '(with one-sigma bands) against the 2023 average retail price for the '
+        '<strong>industrial sector</strong> by state from the U.S. Energy Information '
+        'Administration. States are color-coded by competitiveness:'
+        '<ul style="margin:0.4rem 0 0 1.2rem;">'
+        '<li><span style="color:#15803d;font-weight:600;">Green:</span> retail price '
+        'exceeds the FOAK upper band reactor wins even at FOAK.</li>'
+        '<li><span style="color:#92400e;font-weight:600;">Yellow:</span> retail price '
+        'between NOAK and FOAK bands reactor wins only at NOAK scale.</li>'
+        '<li><span style="color:#64748b;font-weight:600;">Gray:</span> retail price '
+        'below the NOAK band not competitive even at scale.</li>'
+        '</ul>'
+        '<div style="margin-top:0.5rem;font-size:0.85rem;color:#64748b;line-height:1.45;">'
+        '<strong>Caveat:</strong> this is a simplified comparison. Actual avoided cost '
+        'depends on customer sector, demand charges, standby tariffs, time-of-use '
+        'structure, and ancillary value streams. Defense and remote sites often have '
+        'reliability/security premiums; large data centers commonly have direct PPAs '
+        'rather than retail tariffs.'
+        '</div>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    try:
+        _foak_m_btm = float(lcoe_f)
+        _noak_m_btm = float(lcoe_n)
+        _foak_s_btm = float(lcoe_f_std) if lcoe_f_std == lcoe_f_std else 0.0
+        _noak_s_btm = float(lcoe_n_std) if lcoe_n_std == lcoe_n_std else 0.0
+    except (TypeError, ValueError):
+        _foak_m_btm = _noak_m_btm = float('nan')
+        _foak_s_btm = _noak_s_btm = 0.0
+
+    if (_foak_m_btm == _foak_m_btm and _noak_m_btm == _noak_m_btm):
+        # Convert cents/kWh -> $/MWh (multiply by 10) and sort
+        # descending (highest-priced states at the top).
+        _state_prices = {s: c * 10.0 for s, c
+                         in _STATE_RETAIL_CENTS_PER_KWH_2023.items()}
+        _sorted = sorted(_state_prices.items(),
+                         key=lambda kv: kv[1], reverse=True)
+        _state_codes = [s for s, _ in _sorted]
+        _state_vals = [v for _, v in _sorted]
+
+        # Competitiveness thresholds: use the LOWER edge of each
+        # uncertainty band so any state whose retail price falls
+        # inside the FOAK or NOAK band counts as competitive.
+        # - State price >= FOAK_low -> green (potentially wins
+        # even at FOAK; price intersects or exceeds the FOAK
+        # band)
+        # - State price >= NOAK_low -> yellow (potentially wins
+        # at NOAK; price intersects or exceeds the NOAK band)
+        # - State price < NOAK_low -> gray (clearly loses)
+        _foak_low = _foak_m_btm - _foak_s_btm
+        _noak_low = _noak_m_btm - _noak_s_btm
+
+        # Per-state classification + bar colors
+        _GREEN = '#16a34a'
+        _YELLOW = '#d97706'
+        _GRAY = '#94a3b8'
+        _bar_colors = []
+        _foak_winners, _noak_winners = [], []
+        for s, v in _sorted:
+            if v >= _foak_low:
+                _bar_colors.append(_GREEN)
+                _foak_winners.append(s)
+                _noak_winners.append(s)
+            elif v >= _noak_low:
+                _bar_colors.append(_YELLOW)
+                _noak_winners.append(s)
+            else:
+                _bar_colors.append(_GRAY)
+
+        # Vertical column chart: states on X, price on Y. Each
+        # column carries the state's 2-letter code rotated 90°,
+        # rendered in white bold so it's legible on every column
+        # color (green / yellow / gray).
+        _fig_btm, _ax_btm = plt.subplots(figsize=(15, 6.5))
+        _x = np.arange(len(_state_codes))
+        _bars = _ax_btm.bar(_x, _state_vals, color=_bar_colors,
+                            edgecolor='white', linewidth=0.6, width=0.86)
+
+        # Horizontal reference bands for FOAK and NOAK LCOE (±1σ).
+        _ax_btm.axhspan(_foak_m_btm - _foak_s_btm,
+                        _foak_m_btm + _foak_s_btm,
+                        color='#c84b1e', alpha=0.16, zorder=0)
+        _ax_btm.axhline(_foak_m_btm, color='#c84b1e',
+                        linewidth=1.8, linestyle='--', zorder=2,
+                        label=f'FOAK LCOE ${_foak_m_btm:.0f}/MWh')
+        _ax_btm.axhspan(_noak_m_btm - _noak_s_btm,
+                        _noak_m_btm + _noak_s_btm,
+                        color='#1B4F8C', alpha=0.16, zorder=0)
+        _ax_btm.axhline(_noak_m_btm, color='#1B4F8C',
+                        linewidth=1.8, linestyle='--', zorder=2,
+                        label=f'NOAK LCOE ${_noak_m_btm:.0f}/MWh')
+
+        # Y-axis must accommodate the FOAK and NOAK reference
+        # bands even when they exceed the highest state retail
+        # price (e.g. high-power FOAK at $800+/MWh against a
+        # max state of ~$330/MWh). Use the larger of (max state
+        # price, FOAK upper band) as the basis.
+        _band_top_btm = max(
+            _foak_m_btm + _foak_s_btm,
+            _noak_m_btm + _noak_s_btm,
+            max(_state_vals),
+        )
+        _ymax_chart = _band_top_btm * 1.18
+
+        # Place full state name vertically OVERLAPPING each
+        # column. Anchor just above the x-axis (small positive
+        # offset so the label doesn't collide with the baseline)
+        # and extend UPWARD with rotation=90 / va='bottom' so the
+        # name reads bottom-to-top. Each label gets a dark-blue
+        # rounded-rectangle bbox with WHITE bold text much
+        # higher contrast than the previous dark-on-light-with-
+        # halo approach. Long names ("Massachusetts", "North
+        # Carolina") that exceed the column top extend into the
+        # white plot background; the blue pill keeps them
+        # crisply legible there too.
+        _baseline_offset = _ymax_chart * 0.015
+        _label_bbox = dict(
+            facecolor='#0a2540', # deep navy blue
+            edgecolor='none',
+            pad=2.2,
+            boxstyle='round,pad=0.18',
+        )
+        for _i, (_code, _val) in enumerate(zip(_state_codes, _state_vals)):
+            _full_name = _STATE_FULL_NAMES.get(_code, _code)
+            _ax_btm.text(
+                _i, _baseline_offset, _full_name,
+                rotation=90, ha='center', va='bottom',
+                fontsize=10.5, fontweight='bold',
+                color='white',
+                bbox=_label_bbox,
+                zorder=4,
             )
 
-            bar_width = 0.38
-            r1 = np.arange(len(_drv))
-            r2 = r1 + bar_width
+        _ax_btm.set_xticks([]) # state names are on the columns themselves
+        _ax_btm.set_xlim(-0.7, len(_state_codes) - 0.3)
+        _ax_btm.set_ylim(0, _ymax_chart)
+        _ax_btm.set_ylabel('Average retail price ($/MWh) EIA 2023, industrial sector',
+                           fontsize=11, fontweight='bold')
+        _ax_btm.set_xlabel('U.S. States and DC (sorted by retail price, high → low)',
+                           fontsize=11, fontweight='bold')
+        _ax_btm.grid(True, axis='y', alpha=0.3, linestyle='--', linewidth=0.5)
+        _ax_btm.set_axisbelow(True)
+        _ax_btm.set_facecolor('white')
+        _fig_btm.patch.set_facecolor('white')
+        _ax_btm.legend(loc='upper right', fontsize=10, framealpha=0.95,
+                       edgecolor='grey')
+        _fig_btm.tight_layout()
+        st.pyplot(_fig_btm)
+        plt.close(_fig_btm)
 
-            matplotlib.rcParams.update({
-                'font.family': 'DejaVu Sans',
-                'font.size': 13,
-                'axes.titlesize': 15,
-                'axes.labelsize': 13,
-                'xtick.labelsize': 12,
-                'ytick.labelsize': 12,
-            })
+        # Summary line + competitive-states lists
+        _summary_html = (
+            f'Of <strong>{len(_sorted)}</strong> jurisdictions, the reactor beats '
+            f'the average retail price in <strong style="color:#15803d;">'
+            f'{len(_foak_winners)}</strong> at FOAK (orange band) and '
+            f'<strong style="color:#1B4F8C;">{len(_noak_winners)}</strong> at NOAK '
+            f'(blue band).'
+        )
+        _foak_list_html = (', '.join(_foak_winners) if _foak_winners
+                           else '<em>none</em>')
+        _noak_only = [s for s in _noak_winners if s not in _foak_winners]
+        _noak_only_html = (', '.join(_noak_only) if _noak_only
+                           else '<em>none</em>')
 
-            fig, ax = plt.subplots(figsize=(max(13, len(_drv) * 1.6), 7))
-            fig.patch.set_facecolor('white')
-            ax.set_facecolor('#f8fafc')
-
-            foak_err = _drv['FOAK LCOE_std'] if 'FOAK LCOE_std' in _drv.columns else None
-            noak_err = _drv['NOAK LCOE_std'] if 'NOAK LCOE_std' in _drv.columns else None
-
-            ax.bar(r1, _drv['FOAK LCOE'], width=bar_width,
-                   color='#E05C2B', edgecolor='white', linewidth=0.8,
-                   label='FOAK', zorder=3,
-                   yerr=foak_err, capsize=5,
-                   error_kw=dict(elinewidth=1.8, ecolor='#9a3412', capthick=1.8))
-            ax.bar(r2, _drv['NOAK LCOE'], width=bar_width,
-                   color='#1B7FBD', edgecolor='white', linewidth=0.8,
-                   label='NOAK', zorder=3,
-                   yerr=noak_err, capsize=5,
-                   error_kw=dict(elinewidth=1.8, ecolor='#1155aa', capthick=1.8))
-
-            ax.set_xticks(r1 + bar_width / 2)
-            ax.set_xticklabels(_drv['Account Title'], rotation=35, ha='right',
-                               fontsize=12, color='#1e293b', fontweight='500')
-            ax.set_ylabel('LCOE Contribution ($/MWh)', fontsize=13,
-                          color='#1e293b', labelpad=10)
-            ax.yaxis.set_tick_params(labelcolor='#1e293b', labelsize=12)
-            ax.set_xlim(-0.4, len(_drv) - 0.15)
-
-            for spine in ['top', 'right', 'left']:
-                ax.spines[spine].set_visible(False)
-            ax.spines['bottom'].set_color('#cbd5e1')
-            ax.yaxis.grid(True, linestyle='--', linewidth=0.7,
-                          alpha=0.7, color='#cbd5e1', zorder=0)
-            ax.set_axisbelow(True)
-
-            legend = ax.legend(fontsize=12, frameon=True, framealpha=1,
-                               edgecolor='#bfdbfe', facecolor='white',
-                               loc='upper right', handlelength=1.5,
-                               borderpad=0.8, labelspacing=0.5)
-            legend.get_frame().set_linewidth(1.0)
-
-            plt.tight_layout(pad=2.0)
-            buf = io.BytesIO()
-            fig.savefig(buf, format='png', dpi=200, bbox_inches='tight', facecolor='white')
-            buf.seek(0)
-            st.image(buf, use_container_width=True)
-            plt.close(fig)
-            matplotlib.rcParams.update(matplotlib.rcParamsDefault)
-
-        # --- Detailed cost drivers (one level deeper) ---
-        _det = detailed_sorted_df.copy() if not detailed_sorted_df.empty else pd.DataFrame()
-
-        if _det.empty:
-            st.info('No detailed accounts with FOAK LCOE >= 5 $/MWh found.')
-        else:
-            st.markdown('---')
-            st.markdown(
-                '<p style="color:#64748b;font-size:0.85rem;margin-bottom:1rem;">'
-                '<strong>Detailed cost drivers</strong> one level deeper than the chart above. '
-                '3-digit sub-accounts are shown where available; otherwise the 2-digit parent is kept.</p>',
-                unsafe_allow_html=True,
-            )
-
-            bar_width = 0.38
-            r1 = np.arange(len(_det))
-            r2 = r1 + bar_width
-
-            matplotlib.rcParams.update({
-                'font.family': 'DejaVu Sans',
-                'font.size': 13,
-                'axes.titlesize': 15,
-                'axes.labelsize': 13,
-                'xtick.labelsize': 12,
-                'ytick.labelsize': 12,
-            })
-
-            fig2, ax2 = plt.subplots(figsize=(max(13, len(_det) * 1.6), 7))
-            fig2.patch.set_facecolor('white')
-            ax2.set_facecolor('#f8fafc')
-
-            foak_err2 = _det['FOAK LCOE_std'] if 'FOAK LCOE_std' in _det.columns else None
-            noak_err2 = _det['NOAK LCOE_std'] if 'NOAK LCOE_std' in _det.columns else None
-
-            ax2.bar(r1, _det['FOAK LCOE'], width=bar_width,
-                    color='#E05C2B', edgecolor='white', linewidth=0.8,
-                    label='FOAK', zorder=3,
-                    yerr=foak_err2, capsize=5,
-                    error_kw=dict(elinewidth=1.8, ecolor='#9a3412', capthick=1.8))
-            ax2.bar(r2, _det['NOAK LCOE'], width=bar_width,
-                    color='#1B7FBD', edgecolor='white', linewidth=0.8,
-                    label='NOAK', zorder=3,
-                    yerr=noak_err2, capsize=5,
-                    error_kw=dict(elinewidth=1.8, ecolor='#1155aa', capthick=1.8))
-
-            ax2.set_xticks(r1 + bar_width / 2)
-            ax2.set_xticklabels(_det['Account Title'], rotation=35, ha='right',
-                                fontsize=12, color='#1e293b', fontweight='500')
-            ax2.set_ylabel('LCOE Contribution ($/MWh)', fontsize=13,
-                           color='#1e293b', labelpad=10)
-            ax2.yaxis.set_tick_params(labelcolor='#1e293b', labelsize=12)
-            ax2.set_xlim(-0.4, len(_det) - 0.15)
-
-            for spine in ['top', 'right', 'left']:
-                ax2.spines[spine].set_visible(False)
-            ax2.spines['bottom'].set_color('#cbd5e1')
-            ax2.yaxis.grid(True, linestyle='--', linewidth=0.7,
-                           alpha=0.7, color='#cbd5e1', zorder=0)
-            ax2.set_axisbelow(True)
-
-            legend2 = ax2.legend(fontsize=12, frameon=True, framealpha=1,
-                                 edgecolor='#bfdbfe', facecolor='white',
-                                 loc='upper right', handlelength=1.5,
-                                 borderpad=0.8, labelspacing=0.5)
-            legend2.get_frame().set_linewidth(1.0)
-
-            plt.tight_layout(pad=2.0)
-            buf2 = io.BytesIO()
-            fig2.savefig(buf2, format='png', dpi=200, bbox_inches='tight', facecolor='white')
-            buf2.seek(0)
-            st.image(buf2, use_container_width=True)
-            plt.close(fig2)
-            matplotlib.rcParams.update(matplotlib.rcParamsDefault)
-
-    # ═══════════════════════════════════════════════════════════════
-    # TAB 3 FULL BREAKDOWN
-    # ═══════════════════════════════════════════════════════════════
-    with tab_table:
         st.markdown(
-            f'<p style="color:#64748b;font-size:0.85rem;margin-bottom:1rem;">'
-            f'Full cost breakdown by Code of Accounts. Highlighted rows are parent accounts. '
-            f'Cost ranges (e.g. <em>36M - 42M</em>) show mean ± 1σ from the uncertainty analysis; '
-            f'a single value means no uncertainty was computed for that account. '
-            f'All dollar values in {ESCALATION_YEAR} USD.</p>',
+            f'<div style="background:#f7f8fa;border:1px solid #bfdbfe;'
+            f'border-radius:8px;padding:0.85rem 1.1rem;margin-bottom:0.9rem;'
+            f'font-size:0.85rem;line-height:1.55;color:#3c4257;">'
+            f'{_summary_html}'
+            f'<div style="margin-top:0.55rem;">'
+            f'<span style="display:inline-block;width:0.85rem;height:0.85rem;'
+            f'background:{_GREEN};border-radius:3px;margin-right:0.35rem;'
+            f'vertical-align:middle;"></span>'
+            f'<strong>FOAK-competitive ({len(_foak_winners)}):</strong> '
+            f'{_foak_list_html}'
+            f'</div>'
+            f'<div style="margin-top:0.35rem;">'
+            f'<span style="display:inline-block;width:0.85rem;height:0.85rem;'
+            f'background:{_YELLOW};border-radius:3px;margin-right:0.35rem;'
+            f'vertical-align:middle;"></span>'
+            f'<strong>NOAK-only competitive ({len(_noak_only)}):</strong> '
+            f'{_noak_only_html}'
+            f'</div>'
+            f'<div style="margin-top:0.55rem;font-size:0.85rem;color:#64748b;">'
+            f'Source: U.S. EIA, <em>State Electricity Profiles</em>, 2023 annual '
+            f'average retail price to ultimate customers industrial sector. '
+            f'<a href="https://www.eia.gov/electricity/state/" target="_blank" '
+            f'style="color:#1B4F8C;">eia.gov/electricity/state</a>'
+            f'</div>'
+            f'</div>',
             unsafe_allow_html=True,
         )
 
-        _foak_col = next((c for c in display_df.columns
-                          if c.startswith('FOAK Estimated Cost (') and 'std' not in c), None)
-        _noak_col = next((c for c in display_df.columns
-                          if c.startswith('NOAK Estimated Cost (') and 'std' not in c), None)
-        _foak_std = next((c for c in display_df.columns if 'FOAK Estimated Cost std' in c), None)
-        _noak_std = next((c for c in display_df.columns if 'NOAK Estimated Cost std' in c), None)
-        _have_lcoe = 'FOAK LCOE' in enriched_df.columns
 
-        def _pm(mean_val, std_val):
-            m = _fmt_table_val(mean_val)
-            if m == '-':
-                return '-'
-            try:
-                mn = float(mean_val)
-                sd = float(std_val)
-            except (TypeError, ValueError):
-                return m
-            if sd == 0 or np.isnan(sd):
-                return m
-            lo = _fmt_table_val(max(0, mn - sd))
-            hi = _fmt_table_val(mn + sd)
-            return f'{lo} - {hi}' if lo != hi else lo
-
-        def _fmt_lcoe_tab(v):
-            try:
-                v = float(v)
-            except (TypeError, ValueError):
-                return '-'
-            if np.isnan(v) or v <= 0:
-                return '-'
-            if v < 1:
-                return '< 1'
-            if v < 10:
-                return f'{v:.1f}'
-            return str(int(round(v)))
-
-        def _pm_lcoe(mean_val, std_val):
-            m = _fmt_lcoe_tab(mean_val)
-            if m == '-':
-                return '-'
-            try:
-                mn = float(mean_val)
-                sd = float(std_val)
-            except (TypeError, ValueError):
-                return m
-            if np.isnan(sd) or sd <= 0:
-                return m
-            lo = _fmt_lcoe_tab(max(0.0, mn - sd))
-            hi = _fmt_lcoe_tab(mn + sd)
-            return lo if lo == hi else f'{lo} - {hi}'
-
-        def _fmt_account(x):
-            if isinstance(x, str):
-                return x
-            try:
-                v = float(x)
-                return str(int(v)) if v == int(v) else f'{v:g}'
-            except (TypeError, ValueError):
-                return str(x)
-
-        table_df = display_df[['Account', 'Account Title']].copy()
-        table_df['Account'] = table_df['Account'].apply(_fmt_account)
-
-        _sf = display_df[_foak_std] if _foak_std else pd.Series('-', index=display_df.index)
-        _sn = display_df[_noak_std] if _noak_std else pd.Series('-', index=display_df.index)
-        table_df['FOAK Cost ($)'] = [_pm(m, s) for m, s in zip(display_df[_foak_col], _sf)]
-        table_df['NOAK Cost ($)'] = [_pm(m, s) for m, s in zip(display_df[_noak_col], _sn)]
-
-        if _have_lcoe:
-            _ei = display_df.index
-            _e_fl = enriched_df['FOAK LCOE'].reindex(_ei)
-            _e_nl = enriched_df['NOAK LCOE'].reindex(_ei)
-            _e_fls = enriched_df['FOAK LCOE_std'].reindex(_ei) \
-                     if 'FOAK LCOE_std' in enriched_df.columns else pd.Series(np.nan, index=_ei)
-            _e_nls = enriched_df['NOAK LCOE_std'].reindex(_ei) \
-                     if 'NOAK LCOE_std' in enriched_df.columns else pd.Series(np.nan, index=_ei)
-            table_df['FOAK LCOE ($/MWh)'] = [_pm_lcoe(m, s) for m, s in zip(_e_fl, _e_fls)]
-            table_df['NOAK LCOE ($/MWh)'] = [_pm_lcoe(m, s) for m, s in zip(_e_nl, _e_nls)]
-
-        def _account_level(acct_str):
-            try:
-                v = float(str(acct_str).strip())
-            except (ValueError, TypeError):
-                return '-'
-            ip = int(v)
-            n = len(str(ip))
-            if n <= 2:
-                return 0 if ip % 10 == 0 else 1
-            elif n == 3:
-                return 3 if v != ip else 2
-            return 4
-
-        _acct_levels = [_account_level(a) for a in table_df['Account']]
-        _idx_to_pos = {idx: pos for pos, idx in enumerate(table_df.index)}
-
-        _EM = '\u2003'
-        _PREFIX = {'-': '', 0: '', 1: f'{_EM}> ', 2: f'{_EM}{_EM}> ',
-                   3: f'{_EM}{_EM}{_EM}. ', 4: f'{_EM}{_EM}{_EM}{_EM}. '}
-        table_df['Account Title'] = [
-            f"{_PREFIX.get(lv, _EM * 4)}{title}"
-            for lv, title in zip(_acct_levels, display_df['Account Title'])
-        ]
-
-        _LEVEL_STYLE = {
-            '-': ('background-color:#fef9c3', 'color:#92400e', 'font-weight:600'),
-             0: ('background-color:#0a2540', 'color:#ffffff', 'font-weight:600'),
-             1: ('background-color:#cfe2f3', 'color:#0a2540', 'font-weight:600'),
-             2: ('background-color:#eaf4fb', 'color:#0a2540', 'font-weight:500'),
-             3: ('background-color:#ffffff', 'color:#3c4257', 'font-weight:400'),
-             4: ('background-color:#ffffff', 'color:#3c4257', 'font-weight:400'),
-        }
-
-        def _row_style(row):
-            lv = _acct_levels[_idx_to_pos[row.name]]
-            bg, fg, fw = _LEVEL_STYLE.get(lv, ('background-color:#ffffff', 'color:#3c4257', ''))
-            cell = f'{bg};{fg};{fw}'
-            return [cell] * len(row)
-
-        _num_cols = [c for c in table_df.columns if c not in ('Account', 'Account Title')]
-        styled = (
-            table_df.style
-            .apply(_row_style, axis=1)
-            .set_properties(subset=_num_cols, **{'text-align': 'right', 'padding': '2px 8px'})
-            .set_table_styles([{
-                'selector': 'thead tr th',
-                'props': ('background-color:#0a2540;color:#ffffff;'
-                          'font-weight:600;font-size:0.85rem;'
-                          'text-transform:uppercase;letter-spacing:0.05em;')
-            }])
-        )
-
-        _col_cfg = {
-            'Account': st.column_config.TextColumn(width='small'),
-            'Account Title': st.column_config.TextColumn(width='medium'),
-            'FOAK Cost ($)': st.column_config.TextColumn(width='small'),
-            'NOAK Cost ($)': st.column_config.TextColumn(width='small'),
-        }
-        if _have_lcoe:
-            _col_cfg['FOAK LCOE ($/MWh)'] = st.column_config.TextColumn(width='small')
-            _col_cfg['NOAK LCOE ($/MWh)'] = st.column_config.TextColumn(width='small')
-
-        st.dataframe(styled, use_container_width=True, height=580,
-                     hide_index=True, column_config=_col_cfg)
-
-        st.markdown('<div style="height:1rem"></div>', unsafe_allow_html=True)
-
-        buffer = io.BytesIO()
-        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-            display_df.to_excel(writer, index=False, sheet_name='Cost Estimate')
-        buffer.seek(0)
-
-        dl_col, _ = st.columns([1, 3])
-        dl_col.download_button(
-            label='⬇ Download Full Excel',
-            data=buffer.getvalue(),
-            file_name=f'MOUSE_cost_estimate_{reactor_type}.xlsx',
-            mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            use_container_width=True,
-        )
+    # ── End-of-report footer (gives users a clear "I'm done" signal
+    #    now that everything is on a single page instead of in tabs) ──
+    st.markdown(
+        '<div style="margin-top:2rem;padding:0.8rem 0;border-top:2px solid #cbd5e1;'
+        'border-bottom:2px solid #cbd5e1;text-align:center;color:#64748b;'
+        'font-size:0.85rem;letter-spacing:0.16em;text-transform:uppercase;">'
+        '— End of report —</div>',
+        unsafe_allow_html=True,
+    )
 
     # ── Caveat reminder (rendered at the very end of the results page) ──────
     st.markdown(
         '''<div style="background:#fffbeb;border:1px solid #fcd34d;
                        border-left:4px solid #f59e0b;border-radius:8px;
-                       padding:0.65rem 1rem;margin-top:1.5rem;margin-bottom:1.2rem;
+                       padding:0.85rem 1.1rem;margin-top:1.5rem;margin-bottom:1.2rem;
                        display:flex;align-items:flex-start;gap:0.6rem;">
              <span style="font-size:1rem;flex-shrink:0;margin-top:0.05rem;">⚠️</span>
              <span style="font-size:1rem;color:#92400e;line-height:1.55;">
