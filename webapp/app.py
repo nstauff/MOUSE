@@ -3715,9 +3715,7 @@ with streamlit_analytics.track():
         'they can move by truck, rail, or sea container, which differentiates '
         'them from large NPPs. The numbers below check whether each component '
         'of the current reactor design would fit through standard truck, '
-        'rail, and sea shipping limits. Whether the reactor ships in one '
-        'piece or as separate sub-assemblies is a design choice we don\'t '
-        'presume here.'
+        'rail, and sea shipping limits.'
         '</div>',
         unsafe_allow_html=True,
     )
@@ -3916,7 +3914,7 @@ with streamlit_analytics.track():
         )
     _rows_html.append(
         '<tr style="background:#f7f8fa;">'
-        f'<td style="{_CELL_NAME}">RVACS (cooling vessel + intake vessel)'
+        f'<td style="{_CELL_NAME}">Reactor Vessel Auxiliary Cooling System (cooling vessel + intake vessel)'
         f'<div style="{_DESC}">{_rvacs_desc}</div></td>'
         f'<td style="{_CELL_C}">{_m1(_rvacs_height_cm)}</td>'
         f'<td style="{_CELL_C}">{_m1(_rvacs_dia_cm)}</td>'
@@ -3937,7 +3935,7 @@ with streamlit_analytics.track():
         f'<th style="{_TH};text-align:left;">Component</th>'
         f'<th style="{_TH};text-align:center;">Height</th>'
         f'<th style="{_TH};text-align:center;">Diameter</th>'
-        f'<th style="{_TH};text-align:center;">Mass (dry, no coolant)</th>'
+        f'<th style="{_TH};text-align:center;">Mass</th>'
         '</tr></thead><tbody>'
         + ''.join(_rows_html) +
         '</tbody></table>'
@@ -3989,13 +3987,7 @@ with streamlit_analytics.track():
         'whether it ships with the reactor or is built on site.</li>'
         '<li><strong>Coolant excluded:</strong> primary coolant '
         'inventory (NaK for LTMR, He for GCMR, heat-pipe Na for '
-        'HPMR) is not included in the dry-mass column.</li>'
-        '<li><strong>Support gear excluded:</strong> support skirt, '
-        'lifting lugs, transport frame, control-rod drives, and any '
-        'auxiliary piping outside the four nested vessels.</li>'
-        '<li><strong>Fuel-pin cladding:</strong> not separately '
-        'tracked in MOUSE (small relative to fuel and structural '
-        'masses).</li>'
+        'HPMR) is not included in the mass column.</li>'
         + _gcmr_note
         + _hpmr_note
         + _gv_na_note +
@@ -4019,19 +4011,10 @@ with streamlit_analytics.track():
         '<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;'
         'padding:0.85rem 1.1rem;margin-bottom:0.9rem;'
         'font-size:0.85rem;line-height:1.45;color:#92400e;">'
-        '<strong>Caveat:</strong> this is a scoping geometry/mass check '
-        'against generic shipping envelopes. Real nuclear shipments use '
-        'specialised <strong>Type B / HAC casks</strong> '
-        '(thick-walled radiation-shielding containers required by '
-        'regulation, much heavier than the bare reactor module), almost '
-        'always require heavy-haul permits above ~36 t '
-        '<strong>GVW</strong> (Gross Vehicle Weight = truck + trailer '
-        '+ cargo combined), and are constrained by route-specific '
-        'factors not modelled here (bridge ratings, axle loads, turning '
-        'radius, road / track class, route engineering). Treat '
-        '<strong>&#x2713; module fits</strong> as "geometry could '
-        'conceivably fit," not "this can ship without engineering '
-        'work."'
+        '<strong>Caveat:</strong> geometry/mass check only. '
+        'Fueled or post-operation modules require shielded casks '
+        'that add tens of tonnes and can exceed the ISO container '
+        'envelope.'
         '</div>',
         unsafe_allow_html=True,
     )
