@@ -702,7 +702,7 @@ def _render_analytics_sidebar(conn):
         st.caption('Visits per anonymous visitor')
         st.dataframe(
             visits_per_person,
-            use_container_width=True,
+            width='stretch',
             hide_index=True,
             height=220,
         )
@@ -710,7 +710,7 @@ def _render_analytics_sidebar(conn):
         st.caption('Most recent visits')
         st.dataframe(
             recent_visits,
-            use_container_width=True,
+            width='stretch',
             hide_index=True,
             height=220,
         )
@@ -1782,7 +1782,7 @@ with streamlit_analytics.track():
             )
 
         st.divider()
-        run_button = st.button('⚡ Run Cost Estimate', type='primary', use_container_width=True)
+        run_button = st.button('⚡ Run Cost Estimate', type='primary', width='stretch')
         if run_button:
             # Run a generational GC pass before kicking off a new
             # cost-engine run. Frees DataFrames from the previous Run
@@ -1824,7 +1824,7 @@ with streamlit_analytics.track():
         st.link_button(
             '📝 Give Feedback',
             'https://qualtricsxm69xy9s7vm.qualtrics.com/jfe/form/SV_4Pb0vub9xCcsVV4',
-            use_container_width=True,
+            width='stretch',
         )
 
         if st.secrets.get("SHOW_ANALYTICS_PANEL", False):
@@ -2383,7 +2383,7 @@ with streamlit_analytics.track():
         # at the column width, so the side view's vertical extent
         # relative to the cross-section's diameter makes H/D visually
         # obvious.
-        st.image(main_img, use_container_width=True)
+        st.image(main_img, width='stretch')
         st.caption(main_caption)
 
         if reactor_type in ('LTMR', 'GCMR', 'HPMR'):
@@ -2402,7 +2402,7 @@ with streamlit_analytics.track():
             _fig.savefig(_buf, format='png', bbox_inches=None,
                          facecolor='white', dpi=120)
             _buf.seek(0)
-            st.image(_buf, use_container_width=True)
+            st.image(_buf, width='stretch')
             plt.close(_fig)
 
     with geo_right:
@@ -2423,7 +2423,7 @@ with streamlit_analytics.track():
                 f'</div>',
                 unsafe_allow_html=True,
             )
-            with st.popover('Tell me more', use_container_width=False):
+            with st.popover('Tell me more', width='content'):
                 st.markdown(
                     'Active height &divide; active diameter, using the active fissioning '
                     'region only (no reflector, no vessel). A value of 1.0 means a '
@@ -2467,7 +2467,7 @@ with streamlit_analytics.track():
                             f"and sodium heat pipes embedded in a monolith-graphite "
                             f"moderator block."
                         )
-                st.image(img_path, use_container_width=True)
+                st.image(img_path, width='stretch')
                 st.caption(img_caption)
 
     # ── Subsection 2: Performance ───────────────────────────────
@@ -2486,7 +2486,7 @@ with streamlit_analytics.track():
         _info_card(ic3, 'Capacity Factor', _cf_str,
                    subtitle='Accounts for refueling & shutdowns')
 
-        with st.popover('How is Fuel Lifetime estimated?', use_container_width=False):
+        with st.popover('How is Fuel Lifetime estimated?', width='content'):
             if reactor_type == 'LTMR':
                 st.markdown(
                     'We pre-ran a parametric set of **OpenMC depletion simulations** '
@@ -2574,7 +2574,7 @@ with streamlit_analytics.track():
                 for _spine in ('top', 'right'):
                     _kax.spines[_spine].set_visible(False)
                 _kfig.tight_layout()
-                st.pyplot(_kfig, use_container_width=True)
+                st.pyplot(_kfig, width='stretch')
                 plt.close(_kfig)
                 st.caption(
                     '**k_eff** (the neutron multiplication factor) measures '
@@ -2625,7 +2625,7 @@ with streamlit_analytics.track():
                 for _spine in ('top', 'right'):
                     _kax.spines[_spine].set_visible(False)
                 _kfig.tight_layout()
-                st.pyplot(_kfig, use_container_width=True)
+                st.pyplot(_kfig, width='stretch')
                 plt.close(_kfig)
                 st.caption(
                     '**k_eff** (the neutron multiplication factor) measures '
@@ -2677,7 +2677,7 @@ with streamlit_analytics.track():
                 for _spine in ('top', 'right'):
                     _kax.spines[_spine].set_visible(False)
                 _kfig.tight_layout()
-                st.pyplot(_kfig, use_container_width=True)
+                st.pyplot(_kfig, width='stretch')
                 plt.close(_kfig)
                 st.caption(
                     '**k_eff** (the neutron multiplication factor) measures '
@@ -2945,7 +2945,7 @@ with streamlit_analytics.track():
                   _fmt_lcoe(lcof_f, lcof_f_std), _fmt_lcoe(lcof_n, lcof_n_std))
 
         st.markdown('<div style="height:0.5rem"></div>', unsafe_allow_html=True)
-        with st.popover('What do FOAK and NOAK mean?', use_container_width=False):
+        with st.popover('What do FOAK and NOAK mean?', width='content'):
             st.markdown(
                 '**FOAK** — *First-of-a-Kind*. Includes learning-curve and '
                 'contingency premiums for an initial deployment.\n\n'
@@ -4466,7 +4466,7 @@ with streamlit_analytics.track():
             unsafe_allow_html=True,
         )
         if caveat_md is not None:
-            with st.popover('⚠ Scoping caveat', use_container_width=False):
+            with st.popover('⚠ Scoping caveat', width='content'):
                 st.markdown(caveat_md)
         cards = _section_cards.get(section_num, [])
         if not cards:
@@ -4611,7 +4611,7 @@ with streamlit_analytics.track():
         buf = io.BytesIO()
         fig.savefig(buf, format='png', dpi=200, bbox_inches='tight', facecolor='white')
         buf.seek(0)
-        st.image(buf, use_container_width=True)
+        st.image(buf, width='stretch')
         plt.close(fig)
         matplotlib.rcParams.update(matplotlib.rcParamsDefault)
 
@@ -4685,7 +4685,7 @@ with streamlit_analytics.track():
         buf2 = io.BytesIO()
         fig2.savefig(buf2, format='png', dpi=200, bbox_inches='tight', facecolor='white')
         buf2.seek(0)
-        st.image(buf2, use_container_width=True)
+        st.image(buf2, width='stretch')
         plt.close(fig2)
         matplotlib.rcParams.update(matplotlib.rcParamsDefault)
 
@@ -4846,7 +4846,7 @@ with streamlit_analytics.track():
         _col_cfg['FOAK LCOE ($/MWh)'] = st.column_config.TextColumn(width='small')
         _col_cfg['NOAK LCOE ($/MWh)'] = st.column_config.TextColumn(width='small')
 
-    st.dataframe(styled, use_container_width=True, height=580,
+    st.dataframe(styled, width='stretch', height=580,
                  hide_index=True, column_config=_col_cfg)
 
     st.markdown('<div style="height:1rem"></div>', unsafe_allow_html=True)
@@ -4862,7 +4862,7 @@ with streamlit_analytics.track():
         data=buffer.getvalue(),
         file_name=f'MOUSE_cost_estimate_{reactor_type}.xlsx',
         mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        use_container_width=True,
+        width='stretch',
     )
     # ═══════════════════════════════════════════════════════════════
     # SECTION 05 Costs in Perspective
