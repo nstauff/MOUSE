@@ -4240,14 +4240,14 @@ with streamlit_analytics.track():
         _fits = _w_ok and _h_ok and _len_ok and _wt_ok
         _bc = ('#15803d', '#dcfce7', '#bbf7d0') if _fits else ('#b91c1c', '#fee2e2', '#fecaca')
         if _fits:
-            _badge_text = '✓ module fits'
+            _badge_text = '✓ fits'
         else:
             _fails = []
             if not _w_ok:   _fails.append('width')
             if not _h_ok:   _fails.append('height')
             if not _len_ok: _fails.append('length')
             if not _wt_ok:  _fails.append('weight')
-            _badge_text = '✗ module exceeds ' + ' + '.join(_fails)
+            _badge_text = '✗ exceeds ' + ', '.join(_fails)
         _height_note = env.get('height_note', '')
         _height_note_str = f' <span style="color:#64748b;">{_height_note}</span>' if _height_note else ''
         _len_str = (f' &nbsp;|&nbsp; len ≤ {env["length_m"]:.2f} m'
@@ -4266,16 +4266,21 @@ with streamlit_analytics.track():
             '<div style="background:#ffffff;border:1px solid #bfdbfe;'
             'border-radius:8px;padding:0.7rem 0.85rem;margin-bottom:0.6rem;'
             'color:#0a2540;">'
-            '<div style="display:flex;justify-content:space-between;'
-            'align-items:center;gap:0.5rem;margin-bottom:0.3rem;">'
-            f'<div style="font-weight:600;font-size:0.85rem;color:#0a2540;">'
+            # Title on its own row (full width of the card).
+            f'<div style="font-weight:600;font-size:0.85rem;color:#0a2540;'
+            f'margin-bottom:0.35rem;">'
             f'{env["name"]}{_help_icon(env["help_text"])}'
             f'</div>'
-            f'<div style="background:{_bc[1]};border:1px solid {_bc[2]};'
-            f'color:{_bc[0]};font-size:0.85rem;font-weight:600;'
-            f'padding:0.15rem 0.5rem;border-radius:8px;flex-shrink:0;">'
+            # Badge on its own row. inline-block + max-width:100% +
+            # white-space:normal means the pill hugs its content
+            # when short, wraps to multiple lines if needed, and
+            # NEVER overflows past the card edge.
+            f'<div style="display:inline-block;background:{_bc[1]};'
+            f'border:1px solid {_bc[2]};color:{_bc[0]};font-size:0.85rem;'
+            f'font-weight:600;padding:0.15rem 0.5rem;border-radius:8px;'
+            f'margin-bottom:0.4rem;max-width:100%;white-space:normal;'
+            f'line-height:1.3;">'
             f'{_badge_text}</div>'
-            '</div>'
             f'<div style="font-size:0.85rem;color:#3c4257;margin-bottom:0.25rem;">'
             f'w ≤ {env["width_m"]:.2f} m &nbsp;|&nbsp; '
             f'h ≤ {env["height_m"]:.2f} m{_height_note_str}{_len_str}{_wt_str}'
