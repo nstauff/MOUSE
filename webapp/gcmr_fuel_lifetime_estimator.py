@@ -65,6 +65,20 @@ def _resolve_sheet_name():
 
 _K = 4 # nearest neighbours to use for local fit
 
+# Skip legacy precomputed cost columns from older parametric-study
+# snapshots not read by the webapp (the cost engine is run fresh per
+# request). Halves the read time and lowers peak memory during parse.
+_LEGACY_COST_PREFIXES = (
+    'OCC_', 'OCC per kW_', 'OCC excl. fuel_', 'OCC excl. fuel per kW_',
+    'TCI_', 'TCI per kW_',
+    'AC_', 'AC per MWh_',
+    'LCOE_',
+)
+
+def _keep_parametric_col(name):
+    return not any(name.startswith(p) for p in _LEGACY_COST_PREFIXES)
+
+
 _train_df = None # cached training data (loaded once)
 _feat_min = None # min of each feature used for [0,1] normalisation
 _feat_max = None # max of each feature
@@ -92,7 +106,7 @@ def _load():
     if _train_df is not None:
         return
 
-    df = pd.read_excel(_XLSX_PATH, sheet_name=_resolve_sheet_name(), engine='openpyxl')
+    df = pd.read_excel(_XLSX_PATH, sheet_name=_resolve_sheet_name(), engine='openpyxl', usecols=_keep_parametric_col)
     df = df[['Assembly Rings', 'Core Rings', 'Active Height',
              'Enrichment', 'Power MWt', 'Fuel Lifetime']].copy()
     df.columns = ['NA', 'NC', 'H', 'E', 'P', 'LT']
@@ -389,7 +403,7 @@ def _load_curves():
         return _curve_df
 
     sheet = _resolve_sheet_name()
-    df = pd.read_excel(_XLSX_PATH, sheet_name=sheet, engine='openpyxl')
+    df = pd.read_excel(_XLSX_PATH, sheet_name=sheet, engine='openpyxl', usecols=_keep_parametric_col)
     df = df[['Assembly Rings', 'Core Rings', 'Active Height',
              'Enrichment', 'Power MWt', 'Fuel Lifetime',
              'Depletion Time Steps', 'keff 3D (2D corrected)']].copy()

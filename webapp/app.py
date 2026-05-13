@@ -93,15 +93,25 @@ _MATERIALS_PARAM_KEYS = (
     'Enrichment', 'H_Zr_ratio', 'er_wo', 'U_met_wo',
     'Common Temperature', 'UO2 atom fraction',
 )
-_materials_cache = {}
+# Bounded LRU cache (was an unbounded dict). Prevents memory growth on
+# long Streamlit Cloud sessions where users iterate through many
+# parameter combinations. 32 entries comfortably covers the working set
+# of a single Run (drums.py alone calls collect_materials_data ~7 times
+# per cost-engine run, all with the same materials key).
+from collections import OrderedDict as _OrderedDict
+_materials_cache = _OrderedDict()
+_MATERIALS_CACHE_MAX = 32
 
 def _cached_collect_materials_data(params):
     key = tuple((k, params.get(k)) for k in _MATERIALS_PARAM_KEYS)
     cached = _materials_cache.get(key)
     if cached is not None:
+        _materials_cache.move_to_end(key)  # LRU touch
         return cached
     result = _orig_collect_materials_data(params)
     _materials_cache[key] = result
+    if len(_materials_cache) > _MATERIALS_CACHE_MAX:
+        _materials_cache.popitem(last=False)  # evict least-recently-used
     return result
 
 _materials_db_mod.collect_materials_data = _cached_collect_materials_data
@@ -401,7 +411,7 @@ HPMR_DIAMETER_LABEL_TO_NC = {
 }
 
 
-@st.cache_data(show_spinner=False, max_entries=16)
+@st.cache_data(show_spinner=False, max_entries=4)
 def _run_estimate(reactor_type, power_mwt, enrichment, interest_rate, discount_rate,
                   construction_duration, debt_to_equity, operation_mode,
                   emergency_shutdowns, startup_duration, startup_duration_refueling,
@@ -446,7 +456,7 @@ def _run_estimate(reactor_type, power_mwt, enrichment, interest_rate, discount_r
 # extraction path as _run_estimate so the value matches the headline
 # format exactly: bottom_up_cost_estimate -> cost_drivers_estimate ->
 # transform_dataframe -> _get_mean_std.
-@st.cache_data(show_spinner=False, max_entries=16)
+@st.cache_data(show_spinner=False, max_entries=4)
 def _lcoe_at_noak_unit(reactor_type, power_mwt, enrichment, interest_rate, discount_rate,
                        construction_duration, debt_to_equity, operation_mode,
                        emergency_shutdowns, startup_duration, startup_duration_refueling,
@@ -1774,6 +1784,13 @@ with streamlit_analytics.track():
         st.divider()
         run_button = st.button('⚡ Run Cost Estimate', type='primary', use_container_width=True)
         if run_button:
+            # Run a generational GC pass before kicking off a new
+            # cost-engine run. Frees DataFrames from the previous Run
+            # that Python's incremental GC hasn't reclaimed yet. Keeps
+            # the Streamlit Cloud memory footprint from drifting up
+            # over a long session of repeated Runs.
+            import gc as _gc
+            _gc.collect()
             st.session_state.has_run = True
             # Snapshot every input the downstream compute / render reads.
             # Sidebar widgets keep updating as the user tinkers, but results

@@ -56,6 +56,19 @@ _XLSX_PATH = os.path.join(
 )
 _SHEET = 'Sheet1'
 
+# Skip legacy precomputed cost columns from older parametric-study
+# snapshots not read by the webapp (the cost engine is run fresh per
+# request). Halves the read time and lowers peak memory during parse.
+_LEGACY_COST_PREFIXES = (
+    'OCC_', 'OCC per kW_', 'OCC excl. fuel_', 'OCC excl. fuel per kW_',
+    'TCI_', 'TCI per kW_',
+    'AC_', 'AC per MWh_',
+    'LCOE_',
+)
+
+def _keep_parametric_col(name):
+    return not any(name.startswith(p) for p in _LEGACY_COST_PREFIXES)
+
 # Total uranium per (fuel pin · cm). Derived from the parametric
 # study: M_U / (N_pins × H) is 1.6116 ± 0.0006 across all 84 rows.
 HPMR_U_PER_PIN_CM = 1.6116 # g of total uranium per (fuel pin · cm)
@@ -108,7 +121,7 @@ def _load():
     if _train_df is not None:
         return
 
-    df = pd.read_excel(_XLSX_PATH, sheet_name=_SHEET, engine='openpyxl')
+    df = pd.read_excel(_XLSX_PATH, sheet_name=_SHEET, engine='openpyxl', usecols=_keep_parametric_col)
     # Map the workbook column names to the short names used internally
     df = df[['Assembly Rings', 'Core Rings', 'Height',
              'Enrichment', 'Power MWt', 'Fuel Lifetime']].copy()
@@ -297,7 +310,7 @@ def _load_curves():
     if _curve_df is not None:
         return _curve_df
 
-    df = pd.read_excel(_XLSX_PATH, sheet_name=_SHEET, engine='openpyxl')
+    df = pd.read_excel(_XLSX_PATH, sheet_name=_SHEET, engine='openpyxl', usecols=_keep_parametric_col)
     df = df[['Assembly Rings', 'Core Rings', 'Height',
              'Enrichment', 'Power MWt', 'Fuel Lifetime',
              'Depletion Time Steps', 'keff 3D (2D corrected)']].copy()
@@ -420,7 +433,7 @@ def _hpmr_knn_scalar(column_name, n_rings_per_assembly, n_rings_per_core,
 
     df = _train_df.copy()
     if column_name not in df.columns:
-        full = pd.read_excel(_XLSX_PATH, sheet_name=_SHEET, engine='openpyxl')
+        full = pd.read_excel(_XLSX_PATH, sheet_name=_SHEET, engine='openpyxl', usecols=_keep_parametric_col)
         df[column_name] = full[column_name].values
         _train_df[column_name] = df[column_name]
 
