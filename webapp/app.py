@@ -3066,23 +3066,20 @@ with streamlit_analytics.track():
         _fuel_card(
             'Fuel loading',
             f'{_fmt_metric(_hm_kg)} kgHM | {_fmt_metric(_hm_kg_per_mwe)} kgHM/MWe',
-            ('Total mass of heavy metal (uranium) in the core. '
-             'HM = Heavy Metal = Mass U-235 + Mass U-238. '
-             'kgHM/MWe normalises by net electric output a specific fuel '
-             'inventory metric useful for comparing fuel-cycle requirements '
-             'across reactor types. Microreactors typically run '
-             '100-1,000 kgHM/MWe depending on technology.'),
+            ('Total uranium mass in the core (HM = Heavy Metal = '
+             'U235 + U238). kgHM/MWe normalises by net electric '
+             'output, useful for comparing fuel inventory across '
+             'reactor types. Microreactors typically run 100 to '
+             '1,000 kgHM/MWe.'),
             section=3,
         )
         _fuel_card(
             'Fissile loading',
             f'{_fmt_metric(_fis_kg)} kg | {_fmt_metric(_fis_kg_per_mwe)} kg/MWe',
-            ('Mass of fissile material only (U-235 for LEU/HALEU fuel). '
-             'Drives enrichment cost (HALEU is expensive at ~$3k-$15k/kg) and '
-             'safeguards requirements. kg/MWe is one of the main metrics used '
-             'when comparing the economics of microreactors against larger '
-             'reactors microreactor values are typically much higher than '
-             'commercial LWRs (~5 kg/MWe).'),
+            ('Mass of fissile material (U235 for LEU/HALEU fuel). '
+             'Drives enrichment cost (HALEU runs $3k to $15k/kg) and '
+             'safeguards requirements. kg/MWe is much higher for '
+             'microreactors than for commercial LWRs (~5 kg/MWe).'),
             section=3,
         )
 
@@ -3123,12 +3120,10 @@ with streamlit_analytics.track():
             _fuel_card(
                 'Peaking factor',
                 f'{_pf:.1f}' if _pf > 0 else 'N/A',
-                ('Power Peaking Factor (PPF) ratio of the maximum local '
-                 'fission rate to the core-average fission rate. Drives the '
-                 'difference between average and peak fuel pin temperatures, '
-                 'and between average and peak burnup. Lower is better; '
-                 'typical microreactor values are 1.5-3.0 depending on '
-                 'reflector design and fuel arrangement. Interpolated from '
+                ('Ratio of the maximum local fission rate to the core '
+                 'average. Drives the gap between average and peak fuel '
+                 'pin temperatures and burnup. Lower is better; typical '
+                 'microreactor values are 1.5 to 3.0. Interpolated from '
                  'the parametric study.'),
                 section=4,
             )
@@ -3179,33 +3174,22 @@ with streamlit_analytics.track():
                 )
 
             _src_note = (
-                'This value is INTERPOLATED from nearby cases in the '
-                'parametric study (KNN, K=4, distance-weighted average) '
-                'the geometry sits inside the trained design space.'
+                ' Source: interpolated from the parametric study '
+                '(inside the trained design space).'
                 if _lk_src == 'interpolated' else
-                'This value is COMPUTED from a one-group migration-area '
-                'physics formula because the requested geometry sits '
-                'outside the trained H range for this diameter KNN '
-                'would just saturate at the training boundary. The '
-                'formula uses '
-                'B² = (2.405/R_eff)² + (π/H_eff)², '
-                'P_NL = 1/(1 + M²·B²), where R_eff and H_eff include '
-                'reflector savings (~0.6 × reflector thickness). M² '
-                'is calibrated against the parametric study data.'
+                ' Source: computed from a one group physics formula '
+                '(outside the trained range).'
             )
 
             if _ax_lk > 0:
                 _fuel_card(
                     'Axial leakage (BOL)',
                     f'{_fmt_metric(_ax_lk)} %',
-                    ('Fraction of neutrons that leak out of the active core '
-                     'through the top or bottom faces at beginning of life. '
-                     'Driven primarily by Active Height (shorter cores leak '
-                     'more axially) and the axial reflector thickness. The '
-                     'reflector and the control drums are accounted for: '
-                     'the parametric-study OpenMC runs include both, and '
-                     'the physics fallback uses the auto-resolved '
-                     'reflector thickness which already covers the drums. '
+                    ('Fraction of neutrons that escape through the top '
+                     'or bottom of the active core at beginning of life. '
+                     'Driven by Active Height (shorter cores leak more) '
+                     'and axial reflector thickness. Reflector and '
+                     'control drums are accounted for.'
                      + _src_note),
                     section=4,
                 )
@@ -3215,36 +3199,34 @@ with streamlit_analytics.track():
                     f'{_fmt_metric(_tot_lk)} %',
                     ('Total fraction of neutrons that escape the active '
                      'core (axial + radial) at beginning of life. Driven '
-                     'by core dimensions both Active Height and active '
-                     'radius. The reflector and the control drums are '
-                     'accounted for the same way as above. Microreactors '
-                     'typically have higher total leakage (~5-35 %) than '
-                     'commercial LWRs (~3 %) because of their small size. '
+                     'by core dimensions (Active Height and active '
+                     'radius). Microreactors typically have higher total '
+                     'leakage (5 to 35 percent) than commercial LWRs '
+                     '(~3 percent) due to their small size.'
                      + _src_note),
                     section=4,
                 )
             _fuel_card(
                 'Discharge burnup (avg)',
                 f'{_fmt_metric(_bu_avg)} MWd/kgHM',
-                ('Average burnup of the fuel at end-of-life (when the reactor '
-                 'first becomes subcritical). Computed as Power [MWₜ] × Fuel '
-                 'Lifetime [days] / Heavy Metal mass [kg]. This is the '
-                 'headline economic metric higher discharge burnup means '
-                 'more energy extracted per kg of fuel, lowering fuel cost '
-                 'per MWh.'),
+                ('Average burnup of the fuel at end of life (when the '
+                 'reactor first becomes subcritical). Computed as '
+                 'Power [MWt] × Fuel Lifetime [days] / Heavy Metal '
+                 'mass [kg]. Headline economic metric: higher means '
+                 'more energy per kg of fuel, lowering fuel cost per '
+                 'MWh.'),
                 section=3,
             )
             if _bu_max > 0:
                 _fuel_card(
                     'Discharge burnup (max)',
                     f'{_fmt_metric(_bu_max)} MWd/kgHM',
-                    ('Peak burnup at end-of-life the burnup of the most '
-                     'heavily depleted region (= average × peaking factor). '
-                     'This is the design-limiting value: cladding integrity, '
-                     'fission gas release, and dimensional change all depend '
-                     'on the peak. Commercial LWRs are licensed to ~62 '
-                     'MWd/kgU peak. For TRISO-fuelled designs the peak burnup '
-                     'limit is typically much higher.'),
+                    ('Peak burnup of the most heavily depleted region '
+                     '(= average × peaking factor). The design limiting '
+                     'value: cladding integrity, fission gas release, '
+                     'and dimensional change all depend on the peak. '
+                     'Commercial LWRs are licensed to ~62 MWd/kgU peak; '
+                     'TRISO fueled designs allow much higher.'),
                     section=3,
                 )
 
@@ -3258,15 +3240,12 @@ with streamlit_analytics.track():
                 _fuel_card(
                     'Mining intensity',
                     f'{_fmt_metric(_mining)} gU/MWh',
-                    ('Mass of natural uranium that must be mined and milled '
-                     'per MWh of electric energy produced. Computed from '
-                     'MOUSE\'s natural-uranium consumption '
-                     '(tails enrichment 0.25 %, feed enrichment 0.71 %), '
-                     'then divided by the total lifetime electrical energy '
-                     'produced. Typical values: commercial LWRs ~17-25 '
-                     'gU/MWh, HALEU microreactors ~30-80, natural-U reactors '
-                     '(CANDU) ~150-200. Lower means less front-end fuel-'
-                     'cycle resource demand.'),
+                    ('Mass of natural uranium mined and milled per MWh '
+                     'of electricity produced. Computed using tails '
+                     'enrichment 0.25 percent and feed 0.71 percent. '
+                     'Typical: commercial LWRs ~17 to 25 gU/MWh, HALEU '
+                     'microreactors ~30 to 80, natural U reactors '
+                     '(CANDU) ~150 to 200. Lower is better.'),
                     section=3,
                 )
 
@@ -3275,13 +3254,11 @@ with streamlit_analytics.track():
                     'Reactivity swing',
                     f'{_fmt_metric(_reactivity_swing_pct)} %Δk/k',
                     ('Total reactivity consumed by burnup over the fuel '
-                     'cycle, in %Δk/k = (k_BOL − 1) / k_BOL × 100. k_BOL is '
-                     'the interpolated beginning-of-life k_eff (fresh fuel, '
-                     'before depletion). Drives control-drum sizing drum '
-                     'worth must exceed the swing to keep cold-clean k_eff '
-                     '< 1 with all drums in. Typical: commercial LWRs ~10-'
-                     '15 %, HALEU microreactors ~15-40 % (large because '
-                     'long cycles + high enrichment).'),
+                     'cycle, in %Δk/k. Drives control drum sizing: drum '
+                     'worth must exceed the swing to keep cold clean '
+                     'k_eff below 1 with all drums in. Typical: '
+                     'commercial LWRs ~10 to 15 percent, HALEU '
+                     'microreactors ~15 to 40 percent.'),
                     section=4,
                 )
 
@@ -3293,14 +3270,11 @@ with streamlit_analytics.track():
                 _fuel_card(
                     'Heat flux (avg)',
                     f'{_fmt_metric(_hflux * 100.0)} W/cm² ({_fmt_metric(_hflux)} MW/m²)',
-                    ('Average heat flux at the outer surface of the fuel '
-                     'pins = Power / (π × pin_diameter × H × pin_count). '
-                     'Sets the convective heat-transfer requirement the '
-                     'coolant has to pull this much heat per unit area off '
-                     'each pin. Typical microreactor values are 0.1-1 '
-                     'MW/m² (10-100 W/cm²). Watch for departure-from-'
-                     'nucleate-boiling (DNB) limits in liquid-cooled '
-                     'designs and burnout limits in gas-cooled designs.'),
+                    ('Average heat flux at the outer surface of the '
+                     'fuel pins = Power / (π × pin diameter × H × pin '
+                     'count). Sets the convective heat removal '
+                     'requirement on the coolant. Typical microreactor '
+                     'values: 0.1 to 1 MW/m² (10 to 100 W/cm²).'),
                     section=5,
                 )
 
@@ -3311,15 +3285,13 @@ with streamlit_analytics.track():
                 _fuel_card(
                     'Enrichment SWU',
                     f'{_fmt_metric(_swu)} kg-SWU | {_fmt_metric(_swu_per_mwh)} g-SWU/MWh',
-                    ('Separative Work Units consumed to produce the fuel '
-                     'in this core the standard metric for enrichment '
-                     'effort. Computed in MOUSE\'s fuel_calculations using '
-                     'the standard value-function method (tails 0.25 %, '
-                     'feed 0.71 %). g-SWU/MWh normalises by total '
-                     'electrical energy delivered. SWU directly drives '
-                     'enrichment cost ($/kg-SWU varies, typically $50-'
-                     '$200/kg-SWU). Higher enrichment products require '
-                     'disproportionately more SWU per kg.'),
+                    ('Separative Work Units consumed to produce the '
+                     'fuel for this core, the standard metric for '
+                     'enrichment effort. Computed using the value '
+                     'function method (tails 0.25 percent, feed 0.71 '
+                     'percent). Drives enrichment cost ($50 to $200/kg '
+                     'SWU); higher enrichment products need more SWU '
+                     'per kg.'),
                     section=3,
                 )
 
@@ -3343,27 +3315,21 @@ with streamlit_analytics.track():
                         _val_str = f'{_tons:.1g} ton'
                     _inv_help = {
                         'LTMR': (
-                            'Rough estimate of the on-site primary NaK '
-                            'inventory (filled core + storage). Scales '
-                            'linearly with thermal power at ~1833 kg/MWₜ, '
-                            'derived from the Creys-Malville sodium plant '
-                            '(5,500 t Na for a 3,000 MWₜ core). NaK does '
-                            'not require periodic replacement the '
-                            'primary boundary is sealed and the coolant '
-                            'is not consumed. Drives the coolant '
-                            'procurement line in OCC. Value is rounded '
-                            'coarsely to reflect estimate-level accuracy.'
+                            'Rough estimate of the on site primary NaK '
+                            'inventory (filled core plus storage). '
+                            'Scales linearly with thermal power at '
+                            '~1833 kg/MWt, derived from the Creys '
+                            'Malville sodium plant. NaK is sealed and '
+                            'not consumed, so no periodic replacement. '
+                            'Drives the coolant procurement line in OCC.'
                         ),
                         'GCMR': (
-                            'Rough estimate of the on-site helium '
+                            'Rough estimate of the on site helium '
                             'inventory. Scales linearly with thermal '
-                            'power at ~3.3 kg/MWₜ (UNT 919556 tables 17 '
-                            '& 18). He has a steady ~10 %/year leakage '
-                            'rate (NAS 12844), so one-tenth of this '
-                            'inventory is replaced annually. Drives both '
-                            'the OCC coolant line and the OPEX make-up '
-                            'term. Value is rounded coarsely to reflect '
-                            'estimate-level accuracy.'
+                            'power at ~3.3 kg/MWt. He has a steady ~10 '
+                            'percent/year leakage rate, so one tenth '
+                            'is replaced annually. Drives both the OCC '
+                            'coolant line and the OPEX make up term.'
                         ),
                     }[reactor_type]
                     _fuel_card(
@@ -3382,14 +3348,12 @@ with streamlit_analytics.track():
                     _fuel_card(
                         'Coolant mass flow rate',
                         f'{_fmt_metric(_mdot)} kg/s',
-                        ('Primary-coolant mass flow rate computed from '
-                         'm_dot = Power_MWₜ × 10⁶ / (ΔT × c_p) with the '
-                         'LTMR\'s fixed ΔT = 90 °C across the core (Tin '
-                         '430 → Tout 520 °C) and the heat capacity of '
-                         'NaK eutectic. Sets the primary-pump and heat-'
-                         'exchanger sizing. Liquid-metal microreactor '
-                         'flow rates are typically 5-100 kg/s for the '
-                         '1-20 MWₜ range; higher powers scale linearly.'),
+                        ('Primary coolant mass flow rate from '
+                         'm_dot = Power_MWt × 10⁶ / (ΔT × c_p) with '
+                         'the LTMR\'s fixed ΔT = 90 °C (Tin 430, Tout '
+                         '520 °C) and the heat capacity of NaK. Sets '
+                         'the primary pump and heat exchanger sizing. '
+                         'Typical: 5 to 100 kg/s for 1 to 20 MWt.'),
                         section=5,
                     )
 
@@ -3399,15 +3363,12 @@ with streamlit_analytics.track():
                     _fuel_card(
                         'Primary pump fraction',
                         f'{_fmt_metric(_pump_pct)} % ({_fmt_metric(_pump_kW)} kW)',
-                        ('Primary-loop pump mechanical power as a fraction '
-                         'of the gross electric output. Computed from a '
-                         'lumped pressure-drop model: P = m_dot × Δp / (ρ '
-                         '× η), with default Δp = 250 kPa, ρ = 750 kg/m³ '
-                         '(NaK at ~500 °C), η = 0.75. Typical liquid-metal '
-                         'primary-loop pump fractions are 1-3 %; higher '
-                         'values indicate an aggressively-loaded loop or '
-                         'oversized core, lower values suggest natural-'
-                         'circulation-dominated cooling.'),
+                        ('Primary loop pump mechanical power as a '
+                         'fraction of gross electric output. Computed '
+                         'from P = m_dot × Δp / (ρ × η) with Δp = 250 '
+                         'kPa, ρ = 750 kg/m³ (NaK at ~500 °C), η = '
+                         '0.75. Typical liquid metal values are 1 to '
+                         '3 percent.'),
                         section=5,
                     )
 
@@ -3422,17 +3383,13 @@ with streamlit_analytics.track():
                     _fuel_card(
                         'Coolant mass flow rate',
                         f'{_fmt_metric(_mdot_gcmr)} kg/s',
-                        ('Primary-coolant (helium) mass flow rate, total '
-                         'across all primary loops. Computed by '
-                         'tools.mass_flow_rate as '
-                         'm_dot = Power_MWₜ × 10⁶ / (ΔT × c_p) per loop, '
-                         'then ÷ loop_factor to get the reactor total. '
-                         'GCMR uses a fixed ΔT = 250 °C across the core '
-                         '(T_in 300 → T_out 550 °C) and the c_p of He '
-                         '(~5193 J/(kg·K)). Helium\'s low density makes '
-                         'these values much smaller than liquid-metal '
-                         'flows typically 1-10 kg/s for a 1-20 MWₜ '
-                         'GCMR. Sets compressor and PCHE sizing.'),
+                        ('Primary helium mass flow rate, total across '
+                         'all primary loops. Computed from m_dot = '
+                         'Power_MWt × 10⁶ / (ΔT × c_p) per loop with '
+                         'GCMR\'s ΔT = 250 °C (Tin 300, Tout 550 °C) '
+                         'and the c_p of He. Helium\'s low density '
+                         'keeps these small: 1 to 10 kg/s for 1 to 20 '
+                         'MWt.'),
                         section=5,
                     )
 
@@ -3450,17 +3407,13 @@ with streamlit_analytics.track():
                     _fuel_card(
                         'Primary compressor fraction',
                         f'{_fmt_metric(_comp_pct)} % ({_fmt_metric(_comp_kW_total)} kW total)',
-                        ('Primary-loop helium-compressor mechanical power '
-                         'as a fraction of gross electric output. '
-                         'Computed from P_per_loop = Δp · m_dot_per_loop '
-                         '/ (η · ρ_He) using ρ_He = 3.33 kg/m³ '
-                         '(He at 4 MPa, 300 °C), Δp = 50 kPa, η_isentropic '
-                         '= 0.8, then multiplied by Primary Loop Count '
-                         '(=2 for GCMR) to get the total. Typical GCMR '
-                         'compressor fractions are 2-6 % higher than '
-                         'liquid-metal pumps because helium\'s low '
-                         'density needs more volumetric flow per unit '
-                         'thermal power.'),
+                        ('Primary loop helium compressor power as a '
+                         'fraction of gross electric output. Computed '
+                         'from Δp · m_dot / (η · ρ_He) with ρ_He = '
+                         '3.33 kg/m³, Δp = 50 kPa, η = 0.8, times '
+                         'Primary Loop Count (2 for GCMR). Typical: '
+                         '2 to 6 percent (higher than liquid metals '
+                         'due to He\'s low density).'),
                         section=5,
                     )
 
@@ -3474,18 +3427,12 @@ with streamlit_analytics.track():
                     _fuel_card(
                         'Number of heat pipes',
                         f'{_n_hp:,}',
-                        ('Total Na heat-pipe count across the core = '
+                        ('Total Na heat pipe count across the core = '
                          '(heat pipes per assembly) × (fuel assemblies '
-                         'per core). The per-assembly count comes from '
-                         'the hex-lattice positions not occupied by '
-                         'fuel pins. Typical microreactor HPMR designs '
-                         'have ~500-5,000 heat pipes depending on '
-                         'power and assembly count (e.g. eVinci-class '
-                         '~1,000-2,000). Drives the per-pipe thermal '
-                         'duty (the next card) and the manufacturing '
-                         'cost (each Na HP with wick + cladding costs '
-                         '$1-3k). More HPs lower the per-pipe duty '
-                         'but increase the BOP and fabrication cost.'),
+                         'per core). Typical HPMR designs have 500 to '
+                         '5,000 heat pipes (eVinci class ~1,000 to '
+                         '2,000). More pipes lower per pipe duty but '
+                         'raise fabrication cost.'),
                         section=5,
                     )
 
@@ -3493,21 +3440,13 @@ with streamlit_analytics.track():
                     _fuel_card(
                         'Power per heat pipe',
                         f'{_fmt_metric(_kw_per_hp)} kW/HP',
-                        ('Thermal duty carried by each Na heat pipe = '
-                         'Power_MWₜ × 1000 / N_HP. Sets the operating '
-                         'point relative to the sodium heat-pipe '
-                         'capacity envelope, which is bounded by four '
-                         'physical limits: capillary (wick can\'t '
-                         'pump enough liquid), sonic (vapor velocity '
-                         'reaches Mach 1), entrainment (vapor shear '
-                         'rips droplets off the wick), and boiling '
-                         '(nucleation in the wick). For Na HPs at '
-                         '700-900 °C the practical envelope is '
-                         '~5-15 kW/HP for 1.5-3 cm diameter pipes; '
-                         'designs above ~20 kW/HP need exotic wick '
-                         'geometries (artery, composite). Below '
-                         '~3 kW/HP usually indicates the core is '
-                         'over-heat-piped (extra cost with no benefit).'),
+                        ('Thermal duty per Na heat pipe = Power_MWt × '
+                         '1000 / N_HP. Capacity is bounded by four '
+                         'physical limits (capillary, sonic, '
+                         'entrainment, boiling). At 700 to 900 °C the '
+                         'practical envelope is 5 to 15 kW/HP for 1.5 '
+                         'to 3 cm pipes; above ~20 kW/HP needs exotic '
+                         'wick geometries.'),
                         section=5,
                     )
 
@@ -3517,22 +3456,14 @@ with streamlit_analytics.track():
                         _fuel_card(
                             'Linear heat rate',
                             f'{_fmt_metric(_kw_per_cm)} kW/cm',
-                            ('Heat-pipe linear heat rate = (kW per HP) '
-                             '/ Active Height. This is THE key sizing '
-                             'metric for sodium heat pipes published '
-                             'Na HP test data (LANL, INL) shows steady-'
-                             'state operation up to ~0.20-0.30 kW/cm '
-                             'for 1.5-2.5 cm diameter pipes at '
-                             '700-900 °C, with the capillary limit '
-                             'dominating at the low end of that '
-                             'temperature range and the sonic limit at '
-                             'the high end. Typical microreactor '
-                             'designs target 0.05-0.20 kW/cm for '
-                             'margin against transient overpower. '
-                             'Above ~0.30 kW/cm the design is in the '
-                             'limit-pushing regime where wick design '
-                             'and Na inventory must be tuned together; '
-                             'above ~0.5 kW/cm requires R&D-grade HPs.'),
+                            ('Heat pipe linear heat rate = (kW per HP) '
+                             '/ Active Height. THE key sizing metric '
+                             'for sodium heat pipes. Published Na HP '
+                             'test data (LANL, INL) shows steady state '
+                             'up to 0.20 to 0.30 kW/cm for 1.5 to 2.5 '
+                             'cm pipes at 700 to 900 °C. Typical '
+                             'designs target 0.05 to 0.20 kW/cm for '
+                             'margin.'),
                             section=5,
                         )
 
@@ -3540,26 +3471,15 @@ with streamlit_analytics.track():
                     if _n_pins > 0:
                         _pin_hp_ratio = _n_pins / _n_hp
                         _fuel_card(
-                            'Pin-to-heat-pipe ratio',
+                            'Pin to heat pipe ratio',
                             f'{_fmt_metric(_pin_hp_ratio)} (pins / HP)',
-                            ('Number of fuel pins served per heat '
-                             'pipe = Fuel Pin Count / N_HP. Geometry '
-                             'sanity check on the lattice: HPMR '
-                             'designs typically run 1-6 pins per HP '
-                             'depending on the assembly ring layout '
-                             '(N_A=6 in MOUSE puts ~3 pins per HP). '
-                             'Below 1.0 means more heat pipes than '
-                             'fuel pins geometrically possible only '
-                             'in very small assemblies and usually '
-                             'over-conservative. Above ~6 means each '
-                             'HP must drain heat from many pins '
-                             'simultaneously, which raises the local '
-                             'cladding-to-HP heat flux and forces '
-                             'larger HP diameter or smaller pin '
-                             'pitch. Drives the radial conduction '
-                             'path length from fuel-pin cladding '
-                             'through the graphite monolith to the '
-                             'nearest HP evaporator wall.'),
+                            ('Fuel pins served per heat pipe = Fuel '
+                             'Pin Count / N_HP. HPMR designs typically '
+                             'run 1 to 6 pins per HP depending on '
+                             'lattice. Above ~6, each HP must drain '
+                             'heat from many pins, raising local '
+                             'cladding to HP flux and forcing larger '
+                             'HP diameter or smaller pin pitch.'),
                             section=5,
                         )
 
@@ -3577,16 +3497,12 @@ with streamlit_analytics.track():
                     'Power density',
                     f'{_fmt_metric(_pd)} MW/m³',
                     ('Thermal power per unit active core volume = '
-                     'Power_MWₜ / (2√3 · R² · H), where R is the active '
-                     'core hex apothem (no reflector) and H is the active '
-                     'height. Tells you how aggressively the fuel is '
-                     'loaded relative to the core size. Typical ranges: '
-                     'eVinci/HPMR-class ~10-15 MW/m³, LTMR ~10-30, '
-                     'metal-fuel microreactors (Oklo, BANR) ~50-100, '
-                     'commercial LWRs ~100. Below ~5 MW/m³ means the core '
-                     'is over-fuelled (long lifetime, low utilization); '
-                     'above ~80 means the design is thermal-hydraulically '
-                     'aggressive also check the heat-flux card.'),
+                     'Power_MWt / (2√3 · R² · H), where R is the hex '
+                     'apothem (no reflector). Tells you how '
+                     'aggressively the fuel is loaded. Typical: '
+                     'eVinci/HPMR class ~10 to 15 MW/m³, LTMR ~10 to '
+                     '30, metal fuel microreactors ~50 to 100, '
+                     'commercial LWRs ~100.'),
                     section=5,
                 )
 
@@ -4445,7 +4361,7 @@ with streamlit_analytics.track():
         is_double_digit_excluding_multiples_of_10)].copy()
     _drv = _drv.sort_values('FOAK LCOE', ascending=False)
     _drv = _drv[_drv['FOAK LCOE'] >= 5]
-    _drv = _drv.head(10)
+    _drv = _drv.head(7)
 
     if _drv.empty:
         st.info('No accounts with FOAK LCOE >= 5 $/MWh found.')
@@ -4520,6 +4436,8 @@ with streamlit_analytics.track():
 
     # --- Detailed cost drivers (one level deeper) ---
     _det = detailed_sorted_df.copy() if not detailed_sorted_df.empty else pd.DataFrame()
+    if not _det.empty:
+        _det = _det.head(7)
 
     if _det.empty:
         st.info('No detailed accounts with FOAK LCOE >= 5 $/MWh found.')
