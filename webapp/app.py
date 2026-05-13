@@ -4077,48 +4077,25 @@ with streamlit_analytics.track():
     _envelopes = {
         'iso20': {
             'name': 'ISO 20-ft container',
-            'width_m': 2.35,   # internal
-            'height_m': 2.39,  # internal
-            'length_m': 5.90,  # internal
-            'gross_t': 24.0,   # typical practical operating limit
-            'payload_t': 21.7, # gross 24.0 − tare ~2.3 t
+            'width_m': 2.35,
+            'height_m': 2.39,
+            'length_m': 5.90,
+            'payload_t': 21.7,  # 24 t total minus ~2.3 t container weight
             'help_text': (
-                'Standard 20-ft general-purpose shipping container. '
-                'Numbers shown are the INTERNAL envelope the cargo '
-                'must fit within and the GROSS-mass operating limit. '
-                'ISO 668:2020 allows up to 30.48 t structural rating, '
-                'but ~24 t is the typical practical limit for 20-ft '
-                'containers (older units rated lower; road haulage '
-                'and many sea routes cap at this value). The '
-                'fit-check internally subtracts ~2.3 t of container '
-                'tare to estimate cargo payload (~21.7 t). Multimodal: '
-                'same container moves on truck chassis, rail '
-                'intermodal well-cars, and container ships.'
+                'A standard 20-ft shipping container, used worldwide on '
+                'trucks, trains, and ships. Maximum cargo weight is '
+                '~21.7 t — the 24 t total limit minus ~2.3 t for the '
+                'container itself. Key advantage: the same container '
+                'moves between truck, train, and ship without ever '
+                'being unpacked.'
             ),
             'cite_html': (
-                '<a href="https://www.iso.org/standard/76912.html" '
-                'target="_blank" style="color:#1B4F8C;">ISO 668:2020</a> '
-                'rates 1CC containers up to 30.48 t structurally; '
-                '~24 t is the typical operational gross-mass cap '
-                'still in widespread use.'
+                'Source: <a href="https://www.iso.org/standard/76912.html" '
+                'target="_blank" style="color:#1B4F8C;">ISO 668:2020</a>'
             ),
-            # Trucking-specific note shown ONLY under the Road mode group.
             'road_note_html': (
-                '<strong>Typical operational payload in US trucking:</strong> '
-                '~21&ndash;22 t (gross 24 t minus ~2.3 t container tare).'
-            ),
-            # Rail-specific intermodal weight context.
-            'rail_note_html': (
-                '<strong>On rail intermodal:</strong> the container\'s '
-                '24 t gross is the binding weight constraint railcars '
-                'can carry much more (~100+ t payload per car).'
-            ),
-            # Sea-specific framing context.
-            'sea_note_html': (
-                'Badge reflects fit inside an ISO container, not '
-                'vessel capability. If the module exceeds ISO limits, '
-                'breakbulk or heavy-lift sea shipping remains '
-                'available (see note below).'
+                'Typical cargo limit on US trucks: ~21-22 t '
+                '(24 t total minus ~2.3 t container weight).'
             ),
         },
         'iso40': {
@@ -4126,180 +4103,93 @@ with streamlit_analytics.track():
             'width_m': 2.35,
             'height_m': 2.39,
             'length_m': 12.03,
-            'gross_t': 30.48,
-            'payload_t': 26.78, # gross 30.48 − tare ~3.7 t
+            'payload_t': 26.78,  # 30.48 t total minus ~3.7 t container weight
             'help_text': (
-                'Standard 40-ft general-purpose container. Same '
-                'internal width and height as the 20-ft, roughly '
-                'double the length. Gross-mass cap 30.48 t per '
-                'ISO 668:2020 is both the structural rating and the '
-                'typical operating limit. Fit-check subtracts ~3.7 t '
-                'of container tare to estimate cargo payload (~26.8 t). '
-                'In US trucking the cap is further reduced in practice '
-                'by the 80,000 lb (~36.3 t) federal Gross Vehicle '
-                'Weight law: ~30 t cargo + ~17 t tractor+trailer tare '
-                'exceeds 80,000 lb, so the loaded 40-ft container '
-                'can\'t legally ride a standard truck at full ISO '
-                'mass without an overweight permit.'
+                'A standard 40-ft shipping container — same width and '
+                'height as the 20-ft, roughly double the length. '
+                'Maximum cargo weight is ~26.8 t (30.5 t total minus '
+                '~3.7 t container). On US roads, federal truck-weight '
+                'rules often reduce what you can actually load below '
+                'this number.'
             ),
             'cite_html': (
-                '<a href="https://www.iso.org/standard/76912.html" '
-                'target="_blank" style="color:#1B4F8C;">ISO 668:2020</a>, '
-                'Table 1 (40-ft 1AA).'
+                'Source: <a href="https://www.iso.org/standard/76912.html" '
+                'target="_blank" style="color:#1B4F8C;">ISO 668:2020</a>'
             ),
             'road_note_html': (
-                '<strong>Typical operational payload in US trucking:</strong> '
-                '~26&ndash;28 t (gross 30.48 t minus ~3.7 t tare; further '
-                'capped in practice by the US 80,000 lb GVW law).'
-            ),
-            'rail_note_html': (
-                '<strong>On rail intermodal:</strong> the container\'s '
-                '30.48 t gross is the binding weight constraint '
-                'railcars can carry much more (~100+ t payload per car).'
-            ),
-            'sea_note_html': (
-                'Badge reflects fit inside an ISO container, not '
-                'vessel capability. If the module exceeds ISO limits, '
-                'breakbulk or heavy-lift sea shipping remains '
-                'available (see note below).'
+                'Typical cargo limit on US trucks: ~26-28 t. '
+                'US federal 80,000 lb truck weight law often reduces '
+                'this further in practice.'
             ),
         },
         'iso40hc': {
-            'name': 'ISO 40-ft High-Cube',
+            'name': 'ISO 40-ft High-Cube container',
             'width_m': 2.35,
             'height_m': 2.70,
             'length_m': 12.03,
-            'gross_t': 30.48,
-            'payload_t': 26.58, # gross 30.48 − tare ~3.9 t
+            'payload_t': 26.58,  # 30.48 t total minus ~3.9 t container weight
             'help_text': (
-                '40-ft container ~30 cm (1 ft) taller than the '
-                'standard 40-ft: external 2.90 m, internal 2.70 m. '
-                'The most common pick when vertical clearance is '
-                'binding. Same 30.48 t gross-mass rating as standard '
-                '40-ft; fit-check subtracts ~3.9 t of container tare '
-                'for payload (~26.6 t). Same US trucking caveat as '
-                'standard 40-ft: 80,000 lb GVW law caps real-world '
-                'load below the ISO max.'
+                'Like a standard 40-ft container but ~30 cm taller '
+                'inside — the usual choice when the module is too tall '
+                'for a regular container. Maximum cargo weight ~26.6 t. '
+                'On US trucks, loaded height (~4.1 m) sits right at the '
+                'no-permit clearance limit, so the truck chassis matters.'
             ),
             'cite_html': (
-                '<a href="https://www.iso.org/standard/76912.html" '
-                'target="_blank" style="color:#1B4F8C;">ISO 668:2020</a> '
-                '(1AAA / High-Cube).'
+                'Source: <a href="https://www.iso.org/standard/76912.html" '
+                'target="_blank" style="color:#1B4F8C;">ISO 668:2020</a>'
             ),
-            # Two road-specific notes combined into one block since both
-            # only apply when rendered under "Road".
             'road_note_html': (
-                '<strong>Typical operational payload in US trucking:</strong> '
-                '~26&ndash;27 t (gross 30.48 t minus ~3.9 t tare; further '
-                'capped by the US 80,000 lb GVW law).<br>'
-                '<strong>Height-sensitive on road:</strong> external '
-                '2.90 m + truck chassis deck ~1.2 m &approx; 4.10 m total '
-                'right at the 4.11 m US no-permit clearance limit. '
-                'Sensitive to chassis selection.'
-            ),
-            'rail_note_html': (
-                '<strong>On rail intermodal:</strong> the container\'s '
-                '30.48 t gross is the binding weight constraint '
-                'railcars can carry much more (~100+ t payload per car).'
-            ),
-            'sea_note_html': (
-                'Badge reflects fit inside an ISO container, not '
-                'vessel capability. If the module exceeds ISO limits, '
-                'breakbulk or heavy-lift sea shipping remains '
-                'available (see note below).'
+                'Typical cargo limit on US trucks: ~26-27 t. '
+                'Loaded height on a standard chassis is ~4.1 m, right '
+                'at the US no-permit clearance limit.'
             ),
         },
         'us_no_permit': {
-            'name': 'US road no-permit (open / oversized)',
+            'name': 'US road (no permits needed)',
             'width_m': 2.59,
             'height_m': 4.11,
             'height_note': '(planning)',
             'length_m': None,
-            # GVW shown for context but NOT used as a cargo-mass cap
-            # the 80,000 lb envelope doesn't govern reactor-scale loads
-            # (those go through state overweight permits + heavy-haul
-            # configurations where axle load and Bridge Formula B
-            # constraints dominate). Setting payload_t = None makes the
-            # weight fit-check skip; the badge then reflects only width
-            # and height.
-            'gross_t': 36.3,
-            'gross_note': '(GVW, total vehicle)',
+            # payload_t = None -> weight fit-check skipped (weight is not
+            # a single-number constraint here; depends on truck setup
+            # and bridge ratings along the route).
             'payload_t': None,
             'help_text': (
-                'BASELINE federal Interstate legal envelope heavy '
-                'industrial cargo (including reactor modules) routinely '
-                'exceeds it and ships under state overweight permits '
-                'with multi-axle heavy-haul configurations. '
-                'WIDTH 2.59 m (8.5 ft) is the hard federal limit per '
-                'the Bridge Formula. '
-                'HEIGHT 4.11 m (13.5 ft) is a common state clearance '
-                'limit and a planning value, NOT a legal guarantee '
-                '(older bridges and tunnels can be lower; heavy-haul '
-                'planners treat this as planning max). '
-                'WEIGHT 36.3 t (80,000 lb) is GROSS VEHICLE WEIGHT '
-                '(truck + trailer + fuel + cargo COMBINED), NOT a '
-                'cargo cap. The fit-check evaluates width and height '
-                'only; weight is not meaningfully bounded by this '
-                'envelope for reactor-scale modules.'
+                'Maximum truck size on US roads without needing special '
+                'permits or escort vehicles. Wider, taller, or heavier '
+                'loads still ship by road but require state permits, '
+                'multi-axle trailers, and route surveys. The 4.11 m '
+                'height is a planning value — older bridges can be '
+                'lower. Weight depends on truck setup and bridges along '
+                'the route, not a single number.'
             ),
             'cite_html': (
-                '<a href="https://www.law.cornell.edu/uscode/text/23/127" '
-                'target="_blank" style="color:#1B4F8C;">23 U.S.C. '
-                '§ 127</a> (Interstate size/weight limits; state '
-                'enforcement applies). '
-                '<a href="https://ops.fhwa.dot.gov/freight/sw/overview/index.htm" '
-                'target="_blank" style="color:#1B4F8C;">FHWA size '
-                'regulations</a>.'
-            ),
-            'note_html': (
-                'Effective cargo limit is not meaningful under the '
-                '80,000 lb envelope for reactor-scale loads; such '
-                'modules typically require overweight permits and '
-                'multi-axle heavy-haul trailers where axle load and '
-                'Bridge Formula B constraints govern rather than '
-                'gross tare subtraction.'
+                'Source: <a href="https://www.law.cornell.edu/uscode/text/23/127" '
+                'target="_blank" style="color:#1B4F8C;">US federal '
+                'trucking size and weight law (23 USC § 127)</a>'
             ),
         },
         'aar_plate_f': {
-            'name': 'AAR Plate F rail loading gauge',
+            'name': 'Rail flatcar (oversized cargo)',
             'width_m': 3.25,
             'height_m': 5.18,
             'height_note': '(above rail)',
             'length_m': None,
-            'gross_t': None,
             'payload_t': None,
             'help_text': (
-                'For cargo that does not fit inside a standard '
-                'container, ship on an open rail flatcar. AAR Plate F '
-                'is the standard high-clearance loading envelope used '
-                'by US/Canadian railroads for oversized industrial '
-                'cargo. Important framing: Plate F is a PROFILE-BASED '
-                'clearance envelope (a stepped silhouette above the '
-                'rail), NOT a fixed 3.25 × 5.18 m rectangle. The '
-                '3.25 m width applies at the lower part of the '
-                'envelope only; allowable width narrows as height '
-                'increases. The 5.18 m height includes the flatcar '
-                'deck (~1.0-1.3 m), so usable cargo height above the '
-                'deck is closer to ~4 m. The fit-check here treats '
-                'Plate F as a flat rectangle for simplicity and is '
-                'therefore optimistic for tall and/or wide-near-the-'
-                'top cargo proper clearance verification requires '
-                'the AAR profile curve. No fixed weight cap '
-                'geometrically; per-route limits (typically 100-150 t '
-                'payload, sometimes higher) depend on track class '
-                'and bridge ratings.'
+                'For cargo too big for a standard container — ship on '
+                'an open rail flatcar. The shape narrows higher up: '
+                '3.25 m wide at the bottom, less at the top. The '
+                '5.18 m height includes the flatcar deck (~1 m), so '
+                'usable cargo height above the deck is closer to 4 m. '
+                'Per-route weight limits are typically 100+ t.'
             ),
             'cite_html': (
-                'AAR Manual of Standards &amp; Recommended Practices '
-                '(MSRP), §C-II clearance diagrams. Free reference: '
+                'Source: '
                 '<a href="https://en.wikipedia.org/wiki/Loading_gauge#North_American_loading_gauges" '
                 'target="_blank" style="color:#1B4F8C;">North American '
-                'loading gauges</a>.'
-            ),
-            'note_html': (
-                '<strong>Profile-based envelope, not a fixed box:</strong> '
-                'allowable width narrows as height increases. The '
-                'rectangular fit-check shown here is an approximation.'
+                'rail loading gauges</a>'
             ),
         },
     }
@@ -4309,65 +4199,40 @@ with streamlit_analytics.track():
             'name': 'Road',
             'envelope_keys': ['iso20', 'iso40', 'iso40hc', 'us_no_permit'],
             'closing_note': (
-                'Loads beyond these envelopes ship by road using '
-                'oversize/overweight state permits, escort vehicles, '
-                'route surveys, and multi-axle heavy-haul configurations. '
-                'The governing constraint in practice is often <strong>'
-                'axle-load distribution and Bridge Formula B compliance'
-                '</strong> (the federal law &mdash; 23 USC § 127 &mdash; '
-                'that sets how much weight a truck can carry as a '
-                'function of axle spacing), and bridge-specific load '
-                'ratings, rather than total gross vehicle weight or '
-                'container dimensions. For nuclear-class payloads in '
-                'Type B / HAC casks, ISO container limits are largely '
-                'irrelevant since the cask itself is the transport '
-                'package the binding constraints become axle load '
-                '→ GVW → height → width, in that order.'
+                'Larger or heavier modules still ship by road, but '
+                'they need state permits, escort vehicles, route '
+                'surveys, and multi-axle heavy-haul trailers. The '
+                'binding constraint in practice is often how the '
+                'weight is distributed across axles and what '
+                'individual bridges along the route can carry, not '
+                'just the total weight of the load.'
             ),
         },
         {
             'name': 'Rail',
             'envelope_keys': ['iso20', 'iso40', 'iso40hc', 'aar_plate_f'],
             'closing_note': (
-                '"Intermodal" above means: one container that moves '
-                'between truck chassis, rail well-cars, and ship '
-                'without unpacking. "Plate F" is the standard rail '
-                'clearance silhouette used by US/Canadian railroads '
-                'for non-containerised oversized cargo. '
-                '<br><br>'
-                'For modules too big for either, heavy specialised '
-                'rail (e.g. <strong>Schnabel-type cars</strong>, '
-                '~300-500+ t capability) is <strong>geometry-adaptive'
-                '</strong>: the load becomes part of the car '
-                'structure, articulating around curves with the '
-                'railcar ends, so geometry and clearance are steered '
-                'per-shipment. Multi-car modular consists handle '
-                'larger modules similarly. All such options are '
-                'project-specific, with constraints set by bridge '
-                'loading, curve radius, and clearance profiles per '
-                'route rather than ISO container geometry.'
+                'Containers above can move between truck, rail, and '
+                'ship without unpacking. For modules too big for any '
+                'container, an open rail flatcar handles oversized '
+                'cargo. For very large or heavy modules, specialized '
+                'railcars (such as Schnabel-type cars, with 300-500+ t '
+                'capability) become part of the load itself and adapt '
+                'to curves — these are planned per shipment based on '
+                'the specific route\'s bridges and clearances.'
             ),
         },
         {
             'name': 'Sea',
             'envelope_keys': ['iso20', 'iso40', 'iso40hc'],
             'closing_note': (
-                'Sea transport has THREE regimes; the cards above '
-                'cover only <strong>(1) containerised</strong> '
-                'shipping (ISO 20/40/HC). Beyond ISO containers, two '
-                'further regimes apply: '
-                '<strong>(2) breakbulk</strong> crated cargo loaded '
-                'individually into general-cargo or multi-purpose '
-                'vessels, used for modules larger than standard '
-                'containers; and '
-                '<strong>(3) heavy-lift / project / Ro-Ro</strong> '
-                'specialised vessels with single-lift capability of '
-                'several hundred to 1000+ tons, and Ro-Ro '
-                '(Roll-on/Roll-off) for self-propelled or wheeled '
-                'cargo. All non-container options are project-'
-                'specific vessel selection, port crane capacity, '
-                'lashing engineering, and routing are engineered '
-                'per shipment.'
+                'Beyond standard containers, two further options '
+                'exist: breakbulk (cargo crated and loaded individually '
+                'into general-cargo ships) for modules larger than a '
+                'container, and heavy-lift vessels (with single-lift '
+                'capability of several hundred to 1000+ tons) for very '
+                'large or heavy modules. All non-container options are '
+                'planned per shipment.'
             ),
         },
     ]
@@ -4402,13 +4267,13 @@ with streamlit_analytics.track():
             _badge_text = '✗ module exceeds ' + ' + '.join(_fails)
         _height_note = env.get('height_note', '')
         _height_note_str = f' <span style="color:#64748b;">{_height_note}</span>' if _height_note else ''
-        _gross_note = env.get('gross_note', '')
-        _gross_note_str = f' <span style="color:#64748b;">{_gross_note}</span>' if _gross_note else ''
         _len_str = (f' &nbsp;|&nbsp; len ≤ {env["length_m"]:.2f} m'
                     if env['length_m'] is not None else '')
-        _wt_str = (f' &nbsp;|&nbsp; gross ≤ {env["gross_t"]:.2f} t{_gross_note_str}'
-                   if env.get('gross_t') is not None else
-                   ' &nbsp;|&nbsp; wt: route-dep.')
+        # Show the actual fit-check number (payload), or hide the
+        # weight column entirely when weight isn't a single-number
+        # constraint (US road, rail flatcar — depends on truck/route).
+        _wt_str = (f' &nbsp;|&nbsp; weight ≤ {env["payload_t"]:.1f} t'
+                   if env.get('payload_t') is not None else '')
         # Mode-specific extra note (e.g. road_note_html on HC) is
         # appended after the regular note_html. Only shown when this
         # envelope is rendered under the matching mode group.
