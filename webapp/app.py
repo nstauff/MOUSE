@@ -5467,20 +5467,45 @@ with streamlit_analytics.track():
     # ── End-of-script housekeeping ───────────────────────────────
     # Every Streamlit rerun re-executes this script top-to-bottom, so
     # the variables holding the cost-engine DataFrames go out of scope
-    # here. A generational GC pass reclaims their memory promptly
-    # instead of waiting for Python's incremental collector (F).
+    # here. A generational GC pass reclaims their memory promptly (F).
     #
-    # Soft memory monitor (G): if the process is approaching the
-    # Streamlit Community Cloud 1 GB ceiling, proactively clear cached
-    # results to free a large chunk before the OS-level OOM hits. The
-    # 800 MB threshold leaves headroom for the current render in flight.
+    # Memory monitor: two tiers, both based on RSS (the same number
+    # the sidebar badge shows).
+    #   • Hard tier (C) at 950 MB: self-restart via os._exit(0) before
+    #     Streamlit Cloud's ~1 GB hard kill. User sees a brief "rebooting"
+    #     page instead of an OOM crash. Cleaner than waiting for the kill.
+    #   • Soft tier (G) at 800 MB: clear st.cache_data + malloc_trim to
+    #     actually return freed pages to the OS (glibc otherwise holds
+    #     them as a high-water mark, so RSS would not visibly drop).
+    # Both tiers print to stdout so the cleanup is visible in Streamlit
+    # Cloud's logs panel.
     import gc as _gc
     _gc.collect()
     try:
         import psutil as _psutil
         _rss_mb = _psutil.Process().memory_info().rss / (1024 * 1024)
+
+        # C — hard self-restart before Streamlit's own kill
+        if _rss_mb > 950:
+            print(f"[mem] {_rss_mb:.0f} MB > 950 MB -> self-restart",
+                  flush=True)
+            import os as _os
+            _os._exit(0)
+
+        # G + A + B — soft cleanup with malloc_trim and logging
         if _rss_mb > 800:
             st.cache_data.clear()
             _gc.collect()
+            # A: force glibc to release freed pages back to OS (Linux only;
+            # silently no-op on macOS/Windows where libc.so.6 doesn't exist)
+            try:
+                import ctypes as _ctypes
+                _ctypes.CDLL("libc.so.6").malloc_trim(0)
+            except (OSError, AttributeError):
+                pass
+            _new_rss = _psutil.Process().memory_info().rss / (1024 * 1024)
+            # B: visible in Streamlit Cloud -> Manage app -> Logs
+            print(f"[mem] {_rss_mb:.0f} MB > 800 MB -> cleared caches, "
+                  f"now {_new_rss:.0f} MB", flush=True)
     except ImportError:
         pass
