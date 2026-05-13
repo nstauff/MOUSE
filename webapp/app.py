@@ -3840,7 +3840,7 @@ with streamlit_analytics.track():
     _reactor_desc = (
         f'Includes: U235 + U238, moderator ({_moderator_for_type}), '
         'radial + axial reflector, control drums.'
-        + (' HPMR heat-pipe steel cladding and Na working fluid '
+        + (' HPMR heat pipe steel cladding and Na working fluid '
            'not yet modeled.' if reactor_type == 'HPMR' else '')
     )
     _rv_desc_extra = (
@@ -3857,8 +3857,8 @@ with streamlit_analytics.track():
     )
     _gv_desc = (
         'Secondary containment shell around the reactor vessel '
-        'for primary-coolant leak containment. Mass = '
-        'guard-vessel wall only (no internals).'
+        'for primary coolant leak containment. Mass = '
+        'guard vessel wall only (no internals).'
     )
     _gv_na_desc = (
         'Intentionally omitted for this reactor type He is '
@@ -3870,8 +3870,8 @@ with streamlit_analytics.track():
         'The two outer vessels that comprise the Reactor Vessel '
         'Auxiliary Cooling System: the cooling vessel + the intake '
         'vessel, treated here as one shipping envelope. Diameter = '
-        '2 × intake-vessel outer radius; height is the full external '
-        'envelope. Mass = cooling-vessel wall + intake-vessel wall '
+        '2 × intake vessel outer radius; height is the full external '
+        'envelope. Mass = cooling vessel wall + intake vessel wall '
         'only (no air, no insulation, no support structure).'
     )
 
@@ -3958,7 +3958,7 @@ with streamlit_analytics.track():
         if reactor_type == 'GCMR' else ''
     )
     _hpmr_note = (
-        '<li><strong>HPMR not-yet-modeled:</strong> heat-pipe '
+        '<li><strong>HPMR not yet modeled:</strong> heat pipe '
         'steel cladding and the Na working fluid are not currently '
         'tracked in MOUSE.</li>'
         if reactor_type == 'HPMR' else ''
@@ -3979,14 +3979,14 @@ with streamlit_analytics.track():
         'text-transform:uppercase;letter-spacing:0.06em;'
         'color:#1B4F8C;margin-bottom:0.45rem;">Notes &amp; assumptions</div>'
         '<ul style="margin:0;padding-left:1.2rem;color:#1B4F8C;">'
-        '<li><strong>Shielding excluded:</strong> in-vessel '
-        'shielding (B<sub>4</sub>C) and out-of-vessel shielding '
+        '<li><strong>Shielding excluded:</strong> in vessel '
+        'shielding (B<sub>4</sub>C) and out of vessel shielding '
         '(WEP / concrete biological shield) are not included. '
         'Shielding adds significant mass and outer dimension to '
-        'the as-shipped or as-installed module depending on '
+        'the module as shipped or as installed, depending on '
         'whether it ships with the reactor or is built on site.</li>'
         '<li><strong>Coolant excluded:</strong> primary coolant '
-        'inventory (NaK for LTMR, He for GCMR, heat-pipe Na for '
+        'inventory (NaK for LTMR, He for GCMR, heat pipe Na for '
         'HPMR) is not included in the mass column.</li>'
         + _gcmr_note
         + _hpmr_note
@@ -4000,7 +4000,7 @@ with streamlit_analytics.track():
     st.markdown(
         '<div style="font-size:1rem;font-weight:700;color:#0a2540;'
         'border-left:4px solid #0a2540;padding:0.4rem 0 0.4rem 0.75rem;'
-        'margin:1.25rem 0 0.85rem 0;">Transport-Mode Compatibility</div>',
+        'margin:1.25rem 0 0.85rem 0;">Transport Mode Compatibility</div>',
         unsafe_allow_html=True,
     )
 
@@ -4011,10 +4011,10 @@ with streamlit_analytics.track():
         '<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;'
         'padding:0.85rem 1.1rem;margin-bottom:0.9rem;'
         'font-size:0.85rem;line-height:1.45;color:#92400e;">'
-        '<strong>Caveat:</strong> geometry/mass check only. '
-        'Fueled or post-operation modules require shielded casks '
-        'that add tens of tonnes and can exceed the ISO container '
-        'envelope.'
+        '<strong>Caveat:</strong> geometry and mass check only. '
+        'Fueled modules, or modules removed after operation, '
+        'require shielded casks that add tens of tonnes and can '
+        'exceed the ISO container envelope.'
         '</div>',
         unsafe_allow_html=True,
     )
@@ -4031,13 +4031,9 @@ with streamlit_analytics.track():
         '(Road, Rail, Sea) each list standard shipping limits used in '
         'that mode. Each card compares your reactor module\'s outer '
         'dimensions and mass to one limit. A green <strong>&#x2713; '
-        'module fits</strong> means the geometry could fit; a red '
-        '<strong>&#x2717; module exceeds</strong> tells you which '
-        'dimension is the problem (width, height, length, or weight). '
-        'Boxes labelled "ISO container" check whether the module fits '
-        'inside a standard shipping container; boxes labelled "AAR '
-        'Plate F" or "no-permit" check whether it fits a mode-specific '
-        'regulatory limit.'
+        'fits</strong> means the geometry could fit; a red '
+        '<strong>&#x2717; exceeds</strong> tells you which dimension '
+        'is the problem (width, height, length, or weight).'
         '</div>',
         unsafe_allow_html=True,
     )
@@ -4059,16 +4055,16 @@ with streamlit_analytics.track():
     #   height number (e.g. "(route-dep.)" for state-set limits).
     _envelopes = {
         'iso20': {
-            'name': 'ISO 20-ft container',
+            'name': 'ISO 20 ft container',
             'width_m': 2.35,
             'height_m': 2.39,
             'length_m': 5.90,
             'payload_t': 21.7,  # 24 t total minus ~2.3 t container weight
             'help_text': (
-                'A standard 20-ft shipping container, used worldwide on '
+                'A standard 20 ft shipping container, used worldwide on '
                 'trucks, trains, and ships. Maximum cargo weight is '
-                '~21.7 t — the 24 t total limit minus ~2.3 t for the '
-                'container itself. Key advantage: the same container '
+                '~21.7 t (the 24 t total limit minus ~2.3 t for the '
+                'container itself). Key advantage: the same container '
                 'moves between truck, train, and ship without ever '
                 'being unpacked.'
             ),
@@ -4077,55 +4073,56 @@ with streamlit_analytics.track():
                 'target="_blank" style="color:#1B4F8C;">ISO 668:2020</a>'
             ),
             'road_note_html': (
-                'Typical cargo limit on US trucks: ~21-22 t '
+                'Typical cargo limit on US trucks: 21 to 22 t '
                 '(24 t total minus ~2.3 t container weight).'
             ),
         },
         'iso40': {
-            'name': 'ISO 40-ft container',
+            'name': 'ISO 40 ft container',
             'width_m': 2.35,
             'height_m': 2.39,
             'length_m': 12.03,
             'payload_t': 26.78,  # 30.48 t total minus ~3.7 t container weight
             'help_text': (
-                'A standard 40-ft shipping container — same width and '
-                'height as the 20-ft, roughly double the length. '
-                'Maximum cargo weight is ~26.8 t (30.5 t total minus '
-                '~3.7 t container). On US roads, federal truck-weight '
-                'rules often reduce what you can actually load below '
-                'this number.'
+                'A standard 40 ft shipping container with the same '
+                'width and height as the 20 ft, roughly double the '
+                'length. Maximum cargo weight is ~26.8 t (30.5 t total '
+                'minus ~3.7 t container). On US roads, federal truck '
+                'weight rules often reduce what you can actually load '
+                'below this number.'
             ),
             'cite_html': (
                 'Source: <a href="https://www.iso.org/standard/76912.html" '
                 'target="_blank" style="color:#1B4F8C;">ISO 668:2020</a>'
             ),
             'road_note_html': (
-                'Typical cargo limit on US trucks: ~26-28 t. '
+                'Typical cargo limit on US trucks: 26 to 28 t. '
                 'US federal 80,000 lb truck weight law often reduces '
                 'this further in practice.'
             ),
         },
         'iso40hc': {
-            'name': 'ISO 40-ft High-Cube container',
+            'name': 'ISO 40 ft High Cube container',
             'width_m': 2.35,
             'height_m': 2.70,
             'length_m': 12.03,
             'payload_t': 26.58,  # 30.48 t total minus ~3.9 t container weight
             'help_text': (
-                'Like a standard 40-ft container but ~30 cm taller '
-                'inside — the usual choice when the module is too tall '
+                'Like a standard 40 ft container but ~30 cm taller '
+                'inside. The usual choice when the module is too tall '
                 'for a regular container. Maximum cargo weight ~26.6 t. '
                 'On US trucks, loaded height (~4.1 m) sits right at the '
-                'no-permit clearance limit, so the truck chassis matters.'
+                'no permit clearance limit, so the truck chassis '
+                'matters.'
             ),
             'cite_html': (
                 'Source: <a href="https://www.iso.org/standard/76912.html" '
                 'target="_blank" style="color:#1B4F8C;">ISO 668:2020</a>'
             ),
             'road_note_html': (
-                'Typical cargo limit on US trucks: ~26-27 t. '
+                'Typical cargo limit on US trucks: 26 to 27 t. '
                 'Loaded height on a standard chassis is ~4.1 m, right '
-                'at the US no-permit clearance limit.'
+                'at the US no permit clearance limit.'
             ),
         },
         'us_no_permit': {
@@ -4142,10 +4139,10 @@ with streamlit_analytics.track():
                 'Maximum truck size on US roads without needing special '
                 'permits or escort vehicles. Wider, taller, or heavier '
                 'loads still ship by road but require state permits, '
-                'multi-axle trailers, and route surveys. The 4.11 m '
-                'height is a planning value — older bridges can be '
-                'lower. Weight depends on truck setup and bridges along '
-                'the route, not a single number.'
+                'multiple axle trailers, and route surveys. The 4.11 m '
+                'height is a planning value (older bridges can be '
+                'lower). Weight depends on truck setup and bridges '
+                'along the route, not a single number.'
             ),
             'cite_html': (
                 'Source: <a href="https://www.law.cornell.edu/uscode/text/23/127" '
@@ -4161,12 +4158,13 @@ with streamlit_analytics.track():
             'length_m': None,
             'payload_t': None,
             'help_text': (
-                'For cargo too big for a standard container — ship on '
+                'For cargo too big for a standard container, ship on '
                 'an open rail flatcar. The shape narrows higher up: '
                 '3.25 m wide at the bottom, less at the top. The '
                 '5.18 m height includes the flatcar deck (~1 m), so '
                 'usable cargo height above the deck is closer to 4 m. '
-                'Per-route weight limits are typically 100+ t.'
+                'Weight limits depend on the route and are typically '
+                '100+ t.'
             ),
             'cite_html': (
                 'Source: '
@@ -4184,7 +4182,7 @@ with streamlit_analytics.track():
             'closing_note': (
                 'Larger or heavier modules still ship by road, but '
                 'they need state permits, escort vehicles, route '
-                'surveys, and multi-axle heavy-haul trailers. The '
+                'surveys, and multiple axle heavy haul trailers. The '
                 'binding constraint in practice is often how the '
                 'weight is distributed across axles and what '
                 'individual bridges along the route can carry, not '
@@ -4199,10 +4197,11 @@ with streamlit_analytics.track():
                 'ship without unpacking. For modules too big for any '
                 'container, an open rail flatcar handles oversized '
                 'cargo. For very large or heavy modules, specialized '
-                'railcars (such as Schnabel-type cars, with 300-500+ t '
-                'capability) become part of the load itself and adapt '
-                'to curves — these are planned per shipment based on '
-                'the specific route\'s bridges and clearances.'
+                'railcars (such as Schnabel type cars, with 300 to '
+                '500+ t capability) become part of the load itself '
+                'and adapt to curves. These are planned per shipment '
+                'based on the specific route\'s bridges and '
+                'clearances.'
             ),
         },
         {
@@ -4211,11 +4210,11 @@ with streamlit_analytics.track():
             'closing_note': (
                 'Beyond standard containers, two further options '
                 'exist: breakbulk (cargo crated and loaded individually '
-                'into general-cargo ships) for modules larger than a '
-                'container, and heavy-lift vessels (with single-lift '
+                'into general cargo ships) for modules larger than a '
+                'container, and heavy lift vessels (with single lift '
                 'capability of several hundred to 1000+ tons) for very '
-                'large or heavy modules. All non-container options are '
-                'planned per shipment.'
+                'large or heavy modules. Alternatives to containers '
+                'are planned per shipment.'
             ),
         },
     ]
@@ -4330,7 +4329,7 @@ with streamlit_analytics.track():
         'padding:0.85rem 1.1rem;margin-bottom:1rem;font-size:0.85rem;line-height:1.45;color:#92400e;">'
         '<strong>Note:</strong> each badge compares the outermost RVACS '
         'envelope (diameter, height) and the sum of all component masses '
-        'against the listed envelope. Per-component dimensions and masses '
+        'against the listed envelope. Per component dimensions and masses '
         'are shown in the table above.'
         '</div>',
         unsafe_allow_html=True,
