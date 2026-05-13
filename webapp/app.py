@@ -124,12 +124,23 @@ import html
 import io
 import math
 import sqlite3
+import threading
 import uuid
 import warnings
 from datetime import datetime, timezone
 from pathlib import Path
 
 warnings.filterwarnings('ignore')
+
+# Serialise all matplotlib plot creation, drawing, and saving across
+# concurrent Streamlit sessions. Matplotlib's pyplot interface is NOT
+# thread-safe (mathtext parser cache, font cache, and figure manager
+# state are all global) and under concurrent load it raises cryptic
+# ValueError / ParseException from inside the renderer. The lock is
+# acquired around each plot block (subplots -> draw/savefig -> close)
+# so simultaneous sessions still progress through non-plot UI while
+# plot rendering itself serialises briefly (each plot is ~50 ms).
+_MPL_LOCK = threading.Lock()
 
 import numpy as np
 import pandas as pd
@@ -2397,13 +2408,14 @@ with streamlit_analytics.track():
             _h = float(params['Active Height'])
             _ax_r = float(params.get('Axial Reflector Thickness', 0.0))
             _rad_r = float(params.get('Radial Reflector Thickness', 0.0))
-            _fig = _make_side_view_figure(_diam, _h, _ax_r, _rad_r)
-            _buf = io.BytesIO()
-            _fig.savefig(_buf, format='png', bbox_inches=None,
-                         facecolor='white', dpi=120)
-            _buf.seek(0)
+            with _MPL_LOCK:
+                _fig = _make_side_view_figure(_diam, _h, _ax_r, _rad_r)
+                _buf = io.BytesIO()
+                _fig.savefig(_buf, format='png', bbox_inches=None,
+                             facecolor='white', dpi=120)
+                _buf.seek(0)
+                plt.close(_fig)
             st.image(_buf, width='stretch')
-            plt.close(_fig)
 
     with geo_right:
         # Materials & components table at the top of the right column,
@@ -2555,27 +2567,28 @@ with streamlit_analytics.track():
                     'margin-bottom:0.6rem;">k_eff vs Time</div>',
                     unsafe_allow_html=True,
                 )
-                _kfig, _kax = plt.subplots(figsize=(5.5, 2.8))
-                # Show discrete interpolated points (markers) connected
-                # by straight segments so the user can see we only
-                # have data at specific depletion timesteps, not a
-                # continuous curve.
-                _kax.plot(_times, _keffs, color='#1B4F8C', lw=1.5,
-                          marker='o', markersize=5, markerfacecolor='#1B4F8C',
-                          markeredgecolor='white', markeredgewidth=0.8)
-                _kax.axhline(1.0, color='#0a2540', lw=1.0, ls='--')
-                _kax.set_xlabel('Time (days)', fontsize=9)
-                _kax.set_ylabel(r'$k_{\rm eff}$', fontsize=10)
-                _kax.tick_params(axis='both', labelsize=8)
-                _kax.set_xlim(left=0)
-                # Pad the y-axis a hair above the highest value for readability
-                _kax.set_ylim(0.98, max(1.005, _keffs.max() + 0.005))
-                _kax.grid(True, alpha=0.3)
-                for _spine in ('top', 'right'):
-                    _kax.spines[_spine].set_visible(False)
-                _kfig.tight_layout()
-                st.pyplot(_kfig, width='stretch')
-                plt.close(_kfig)
+                with _MPL_LOCK:
+                    _kfig, _kax = plt.subplots(figsize=(5.5, 2.8))
+                    # Show discrete interpolated points (markers) connected
+                    # by straight segments so the user can see we only
+                    # have data at specific depletion timesteps, not a
+                    # continuous curve.
+                    _kax.plot(_times, _keffs, color='#1B4F8C', lw=1.5,
+                              marker='o', markersize=5, markerfacecolor='#1B4F8C',
+                              markeredgecolor='white', markeredgewidth=0.8)
+                    _kax.axhline(1.0, color='#0a2540', lw=1.0, ls='--')
+                    _kax.set_xlabel('Time (days)', fontsize=9)
+                    _kax.set_ylabel(r'$k_{\rm eff}$', fontsize=10)
+                    _kax.tick_params(axis='both', labelsize=8)
+                    _kax.set_xlim(left=0)
+                    # Pad the y-axis a hair above the highest value for readability
+                    _kax.set_ylim(0.98, max(1.005, _keffs.max() + 0.005))
+                    _kax.grid(True, alpha=0.3)
+                    for _spine in ('top', 'right'):
+                        _kax.spines[_spine].set_visible(False)
+                    _kfig.tight_layout()
+                    st.pyplot(_kfig, width='stretch')
+                    plt.close(_kfig)
                 st.caption(
                     '**k_eff** (the neutron multiplication factor) measures '
                     'whether the chain reaction sustains itself: > 1 it grows, '
@@ -2611,22 +2624,23 @@ with streamlit_analytics.track():
                     'margin-bottom:0.6rem;">k_eff vs Time</div>',
                     unsafe_allow_html=True,
                 )
-                _kfig, _kax = plt.subplots(figsize=(5.5, 2.8))
-                _kax.plot(_times, _keffs, color='#1B4F8C', lw=1.5,
-                          marker='o', markersize=5, markerfacecolor='#1B4F8C',
-                          markeredgecolor='white', markeredgewidth=0.8)
-                _kax.axhline(1.0, color='#0a2540', lw=1.0, ls='--')
-                _kax.set_xlabel('Time (days)', fontsize=9)
-                _kax.set_ylabel(r'$k_{\rm eff}$', fontsize=10)
-                _kax.tick_params(axis='both', labelsize=8)
-                _kax.set_xlim(left=0)
-                _kax.set_ylim(0.98, max(1.005, _keffs.max() + 0.005))
-                _kax.grid(True, alpha=0.3)
-                for _spine in ('top', 'right'):
-                    _kax.spines[_spine].set_visible(False)
-                _kfig.tight_layout()
-                st.pyplot(_kfig, width='stretch')
-                plt.close(_kfig)
+                with _MPL_LOCK:
+                    _kfig, _kax = plt.subplots(figsize=(5.5, 2.8))
+                    _kax.plot(_times, _keffs, color='#1B4F8C', lw=1.5,
+                              marker='o', markersize=5, markerfacecolor='#1B4F8C',
+                              markeredgecolor='white', markeredgewidth=0.8)
+                    _kax.axhline(1.0, color='#0a2540', lw=1.0, ls='--')
+                    _kax.set_xlabel('Time (days)', fontsize=9)
+                    _kax.set_ylabel(r'$k_{\rm eff}$', fontsize=10)
+                    _kax.tick_params(axis='both', labelsize=8)
+                    _kax.set_xlim(left=0)
+                    _kax.set_ylim(0.98, max(1.005, _keffs.max() + 0.005))
+                    _kax.grid(True, alpha=0.3)
+                    for _spine in ('top', 'right'):
+                        _kax.spines[_spine].set_visible(False)
+                    _kfig.tight_layout()
+                    st.pyplot(_kfig, width='stretch')
+                    plt.close(_kfig)
                 st.caption(
                     '**k_eff** (the neutron multiplication factor) measures '
                     'whether the chain reaction sustains itself: > 1 it grows, '
@@ -2663,22 +2677,23 @@ with streamlit_analytics.track():
                     'margin-bottom:0.6rem;">k_eff vs Time</div>',
                     unsafe_allow_html=True,
                 )
-                _kfig, _kax = plt.subplots(figsize=(5.5, 2.8))
-                _kax.plot(_times, _keffs, color='#1B4F8C', lw=1.5,
-                          marker='o', markersize=5, markerfacecolor='#1B4F8C',
-                          markeredgecolor='white', markeredgewidth=0.8)
-                _kax.axhline(1.0, color='#0a2540', lw=1.0, ls='--')
-                _kax.set_xlabel('Time (days)', fontsize=9)
-                _kax.set_ylabel(r'$k_{\rm eff}$', fontsize=10)
-                _kax.tick_params(axis='both', labelsize=8)
-                _kax.set_xlim(left=0)
-                _kax.set_ylim(0.98, max(1.005, _keffs.max() + 0.005))
-                _kax.grid(True, alpha=0.3)
-                for _spine in ('top', 'right'):
-                    _kax.spines[_spine].set_visible(False)
-                _kfig.tight_layout()
-                st.pyplot(_kfig, width='stretch')
-                plt.close(_kfig)
+                with _MPL_LOCK:
+                    _kfig, _kax = plt.subplots(figsize=(5.5, 2.8))
+                    _kax.plot(_times, _keffs, color='#1B4F8C', lw=1.5,
+                              marker='o', markersize=5, markerfacecolor='#1B4F8C',
+                              markeredgecolor='white', markeredgewidth=0.8)
+                    _kax.axhline(1.0, color='#0a2540', lw=1.0, ls='--')
+                    _kax.set_xlabel('Time (days)', fontsize=9)
+                    _kax.set_ylabel(r'$k_{\rm eff}$', fontsize=10)
+                    _kax.tick_params(axis='both', labelsize=8)
+                    _kax.set_xlim(left=0)
+                    _kax.set_ylim(0.98, max(1.005, _keffs.max() + 0.005))
+                    _kax.grid(True, alpha=0.3)
+                    for _spine in ('top', 'right'):
+                        _kax.spines[_spine].set_visible(False)
+                    _kfig.tight_layout()
+                    st.pyplot(_kfig, width='stretch')
+                    plt.close(_kfig)
                 st.caption(
                     '**k_eff** (the neutron multiplication factor) measures '
                     'whether the chain reaction sustains itself: > 1 it grows, '
@@ -4568,52 +4583,53 @@ with streamlit_analytics.track():
             'ytick.labelsize': 12,
         })
 
-        fig, ax = plt.subplots(figsize=(max(13, len(_drv) * 1.6), 7))
-        fig.patch.set_facecolor('white')
-        ax.set_facecolor('#f8fafc')
+        with _MPL_LOCK:
+            fig, ax = plt.subplots(figsize=(max(13, len(_drv) * 1.6), 7))
+            fig.patch.set_facecolor('white')
+            ax.set_facecolor('#f8fafc')
 
-        foak_err = _drv['FOAK LCOE_std'] if 'FOAK LCOE_std' in _drv.columns else None
-        noak_err = _drv['NOAK LCOE_std'] if 'NOAK LCOE_std' in _drv.columns else None
+            foak_err = _drv['FOAK LCOE_std'] if 'FOAK LCOE_std' in _drv.columns else None
+            noak_err = _drv['NOAK LCOE_std'] if 'NOAK LCOE_std' in _drv.columns else None
 
-        ax.bar(r1, _drv['FOAK LCOE'], width=bar_width,
-               color='#c84b1e', edgecolor='white', linewidth=0.8,
-               label='FOAK', zorder=3,
-               yerr=foak_err, capsize=5,
-               error_kw=dict(elinewidth=1.8, ecolor='#9a3412', capthick=1.8))
-        ax.bar(r2, _drv['NOAK LCOE'], width=bar_width,
-               color='#1B4F8C', edgecolor='white', linewidth=0.8,
-               label='NOAK', zorder=3,
-               yerr=noak_err, capsize=5,
-               error_kw=dict(elinewidth=1.8, ecolor='#0a2540', capthick=1.8))
+            ax.bar(r1, _drv['FOAK LCOE'], width=bar_width,
+                   color='#c84b1e', edgecolor='white', linewidth=0.8,
+                   label='FOAK', zorder=3,
+                   yerr=foak_err, capsize=5,
+                   error_kw=dict(elinewidth=1.8, ecolor='#9a3412', capthick=1.8))
+            ax.bar(r2, _drv['NOAK LCOE'], width=bar_width,
+                   color='#1B4F8C', edgecolor='white', linewidth=0.8,
+                   label='NOAK', zorder=3,
+                   yerr=noak_err, capsize=5,
+                   error_kw=dict(elinewidth=1.8, ecolor='#0a2540', capthick=1.8))
 
-        ax.set_xticks(r1 + bar_width / 2)
-        ax.set_xticklabels(_drv['Account Title'], rotation=35, ha='right',
-                           fontsize=12, color='#0a2540', fontweight='500')
-        ax.set_ylabel('LCOE Contribution ($/MWh)', fontsize=13,
-                      color='#0a2540', labelpad=10)
-        ax.yaxis.set_tick_params(labelcolor='#0a2540', labelsize=12)
-        ax.set_xlim(-0.4, len(_drv) - 0.15)
+            ax.set_xticks(r1 + bar_width / 2)
+            ax.set_xticklabels(_drv['Account Title'], rotation=35, ha='right',
+                               fontsize=12, color='#0a2540', fontweight='500')
+            ax.set_ylabel('LCOE Contribution ($/MWh)', fontsize=13,
+                          color='#0a2540', labelpad=10)
+            ax.yaxis.set_tick_params(labelcolor='#0a2540', labelsize=12)
+            ax.set_xlim(-0.4, len(_drv) - 0.15)
 
-        for spine in ['top', 'right', 'left']:
-            ax.spines[spine].set_visible(False)
-        ax.spines['bottom'].set_color('#cbd5e1')
-        ax.yaxis.grid(True, linestyle='--', linewidth=0.7,
-                      alpha=0.7, color='#cbd5e1', zorder=0)
-        ax.set_axisbelow(True)
+            for spine in ['top', 'right', 'left']:
+                ax.spines[spine].set_visible(False)
+            ax.spines['bottom'].set_color('#cbd5e1')
+            ax.yaxis.grid(True, linestyle='--', linewidth=0.7,
+                          alpha=0.7, color='#cbd5e1', zorder=0)
+            ax.set_axisbelow(True)
 
-        legend = ax.legend(fontsize=12, frameon=True, framealpha=1,
-                           edgecolor='#bfdbfe', facecolor='white',
-                           loc='upper right', handlelength=1.5,
-                           borderpad=0.8, labelspacing=0.5)
-        legend.get_frame().set_linewidth(1.0)
+            legend = ax.legend(fontsize=12, frameon=True, framealpha=1,
+                               edgecolor='#bfdbfe', facecolor='white',
+                               loc='upper right', handlelength=1.5,
+                               borderpad=0.8, labelspacing=0.5)
+            legend.get_frame().set_linewidth(1.0)
 
-        plt.tight_layout(pad=2.0)
-        buf = io.BytesIO()
-        fig.savefig(buf, format='png', dpi=200, bbox_inches='tight', facecolor='white')
-        buf.seek(0)
+            plt.tight_layout(pad=2.0)
+            buf = io.BytesIO()
+            fig.savefig(buf, format='png', dpi=200, bbox_inches='tight', facecolor='white')
+            buf.seek(0)
+            plt.close(fig)
+            matplotlib.rcParams.update(matplotlib.rcParamsDefault)
         st.image(buf, width='stretch')
-        plt.close(fig)
-        matplotlib.rcParams.update(matplotlib.rcParamsDefault)
 
     # --- Detailed cost drivers (one level deeper) ---
     _det = detailed_sorted_df.copy() if not detailed_sorted_df.empty else pd.DataFrame()
@@ -4642,52 +4658,53 @@ with streamlit_analytics.track():
             'ytick.labelsize': 12,
         })
 
-        fig2, ax2 = plt.subplots(figsize=(max(13, len(_det) * 1.6), 7))
-        fig2.patch.set_facecolor('white')
-        ax2.set_facecolor('#f8fafc')
+        with _MPL_LOCK:
+            fig2, ax2 = plt.subplots(figsize=(max(13, len(_det) * 1.6), 7))
+            fig2.patch.set_facecolor('white')
+            ax2.set_facecolor('#f8fafc')
 
-        foak_err2 = _det['FOAK LCOE_std'] if 'FOAK LCOE_std' in _det.columns else None
-        noak_err2 = _det['NOAK LCOE_std'] if 'NOAK LCOE_std' in _det.columns else None
+            foak_err2 = _det['FOAK LCOE_std'] if 'FOAK LCOE_std' in _det.columns else None
+            noak_err2 = _det['NOAK LCOE_std'] if 'NOAK LCOE_std' in _det.columns else None
 
-        ax2.bar(r1, _det['FOAK LCOE'], width=bar_width,
-                color='#c84b1e', edgecolor='white', linewidth=0.8,
-                label='FOAK', zorder=3,
-                yerr=foak_err2, capsize=5,
-                error_kw=dict(elinewidth=1.8, ecolor='#9a3412', capthick=1.8))
-        ax2.bar(r2, _det['NOAK LCOE'], width=bar_width,
-                color='#1B4F8C', edgecolor='white', linewidth=0.8,
-                label='NOAK', zorder=3,
-                yerr=noak_err2, capsize=5,
-                error_kw=dict(elinewidth=1.8, ecolor='#0a2540', capthick=1.8))
+            ax2.bar(r1, _det['FOAK LCOE'], width=bar_width,
+                    color='#c84b1e', edgecolor='white', linewidth=0.8,
+                    label='FOAK', zorder=3,
+                    yerr=foak_err2, capsize=5,
+                    error_kw=dict(elinewidth=1.8, ecolor='#9a3412', capthick=1.8))
+            ax2.bar(r2, _det['NOAK LCOE'], width=bar_width,
+                    color='#1B4F8C', edgecolor='white', linewidth=0.8,
+                    label='NOAK', zorder=3,
+                    yerr=noak_err2, capsize=5,
+                    error_kw=dict(elinewidth=1.8, ecolor='#0a2540', capthick=1.8))
 
-        ax2.set_xticks(r1 + bar_width / 2)
-        ax2.set_xticklabels(_det['Account Title'], rotation=35, ha='right',
-                            fontsize=12, color='#0a2540', fontweight='500')
-        ax2.set_ylabel('LCOE Contribution ($/MWh)', fontsize=13,
-                       color='#0a2540', labelpad=10)
-        ax2.yaxis.set_tick_params(labelcolor='#0a2540', labelsize=12)
-        ax2.set_xlim(-0.4, len(_det) - 0.15)
+            ax2.set_xticks(r1 + bar_width / 2)
+            ax2.set_xticklabels(_det['Account Title'], rotation=35, ha='right',
+                                fontsize=12, color='#0a2540', fontweight='500')
+            ax2.set_ylabel('LCOE Contribution ($/MWh)', fontsize=13,
+                           color='#0a2540', labelpad=10)
+            ax2.yaxis.set_tick_params(labelcolor='#0a2540', labelsize=12)
+            ax2.set_xlim(-0.4, len(_det) - 0.15)
 
-        for spine in ['top', 'right', 'left']:
-            ax2.spines[spine].set_visible(False)
-        ax2.spines['bottom'].set_color('#cbd5e1')
-        ax2.yaxis.grid(True, linestyle='--', linewidth=0.7,
-                       alpha=0.7, color='#cbd5e1', zorder=0)
-        ax2.set_axisbelow(True)
+            for spine in ['top', 'right', 'left']:
+                ax2.spines[spine].set_visible(False)
+            ax2.spines['bottom'].set_color('#cbd5e1')
+            ax2.yaxis.grid(True, linestyle='--', linewidth=0.7,
+                           alpha=0.7, color='#cbd5e1', zorder=0)
+            ax2.set_axisbelow(True)
 
-        legend2 = ax2.legend(fontsize=12, frameon=True, framealpha=1,
-                             edgecolor='#bfdbfe', facecolor='white',
-                             loc='upper right', handlelength=1.5,
-                             borderpad=0.8, labelspacing=0.5)
-        legend2.get_frame().set_linewidth(1.0)
+            legend2 = ax2.legend(fontsize=12, frameon=True, framealpha=1,
+                                 edgecolor='#bfdbfe', facecolor='white',
+                                 loc='upper right', handlelength=1.5,
+                                 borderpad=0.8, labelspacing=0.5)
+            legend2.get_frame().set_linewidth(1.0)
 
-        plt.tight_layout(pad=2.0)
-        buf2 = io.BytesIO()
-        fig2.savefig(buf2, format='png', dpi=200, bbox_inches='tight', facecolor='white')
-        buf2.seek(0)
+            plt.tight_layout(pad=2.0)
+            buf2 = io.BytesIO()
+            fig2.savefig(buf2, format='png', dpi=200, bbox_inches='tight', facecolor='white')
+            buf2.seek(0)
+            plt.close(fig2)
+            matplotlib.rcParams.update(matplotlib.rcParamsDefault)
         st.image(buf2, width='stretch')
-        plt.close(fig2)
-        matplotlib.rcParams.update(matplotlib.rcParamsDefault)
 
     # ─── Band 4 (cont.) Full breakdown ──────────────────────────────
     st.markdown(
@@ -4945,151 +4962,152 @@ with streamlit_analytics.track():
     if _u_arr.size >= 2:
         _fill_color, _edge_color = '#1B4F8C', '#0a2540'
 
-        _fig, _ax = plt.subplots(figsize=(11, 5.8))
+        with _MPL_LOCK:
+            _fig, _ax = plt.subplots(figsize=(11, 5.8))
 
-        # Plain linear interpolation between the anchor points 
-        # no spline, no overshoot. np.interp gives straight line
-        # segments between consecutive anchors, which is the
-        # honest representation when we only have 2-3 anchors.
-        try:
-            _x_smooth = np.linspace(_u_arr.min(), _u_arr.max(), 300)
-            _m_smooth = np.interp(_x_smooth, _u_arr, _m_arr)
-            _s_smooth = np.interp(_x_smooth, _u_arr, _s_arr)
-        except Exception:
-            _x_smooth = _u_arr
-            _m_smooth = _m_arr
-            _s_smooth = _s_arr
+            # Plain linear interpolation between the anchor points 
+            # no spline, no overshoot. np.interp gives straight line
+            # segments between consecutive anchors, which is the
+            # honest representation when we only have 2-3 anchors.
+            try:
+                _x_smooth = np.linspace(_u_arr.min(), _u_arr.max(), 300)
+                _m_smooth = np.interp(_x_smooth, _u_arr, _m_arr)
+                _s_smooth = np.interp(_x_smooth, _u_arr, _s_arr)
+            except Exception:
+                _x_smooth = _u_arr
+                _m_smooth = _m_arr
+                _s_smooth = _s_arr
 
-        _ax.fill_between(_x_smooth,
-                         _m_smooth - _s_smooth,
-                         _m_smooth + _s_smooth,
-                         color=_fill_color, alpha=0.45,
-                         edgecolor=_edge_color, linewidth=1.5, zorder=2)
-        # Mean line + scatter markers at the actual computed
-        # sweep points so the LCOE curve is always visible even if
-        # the spline interpolation produces something degenerate.
-        _ax.plot(_x_smooth, _m_smooth, color=_edge_color,
-                 linewidth=2.0, linestyle='-', zorder=3)
-        _ax.scatter(_u_arr, _m_arr, s=42, color=_edge_color,
-                    edgecolor='white', linewidth=1.2, zorder=4)
+            _ax.fill_between(_x_smooth,
+                             _m_smooth - _s_smooth,
+                             _m_smooth + _s_smooth,
+                             color=_fill_color, alpha=0.45,
+                             edgecolor=_edge_color, linewidth=1.5, zorder=2)
+            # Mean line + scatter markers at the actual computed
+            # sweep points so the LCOE curve is always visible even if
+            # the spline interpolation produces something degenerate.
+            _ax.plot(_x_smooth, _m_smooth, color=_edge_color,
+                     linewidth=2.0, linestyle='-', zorder=3)
+            _ax.scatter(_u_arr, _m_arr, s=42, color=_edge_color,
+                        edgecolor='white', linewidth=1.2, zorder=4)
 
-        # Market benchmark arrows. Markets are grouped by category;
-        # within a group all entries share one color so the legend
-        # reads "Premium / Alaska / U.S. grid" rather than 7 hues.
-        _PREMIUM = '#92400e'   # Remote, Defense, Island & Mining
-        _ALASKA = '#64748b'    # Alaska railbelt (electricity + generation)
-        _US_GRID = '#15803d'   # U.S. grid (electricity + generation)
-        _markets = {
-            'Remote communities': {'x': 2, 'y_start': 400, 'y_end': 290, 'color': _PREMIUM, 'arrow_only_down': True},
-            'Defense': {'x': 8, 'y_start': 316, 'y_end': 296, 'color': _PREMIUM, 'arrow_only_down': False},
-            'Island & Mining': {'x': 30, 'y_start': 380, 'y_end': 190, 'color': _PREMIUM, 'arrow_only_down': False},
-            'Alaska railbelt electricity': {'x': 48, 'y_start': 313, 'y_end': 182, 'color': _ALASKA, 'arrow_only_down': False},
-            'Alaska railbelt generation': {'x': 60, 'y_start': 166, 'y_end': 62, 'color': _ALASKA, 'arrow_only_down': False},
-            'U.S. grid electricity': {'x': 75, 'y_start': 270, 'y_end': 79, 'color': _US_GRID, 'arrow_only_down': False},
-            'U.S. grid generation': {'x': 88, 'y_start': 55, 'y_end': 29, 'color': _US_GRID, 'arrow_only_down': False},
-        }
-        _bar_widths = {
-            'Remote communities': 4,
-            'Defense': 4,
-            'Island & Mining': 12,
-            'Alaska railbelt electricity': 8,
-            'Alaska railbelt generation': 8,
-            'U.S. grid electricity': 12,
-            'U.S. grid generation': 10,
-        }
-        _label_offsets = {
-            'Remote communities': +8,
-            'Defense': +25,
-            'Alaska railbelt generation': -15,
-            'U.S. grid generation': +20,
-        }
-        for _name, _d in _markets.items():
-            _x = _d['x']
-            _ys = min(_d['y_start'], 400)
-            _ye = _d['y_end']
-            _c = _d['color']
-            _down = _d['arrow_only_down']
-            _w = _bar_widths[_name]
-            _xa, _xb = _x, _x + _w
-            _xm = _x + _w / 2
+            # Market benchmark arrows. Markets are grouped by category;
+            # within a group all entries share one color so the legend
+            # reads "Premium / Alaska / U.S. grid" rather than 7 hues.
+            _PREMIUM = '#92400e'   # Remote, Defense, Island & Mining
+            _ALASKA = '#64748b'    # Alaska railbelt (electricity + generation)
+            _US_GRID = '#15803d'   # U.S. grid (electricity + generation)
+            _markets = {
+                'Remote communities': {'x': 2, 'y_start': 400, 'y_end': 290, 'color': _PREMIUM, 'arrow_only_down': True},
+                'Defense': {'x': 8, 'y_start': 316, 'y_end': 296, 'color': _PREMIUM, 'arrow_only_down': False},
+                'Island & Mining': {'x': 30, 'y_start': 380, 'y_end': 190, 'color': _PREMIUM, 'arrow_only_down': False},
+                'Alaska railbelt electricity': {'x': 48, 'y_start': 313, 'y_end': 182, 'color': _ALASKA, 'arrow_only_down': False},
+                'Alaska railbelt generation': {'x': 60, 'y_start': 166, 'y_end': 62, 'color': _ALASKA, 'arrow_only_down': False},
+                'U.S. grid electricity': {'x': 75, 'y_start': 270, 'y_end': 79, 'color': _US_GRID, 'arrow_only_down': False},
+                'U.S. grid generation': {'x': 88, 'y_start': 55, 'y_end': 29, 'color': _US_GRID, 'arrow_only_down': False},
+            }
+            _bar_widths = {
+                'Remote communities': 4,
+                'Defense': 4,
+                'Island & Mining': 12,
+                'Alaska railbelt electricity': 8,
+                'Alaska railbelt generation': 8,
+                'U.S. grid electricity': 12,
+                'U.S. grid generation': 10,
+            }
+            _label_offsets = {
+                'Remote communities': +8,
+                'Defense': +25,
+                'Alaska railbelt generation': -15,
+                'U.S. grid generation': +20,
+            }
+            for _name, _d in _markets.items():
+                _x = _d['x']
+                _ys = min(_d['y_start'], 400)
+                _ye = _d['y_end']
+                _c = _d['color']
+                _down = _d['arrow_only_down']
+                _w = _bar_widths[_name]
+                _xa, _xb = _x, _x + _w
+                _xm = _x + _w / 2
 
-            if not _down:
-                _ax.plot([_xa, _xb], [_ys, _ys], color=_c, linewidth=4,
+                if not _down:
+                    _ax.plot([_xa, _xb], [_ys, _ys], color=_c, linewidth=4,
+                             solid_capstyle='round', zorder=5)
+                _ax.plot([_xa, _xb], [_ye, _ye], color=_c, linewidth=4,
                          solid_capstyle='round', zorder=5)
-            _ax.plot([_xa, _xb], [_ye, _ye], color=_c, linewidth=4,
-                     solid_capstyle='round', zorder=5)
-            _astyle = '->' if _down else '<->'
-            if _down:
-                _ax.plot([_xm, _xm], [_ys, _ye], color=_c, linewidth=2.8,
-                         solid_capstyle='round', zorder=5)
-            _ax.annotate('', xy=(_xm, _ye), xytext=(_xm, _ys),
-                         arrowprops=dict(arrowstyle=_astyle, color=_c,
-                                         lw=2.8, mutation_scale=16), zorder=5)
+                _astyle = '->' if _down else '<->'
+                if _down:
+                    _ax.plot([_xm, _xm], [_ys, _ye], color=_c, linewidth=2.8,
+                             solid_capstyle='round', zorder=5)
+                _ax.annotate('', xy=(_xm, _ye), xytext=(_xm, _ys),
+                             arrowprops=dict(arrowstyle=_astyle, color=_c,
+                                             lw=2.8, mutation_scale=16), zorder=5)
 
-            if _name == 'Alaska railbelt generation':
-                _ly = _ye + _label_offsets[_name]
+                if _name == 'Alaska railbelt generation':
+                    _ly = _ye + _label_offsets[_name]
+                else:
+                    _ly = _ys + _label_offsets.get(_name, +15)
+                _ax.text(_xm, _ly, _name, fontsize=8.5, ha='center', color=_c,
+                         fontweight='bold',
+                         bbox=dict(facecolor='white', edgecolor=_c,
+                                   boxstyle='round,pad=0.25',
+                                   linewidth=1.0, alpha=0.9),
+                         zorder=6)
+
+            _ax.set_xlim(1, 100)
+            # Y-axis sizing use the 90th-percentile of (mean + std)
+            # rather than max, so a single outlier point doesn't blow
+            # up the y-range and squash the rest of the data. Hard
+            # cap at $800 so even outliers stay readable.
+            if _m_arr.size:
+                _band_vals = _m_arr + _s_arr
+                _band_p90 = float(np.nanpercentile(_band_vals, 90))
             else:
-                _ly = _ys + _label_offsets.get(_name, +15)
-            _ax.text(_xm, _ly, _name, fontsize=8.5, ha='center', color=_c,
-                     fontweight='bold',
-                     bbox=dict(facecolor='white', edgecolor=_c,
-                               boxstyle='round,pad=0.25',
-                               linewidth=1.0, alpha=0.9),
-                     zorder=6)
+                _band_p90 = 0.0
+            _ymax = max(410.0, _band_p90 * 1.15)
+            _ymax = min(_ymax, 800.0)
+            _ax.set_ylim(0, _ymax)
+            _ax.set_xlabel('Number of Units Deployed', fontsize=12, fontweight='bold')
+            _ax.set_ylabel('LCOE ($/MWh)', fontsize=12, fontweight='bold')
+            _ax.set_xticks([1, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100])
+            from matplotlib.ticker import MaxNLocator
+            _ax.yaxis.set_major_locator(MaxNLocator(nbins=10, integer=True))
+            _ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
+            _ax.set_axisbelow(True)
+            _ax.set_facecolor('white')
+            _fig.patch.set_facecolor('white')
 
-        _ax.set_xlim(1, 100)
-        # Y-axis sizing use the 90th-percentile of (mean + std)
-        # rather than max, so a single outlier point doesn't blow
-        # up the y-range and squash the rest of the data. Hard
-        # cap at $800 so even outliers stay readable.
-        if _m_arr.size:
-            _band_vals = _m_arr + _s_arr
-            _band_p90 = float(np.nanpercentile(_band_vals, 90))
-        else:
-            _band_p90 = 0.0
-        _ymax = max(410.0, _band_p90 * 1.15)
-        _ymax = min(_ymax, 800.0)
-        _ax.set_ylim(0, _ymax)
-        _ax.set_xlabel('Number of Units Deployed', fontsize=12, fontweight='bold')
-        _ax.set_ylabel('LCOE ($/MWh)', fontsize=12, fontweight='bold')
-        _ax.set_xticks([1, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100])
-        from matplotlib.ticker import MaxNLocator
-        _ax.yaxis.set_major_locator(MaxNLocator(nbins=10, integer=True))
-        _ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
-        _ax.set_axisbelow(True)
-        _ax.set_facecolor('white')
-        _fig.patch.set_facecolor('white')
+            _fig.tight_layout()
 
-        _fig.tight_layout()
+            # If the LCOE band sits entirely above the y-axis cap
+            # ($800 max), the band is invisible on the chart. Warn
+            # the user explicitly so they know why nothing is plotted
+            # for the reactor and what to do about it. Use a custom-
+            # colored markdown box rather than st.warning, which
+            # renders white text on yellow (illegible).
+            _band_min_visible = (_m_arr - _s_arr).min() if _m_arr.size else 0.0
+            if _band_min_visible > _ymax:
+                _band_lo = (_m_arr - _s_arr).min()
+                _band_hi = (_m_arr + _s_arr).max()
+                st.markdown(
+                    f'<div style="background:#fffbeb;border:1px solid #f59e0b;'
+                    f'border-radius:8px;padding:0.85rem 1.1rem;margin-bottom:0.6rem;'
+                    f'color:#92400e;font-size:0.85rem;line-height:1.55;">'
+                    f'<strong style="color:#92400e;">⚠️ Reactor LCOE off the chart.</strong> '
+                    f'The reactor LCOE band ranges roughly '
+                    f'<strong>${_band_lo:,.0f}-${_band_hi:,.0f}/MWh</strong>, which is above '
+                    f'the chart\'s <strong>${int(_ymax)}/MWh</strong> ceiling, so the curve is '
+                    f'not visible on the plot below. The market benchmarks remain visible for '
+                    f'reference. To bring the curve into the chart, try a higher reactor power, '
+                    f'higher enrichment, longer plant lifetime, or a larger NOAK Unit Number '
+                    f'any of those reduces the LCOE.'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
 
-        # If the LCOE band sits entirely above the y-axis cap
-        # ($800 max), the band is invisible on the chart. Warn
-        # the user explicitly so they know why nothing is plotted
-        # for the reactor and what to do about it. Use a custom-
-        # colored markdown box rather than st.warning, which
-        # renders white text on yellow (illegible).
-        _band_min_visible = (_m_arr - _s_arr).min() if _m_arr.size else 0.0
-        if _band_min_visible > _ymax:
-            _band_lo = (_m_arr - _s_arr).min()
-            _band_hi = (_m_arr + _s_arr).max()
-            st.markdown(
-                f'<div style="background:#fffbeb;border:1px solid #f59e0b;'
-                f'border-radius:8px;padding:0.85rem 1.1rem;margin-bottom:0.6rem;'
-                f'color:#92400e;font-size:0.85rem;line-height:1.55;">'
-                f'<strong style="color:#92400e;">⚠️ Reactor LCOE off the chart.</strong> '
-                f'The reactor LCOE band ranges roughly '
-                f'<strong>${_band_lo:,.0f}-${_band_hi:,.0f}/MWh</strong>, which is above '
-                f'the chart\'s <strong>${int(_ymax)}/MWh</strong> ceiling, so the curve is '
-                f'not visible on the plot below. The market benchmarks remain visible for '
-                f'reference. To bring the curve into the chart, try a higher reactor power, '
-                f'higher enrichment, longer plant lifetime, or a larger NOAK Unit Number '
-                f'any of those reduces the LCOE.'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
-
-        st.pyplot(_fig)
-        plt.close(_fig)
+            st.pyplot(_fig)
+            plt.close(_fig)
 
         # Market definitions panel (matches the user-provided spec)
         st.markdown(
@@ -5258,82 +5276,83 @@ with streamlit_analytics.track():
         # column carries the state's 2-letter code rotated 90°,
         # rendered in white bold so it's legible on every column
         # color (green / yellow / gray).
-        _fig_btm, _ax_btm = plt.subplots(figsize=(15, 6.5))
-        _x = np.arange(len(_state_codes))
-        _bars = _ax_btm.bar(_x, _state_vals, color=_bar_colors,
-                            edgecolor='white', linewidth=0.6, width=0.86)
+        with _MPL_LOCK:
+            _fig_btm, _ax_btm = plt.subplots(figsize=(15, 6.5))
+            _x = np.arange(len(_state_codes))
+            _bars = _ax_btm.bar(_x, _state_vals, color=_bar_colors,
+                                edgecolor='white', linewidth=0.6, width=0.86)
 
-        # Horizontal reference bands for FOAK and NOAK LCOE (±1σ).
-        _ax_btm.axhspan(_foak_m_btm - _foak_s_btm,
-                        _foak_m_btm + _foak_s_btm,
-                        color='#c84b1e', alpha=0.16, zorder=0)
-        _ax_btm.axhline(_foak_m_btm, color='#c84b1e',
-                        linewidth=1.8, linestyle='--', zorder=2,
-                        label=f'FOAK LCOE ${_foak_m_btm:.0f}/MWh')
-        _ax_btm.axhspan(_noak_m_btm - _noak_s_btm,
-                        _noak_m_btm + _noak_s_btm,
-                        color='#1B4F8C', alpha=0.16, zorder=0)
-        _ax_btm.axhline(_noak_m_btm, color='#1B4F8C',
-                        linewidth=1.8, linestyle='--', zorder=2,
-                        label=f'NOAK LCOE ${_noak_m_btm:.0f}/MWh')
+            # Horizontal reference bands for FOAK and NOAK LCOE (±1σ).
+            _ax_btm.axhspan(_foak_m_btm - _foak_s_btm,
+                            _foak_m_btm + _foak_s_btm,
+                            color='#c84b1e', alpha=0.16, zorder=0)
+            _ax_btm.axhline(_foak_m_btm, color='#c84b1e',
+                            linewidth=1.8, linestyle='--', zorder=2,
+                            label=f'FOAK LCOE ${_foak_m_btm:.0f}/MWh')
+            _ax_btm.axhspan(_noak_m_btm - _noak_s_btm,
+                            _noak_m_btm + _noak_s_btm,
+                            color='#1B4F8C', alpha=0.16, zorder=0)
+            _ax_btm.axhline(_noak_m_btm, color='#1B4F8C',
+                            linewidth=1.8, linestyle='--', zorder=2,
+                            label=f'NOAK LCOE ${_noak_m_btm:.0f}/MWh')
 
-        # Y-axis must accommodate the FOAK and NOAK reference
-        # bands even when they exceed the highest state retail
-        # price (e.g. high-power FOAK at $800+/MWh against a
-        # max state of ~$330/MWh). Use the larger of (max state
-        # price, FOAK upper band) as the basis.
-        _band_top_btm = max(
-            _foak_m_btm + _foak_s_btm,
-            _noak_m_btm + _noak_s_btm,
-            max(_state_vals),
-        )
-        _ymax_chart = _band_top_btm * 1.18
-
-        # Place full state name vertically OVERLAPPING each
-        # column. Anchor just above the x-axis (small positive
-        # offset so the label doesn't collide with the baseline)
-        # and extend UPWARD with rotation=90 / va='bottom' so the
-        # name reads bottom-to-top. Each label gets a dark-blue
-        # rounded-rectangle bbox with WHITE bold text much
-        # higher contrast than the previous dark-on-light-with-
-        # halo approach. Long names ("Massachusetts", "North
-        # Carolina") that exceed the column top extend into the
-        # white plot background; the blue pill keeps them
-        # crisply legible there too.
-        _baseline_offset = _ymax_chart * 0.015
-        _label_bbox = dict(
-            facecolor='#0a2540', # deep navy blue
-            edgecolor='none',
-            pad=2.2,
-            boxstyle='round,pad=0.18',
-        )
-        for _i, (_code, _val) in enumerate(zip(_state_codes, _state_vals)):
-            _full_name = _STATE_FULL_NAMES.get(_code, _code)
-            _ax_btm.text(
-                _i, _baseline_offset, _full_name,
-                rotation=90, ha='center', va='bottom',
-                fontsize=10.5, fontweight='bold',
-                color='white',
-                bbox=_label_bbox,
-                zorder=4,
+            # Y-axis must accommodate the FOAK and NOAK reference
+            # bands even when they exceed the highest state retail
+            # price (e.g. high-power FOAK at $800+/MWh against a
+            # max state of ~$330/MWh). Use the larger of (max state
+            # price, FOAK upper band) as the basis.
+            _band_top_btm = max(
+                _foak_m_btm + _foak_s_btm,
+                _noak_m_btm + _noak_s_btm,
+                max(_state_vals),
             )
+            _ymax_chart = _band_top_btm * 1.18
 
-        _ax_btm.set_xticks([]) # state names are on the columns themselves
-        _ax_btm.set_xlim(-0.7, len(_state_codes) - 0.3)
-        _ax_btm.set_ylim(0, _ymax_chart)
-        _ax_btm.set_ylabel('Average retail price ($/MWh) EIA 2023, industrial sector',
-                           fontsize=11, fontweight='bold')
-        _ax_btm.set_xlabel('U.S. States and DC (sorted by retail price, high → low)',
-                           fontsize=11, fontweight='bold')
-        _ax_btm.grid(True, axis='y', alpha=0.3, linestyle='--', linewidth=0.5)
-        _ax_btm.set_axisbelow(True)
-        _ax_btm.set_facecolor('white')
-        _fig_btm.patch.set_facecolor('white')
-        _ax_btm.legend(loc='upper right', fontsize=10, framealpha=0.95,
-                       edgecolor='grey')
-        _fig_btm.tight_layout()
-        st.pyplot(_fig_btm)
-        plt.close(_fig_btm)
+            # Place full state name vertically OVERLAPPING each
+            # column. Anchor just above the x-axis (small positive
+            # offset so the label doesn't collide with the baseline)
+            # and extend UPWARD with rotation=90 / va='bottom' so the
+            # name reads bottom-to-top. Each label gets a dark-blue
+            # rounded-rectangle bbox with WHITE bold text much
+            # higher contrast than the previous dark-on-light-with-
+            # halo approach. Long names ("Massachusetts", "North
+            # Carolina") that exceed the column top extend into the
+            # white plot background; the blue pill keeps them
+            # crisply legible there too.
+            _baseline_offset = _ymax_chart * 0.015
+            _label_bbox = dict(
+                facecolor='#0a2540', # deep navy blue
+                edgecolor='none',
+                pad=2.2,
+                boxstyle='round,pad=0.18',
+            )
+            for _i, (_code, _val) in enumerate(zip(_state_codes, _state_vals)):
+                _full_name = _STATE_FULL_NAMES.get(_code, _code)
+                _ax_btm.text(
+                    _i, _baseline_offset, _full_name,
+                    rotation=90, ha='center', va='bottom',
+                    fontsize=10.5, fontweight='bold',
+                    color='white',
+                    bbox=_label_bbox,
+                    zorder=4,
+                )
+
+            _ax_btm.set_xticks([]) # state names are on the columns themselves
+            _ax_btm.set_xlim(-0.7, len(_state_codes) - 0.3)
+            _ax_btm.set_ylim(0, _ymax_chart)
+            _ax_btm.set_ylabel('Average retail price ($/MWh) EIA 2023, industrial sector',
+                               fontsize=11, fontweight='bold')
+            _ax_btm.set_xlabel('U.S. States and DC (sorted by retail price, high → low)',
+                               fontsize=11, fontweight='bold')
+            _ax_btm.grid(True, axis='y', alpha=0.3, linestyle='--', linewidth=0.5)
+            _ax_btm.set_axisbelow(True)
+            _ax_btm.set_facecolor('white')
+            _fig_btm.patch.set_facecolor('white')
+            _ax_btm.legend(loc='upper right', fontsize=10, framealpha=0.95,
+                           edgecolor='grey')
+            _fig_btm.tight_layout()
+            st.pyplot(_fig_btm)
+            plt.close(_fig_btm)
 
         # Summary line + competitive-states lists
         _summary_html = (
