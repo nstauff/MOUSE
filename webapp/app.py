@@ -422,7 +422,7 @@ HPMR_DIAMETER_LABEL_TO_NC = {
 }
 
 
-@st.cache_data(show_spinner=False, max_entries=4)
+@st.cache_data(show_spinner=False, max_entries=2)
 def _run_estimate(reactor_type, power_mwt, enrichment, interest_rate, discount_rate,
                   construction_duration, debt_to_equity, operation_mode,
                   emergency_shutdowns, startup_duration, startup_duration_refueling,
@@ -467,7 +467,7 @@ def _run_estimate(reactor_type, power_mwt, enrichment, interest_rate, discount_r
 # extraction path as _run_estimate so the value matches the headline
 # format exactly: bottom_up_cost_estimate -> cost_drivers_estimate ->
 # transform_dataframe -> _get_mean_std.
-@st.cache_data(show_spinner=False, max_entries=4)
+@st.cache_data(show_spinner=False, max_entries=2)
 def _lcoe_at_noak_unit(reactor_type, power_mwt, enrichment, interest_rate, discount_rate,
                        construction_duration, debt_to_equity, operation_mode,
                        emergency_shutdowns, startup_duration, startup_duration_refueling,
@@ -5433,3 +5433,24 @@ with streamlit_analytics.track():
         """,
         unsafe_allow_html=True,
     )
+
+    # ── End-of-script housekeeping ───────────────────────────────
+    # Every Streamlit rerun re-executes this script top-to-bottom, so
+    # the variables holding the cost-engine DataFrames go out of scope
+    # here. A generational GC pass reclaims their memory promptly
+    # instead of waiting for Python's incremental collector (F).
+    #
+    # Soft memory monitor (G): if the process is approaching the
+    # Streamlit Community Cloud 1 GB ceiling, proactively clear cached
+    # results to free a large chunk before the OS-level OOM hits. The
+    # 800 MB threshold leaves headroom for the current render in flight.
+    import gc as _gc
+    _gc.collect()
+    try:
+        import psutil as _psutil
+        _rss_mb = _psutil.Process().memory_info().rss / (1024 * 1024)
+        if _rss_mb > 800:
+            st.cache_data.clear()
+            _gc.collect()
+    except ImportError:
+        pass
