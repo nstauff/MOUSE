@@ -148,7 +148,20 @@ import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import streamlit as st
-import streamlit_analytics2 as streamlit_analytics
+# streamlit_analytics2 removed (memory: ~10-25 MB freed). Replace the
+# library with a no-op context manager so the existing
+# `with streamlit_analytics.track():` block keeps working without
+# requiring a deep re-indent of the entire script body. The custom
+# SQLite-backed visit logger below (`_log_visit_once_per_session`) is
+# kept; it's lightweight and gives us the analytics we actually use.
+from contextlib import nullcontext as _nullcontext
+
+class _NoOpAnalytics:
+    @staticmethod
+    def track():
+        return _nullcontext()
+
+streamlit_analytics = _NoOpAnalytics()
 from st_cookies_manager import EncryptedCookieManager
 
 from reactor_config import build_params, SubcriticalError, ShortLifetimeError, ESCALATION_YEAR
@@ -4625,7 +4638,7 @@ with streamlit_analytics.track():
 
             plt.tight_layout(pad=2.0)
             buf = io.BytesIO()
-            fig.savefig(buf, format='png', dpi=200, bbox_inches='tight', facecolor='white')
+            fig.savefig(buf, format='png', dpi=120, bbox_inches='tight', facecolor='white')
             buf.seek(0)
             plt.close(fig)
             matplotlib.rcParams.update(matplotlib.rcParamsDefault)
@@ -4700,7 +4713,7 @@ with streamlit_analytics.track():
 
             plt.tight_layout(pad=2.0)
             buf2 = io.BytesIO()
-            fig2.savefig(buf2, format='png', dpi=200, bbox_inches='tight', facecolor='white')
+            fig2.savefig(buf2, format='png', dpi=120, bbox_inches='tight', facecolor='white')
             buf2.seek(0)
             plt.close(fig2)
             matplotlib.rcParams.update(matplotlib.rcParamsDefault)
