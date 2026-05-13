@@ -154,7 +154,7 @@ import streamlit as st
 # requiring a deep re-indent of the entire script body. The custom
 # SQLite-backed visit logger below (`_log_visit_once_per_session`) is
 # kept; it's lightweight and gives us the analytics we actually use.
-from contextlib import nullcontext as _nullcontext
+from contextlib import nullcontext as _nullcontext, redirect_stdout as _redirect_stdout
 
 class _NoOpAnalytics:
     @staticmethod
@@ -469,8 +469,12 @@ def _run_estimate(reactor_type, power_mwt, enrichment, interest_rate, discount_r
                      active_height=active_height,
                      n_assembly_rings=n_assembly_rings,
                      n_core_rings=n_core_rings)
-    raw_df = bottom_up_cost_estimate('cost/Cost_Database.xlsx', p)
-    enriched_df, detailed_sorted_df = cost_drivers_estimate(raw_df, p)
+    # Silence the cost engine's per-account print spam ("For the cost of
+    # the Account ..."). Those lines flood Streamlit Cloud's log panel
+    # and make actual diagnostics like [mem] hard to find.
+    with _redirect_stdout(io.StringIO()):
+        raw_df = bottom_up_cost_estimate('cost/Cost_Database.xlsx', p)
+        enriched_df, detailed_sorted_df = cost_drivers_estimate(raw_df, p)
     return transform_dataframe(enriched_df), enriched_df, detailed_sorted_df, p
 
 
@@ -525,7 +529,8 @@ def _lcoe_at_noak_unit(reactor_type, power_mwt, enrichment, interest_rate, disco
                      active_height=active_height,
                      n_assembly_rings=n_assembly_rings,
                      n_core_rings=n_core_rings)
-    raw_df = bottom_up_cost_estimate('cost/Cost_Database.xlsx', p)
+    with _redirect_stdout(io.StringIO()):
+        raw_df = bottom_up_cost_estimate('cost/Cost_Database.xlsx', p)
     # Read mean / std directly from the cost engine's raw output.
     # cost_drivers_estimate enriches with per-account LCOE columns we
     # don't use here, and transform_dataframe only int-truncates floats —
@@ -5467,45 +5472,69 @@ with streamlit_analytics.track():
     # ── End-of-script housekeeping ───────────────────────────────
     # Every Streamlit rerun re-executes this script top-to-bottom, so
     # the variables holding the cost-engine DataFrames go out of scope
-    # here. A generational GC pass reclaims their memory promptly (F).
+    # here. A generational GC pass reclaims their memory promptly.
     #
-    # Memory monitor: two tiers, both based on RSS (the same number
-    # the sidebar badge shows).
-    #   • Hard tier (C) at 950 MB: self-restart via os._exit(0) before
-    #     Streamlit Cloud's ~1 GB hard kill. User sees a brief "rebooting"
-    #     page instead of an OOM crash. Cleaner than waiting for the kill.
-    #   • Soft tier (G) at 800 MB: clear st.cache_data + malloc_trim to
-    #     actually return freed pages to the OS (glibc otherwise holds
-    #     them as a high-water mark, so RSS would not visibly drop).
-    # Both tiers print to stdout so the cleanup is visible in Streamlit
-    # Cloud's logs panel.
+    # Memory monitor: soft cleanup at 800 MB clears every cache we own —
+    # not just st.cache_data, but also the functools.lru_cache instances
+    # (_cached_inflation_multiplier, _cached_read_excel) and the bounded
+    # OrderedDict _materials_cache. Earlier versions cleared only
+    # st.cache_data, which left the lru_caches as a hidden floor that
+    # rose monotonically (~70 MB per cleanup cycle) until OOM. Then
+    # malloc_trim asks glibc to actually release freed pages back to the
+    # OS (it otherwise holds them as a high-water mark).
+    #
+    # Hard tier at 950 MB: don't try to self-restart via os._exit(0) —
+    # Streamlit Cloud treats that as a crash, not a restart, and the
+    # app shows an "Oh no" page that requires manual reboot. Instead
+    # render a friendly message and stop this rerun cleanly.
     import gc as _gc
     _gc.collect()
     try:
         import psutil as _psutil
         _rss_mb = _psutil.Process().memory_info().rss / (1024 * 1024)
 
-        # C — hard self-restart before Streamlit's own kill
-        if _rss_mb > 950:
-            print(f"[mem] {_rss_mb:.0f} MB > 950 MB -> self-restart",
-                  flush=True)
-            import os as _os
-            _os._exit(0)
-
-        # G + A + B — soft cleanup with malloc_trim and logging
         if _rss_mb > 800:
+            # Clear Streamlit-managed caches
             st.cache_data.clear()
+            # Clear our own functools.lru_cache instances — st.cache_data.clear()
+            # does NOT touch these, and they were the hidden leak source.
+            try:
+                _cached_inflation_multiplier.cache_clear()
+            except Exception:
+                pass
+            try:
+                _cached_read_excel.cache_clear()
+            except Exception:
+                pass
+            # _materials_cache is a bounded OrderedDict, not lru_cache
+            try:
+                _materials_cache.clear()
+            except Exception:
+                pass
             _gc.collect()
-            # A: force glibc to release freed pages back to OS (Linux only;
-            # silently no-op on macOS/Windows where libc.so.6 doesn't exist)
+            # Force glibc to release freed pages back to OS (Linux only;
+            # no-op on macOS/Windows where libc.so.6 doesn't exist)
             try:
                 import ctypes as _ctypes
                 _ctypes.CDLL("libc.so.6").malloc_trim(0)
             except (OSError, AttributeError):
                 pass
             _new_rss = _psutil.Process().memory_info().rss / (1024 * 1024)
-            # B: visible in Streamlit Cloud -> Manage app -> Logs
             print(f"[mem] {_rss_mb:.0f} MB > 800 MB -> cleared caches, "
                   f"now {_new_rss:.0f} MB", flush=True)
+
+        # Friendly stop at 950 MB — if the soft cleanup wasn't enough,
+        # tell the user clearly instead of letting Streamlit Cloud's
+        # OOM killer fire (which produces the same "Oh no" error page).
+        if _rss_mb > 950:
+            print(f"[mem] {_rss_mb:.0f} MB > 950 MB -> friendly stop",
+                  flush=True)
+            st.error(
+                "**Memory limit reached.** The app is approaching its "
+                "1 GB memory ceiling. Please reload the page to start a "
+                "fresh session. If this keeps happening, the app may "
+                "have many concurrent users — try again in a few minutes."
+            )
+            st.stop()
     except ImportError:
         pass
