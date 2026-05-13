@@ -181,7 +181,7 @@ from webapp.hpmr_fuel_lifetime_estimator import (
     get_hpmr_leakage,
 )
 from cost.cost_estimation import bottom_up_cost_estimate, transform_dataframe
-from cost.cost_drivers import cost_drivers_estimate, is_double_digit_excluding_multiples_of_10, get_detailed_driver_rows
+from cost.cost_drivers import cost_drivers_estimate, is_double_digit_excluding_multiples_of_10, is_three_digit_excluding_multiples_of_10, get_detailed_driver_rows
 
 # ---------------------------------------------------------------------------
 # Performance patches: cache Excel reads that would otherwise repeat on every run.
@@ -4434,82 +4434,130 @@ with streamlit_analytics.track():
             matplotlib.rcParams.update(matplotlib.rcParamsDefault)
         st.image(buf, width='stretch')
 
-    # --- Detailed cost drivers (one level deeper) ---
-    _det = detailed_sorted_df.copy() if not detailed_sorted_df.empty else pd.DataFrame()
-    if not _det.empty:
-        _det = _det.head(7)
-
-    if _det.empty:
-        st.info('No detailed accounts with FOAK LCOE >= 5 $/MWh found.')
-    else:
+    # --- Per parent breakdown ---
+    # For each top driver in _drv (up to 7), if it has 2 or more 3-digit
+    # children in enriched_df, render a breakdown plot of those children
+    # (max 5 children per plot, sorted by FOAK LCOE descending). Parents
+    # with fewer than 2 children are skipped silently.
+    if not _drv.empty:
         st.markdown('---')
         st.markdown(
             '<p style="color:#64748b;font-size:0.85rem;margin-bottom:1rem;">'
-            '<strong>Detailed cost drivers</strong> one level deeper than the chart above. '
-            '3-digit sub-accounts are shown where available; otherwise the 2-digit parent is kept.</p>',
+            '<strong>Per driver breakdown.</strong> For each high level '
+            'driver above that has multiple lower level accounts, the chart '
+            'below shows how the cost splits across those accounts (top 5 '
+            'by FOAK LCOE).</p>',
             unsafe_allow_html=True,
         )
 
-        bar_width = 0.38
-        r1 = np.arange(len(_det))
-        r2 = r1 + bar_width
+        # Pool of all 3-digit accounts in the cost table
+        _three_digit_pool = enriched_df[enriched_df['Account'].apply(
+            is_three_digit_excluding_multiples_of_10)].copy()
 
-        matplotlib.rcParams.update({
-            'font.family': 'DejaVu Sans',
-            'font.size': 13,
-            'axes.titlesize': 15,
-            'axes.labelsize': 13,
-            'xtick.labelsize': 12,
-            'ytick.labelsize': 12,
-        })
+        _any_breakdown_rendered = False
 
-        with _MPL_LOCK:
-            fig2, ax2 = plt.subplots(figsize=(max(13, len(_det) * 1.6), 7))
-            fig2.patch.set_facecolor('white')
-            ax2.set_facecolor('#f8fafc')
+        for _parent_idx, _parent_row in _drv.iterrows():
+            try:
+                _parent_acct_int = int(_parent_row['Account'])
+            except (TypeError, ValueError):
+                continue
+            _parent_title = _parent_row.get('Account Title',
+                                            f'Account {_parent_acct_int}')
 
-            foak_err2 = _det['FOAK LCOE_std'] if 'FOAK LCOE_std' in _det.columns else None
-            noak_err2 = _det['NOAK LCOE_std'] if 'NOAK LCOE_std' in _det.columns else None
+            _children = _three_digit_pool[_three_digit_pool['Account'].apply(
+                lambda x, p=_parent_acct_int: int(x) // 10 == p
+            )].copy()
 
-            ax2.bar(r1, _det['FOAK LCOE'], width=bar_width,
-                    color='#c84b1e', edgecolor='white', linewidth=0.8,
-                    label='FOAK', zorder=3,
-                    yerr=foak_err2, capsize=5,
-                    error_kw=dict(elinewidth=1.8, ecolor='#9a3412', capthick=1.8))
-            ax2.bar(r2, _det['NOAK LCOE'], width=bar_width,
-                    color='#1B4F8C', edgecolor='white', linewidth=0.8,
-                    label='NOAK', zorder=3,
-                    yerr=noak_err2, capsize=5,
-                    error_kw=dict(elinewidth=1.8, ecolor='#0a2540', capthick=1.8))
+            if len(_children) < 2:
+                continue
 
-            ax2.set_xticks(r1 + bar_width / 2)
-            ax2.set_xticklabels(_det['Account Title'], rotation=35, ha='right',
-                                fontsize=12, color='#0a2540', fontweight='500')
-            ax2.set_ylabel('LCOE Contribution ($/MWh)', fontsize=13,
-                           color='#0a2540', labelpad=10)
-            ax2.yaxis.set_tick_params(labelcolor='#0a2540', labelsize=12)
-            ax2.set_xlim(-0.4, len(_det) - 0.15)
+            _children = _children.sort_values('FOAK LCOE', ascending=False)
+            _children = _children.head(5)
 
-            for spine in ['top', 'right', 'left']:
-                ax2.spines[spine].set_visible(False)
-            ax2.spines['bottom'].set_color('#cbd5e1')
-            ax2.yaxis.grid(True, linestyle='--', linewidth=0.7,
-                           alpha=0.7, color='#cbd5e1', zorder=0)
-            ax2.set_axisbelow(True)
+            _any_breakdown_rendered = True
 
-            legend2 = ax2.legend(fontsize=12, frameon=True, framealpha=1,
-                                 edgecolor='#bfdbfe', facecolor='white',
-                                 loc='upper right', handlelength=1.5,
-                                 borderpad=0.8, labelspacing=0.5)
-            legend2.get_frame().set_linewidth(1.0)
+            st.markdown(
+                f'<div style="font-size:0.9rem;font-weight:600;color:#0a2540;'
+                f'margin:1.25rem 0 0.5rem 0;">'
+                f'<span style="color:#94a3b8;font-weight:500;">'
+                f'{_parent_acct_int} &middot; </span>{_parent_title}</div>',
+                unsafe_allow_html=True,
+            )
 
-            plt.tight_layout(pad=2.0)
-            buf2 = io.BytesIO()
-            fig2.savefig(buf2, format='png', dpi=120, bbox_inches='tight', facecolor='white')
-            buf2.seek(0)
-            plt.close(fig2)
-            matplotlib.rcParams.update(matplotlib.rcParamsDefault)
-        st.image(buf2, width='stretch')
+            _n_bars = len(_children)
+            bar_width = 0.38
+            r1 = np.arange(_n_bars)
+            r2 = r1 + bar_width
+
+            matplotlib.rcParams.update({
+                'font.family': 'DejaVu Sans',
+                'font.size': 13,
+                'axes.titlesize': 15,
+                'axes.labelsize': 13,
+                'xtick.labelsize': 12,
+                'ytick.labelsize': 12,
+            })
+
+            with _MPL_LOCK:
+                _fig_b, _ax_b = plt.subplots(
+                    figsize=(max(10, _n_bars * 2.2), 5))
+                _fig_b.patch.set_facecolor('white')
+                _ax_b.set_facecolor('#f8fafc')
+
+                _foak_err = (_children['FOAK LCOE_std']
+                             if 'FOAK LCOE_std' in _children.columns else None)
+                _noak_err = (_children['NOAK LCOE_std']
+                             if 'NOAK LCOE_std' in _children.columns else None)
+
+                _ax_b.bar(r1, _children['FOAK LCOE'], width=bar_width,
+                          color='#c84b1e', edgecolor='white', linewidth=0.8,
+                          label='FOAK', zorder=3,
+                          yerr=_foak_err, capsize=5,
+                          error_kw=dict(elinewidth=1.8, ecolor='#9a3412',
+                                        capthick=1.8))
+                _ax_b.bar(r2, _children['NOAK LCOE'], width=bar_width,
+                          color='#1B4F8C', edgecolor='white', linewidth=0.8,
+                          label='NOAK', zorder=3,
+                          yerr=_noak_err, capsize=5,
+                          error_kw=dict(elinewidth=1.8, ecolor='#0a2540',
+                                        capthick=1.8))
+
+                _ax_b.set_xticks(r1 + bar_width / 2)
+                _ax_b.set_xticklabels(_children['Account Title'],
+                                      rotation=30, ha='right', fontsize=11,
+                                      color='#0a2540', fontweight='500')
+                _ax_b.set_ylabel('LCOE ($/MWh)', fontsize=12,
+                                 color='#0a2540', labelpad=10)
+                _ax_b.yaxis.set_tick_params(labelcolor='#0a2540',
+                                            labelsize=11)
+                _ax_b.set_xlim(-0.4, _n_bars - 0.15)
+
+                for spine in ['top', 'right', 'left']:
+                    _ax_b.spines[spine].set_visible(False)
+                _ax_b.spines['bottom'].set_color('#cbd5e1')
+                _ax_b.yaxis.grid(True, linestyle='--', linewidth=0.7,
+                                 alpha=0.7, color='#cbd5e1', zorder=0)
+                _ax_b.set_axisbelow(True)
+
+                _legend_b = _ax_b.legend(
+                    fontsize=11, frameon=True, framealpha=1,
+                    edgecolor='#bfdbfe', facecolor='white',
+                    loc='upper right', handlelength=1.5,
+                    borderpad=0.8, labelspacing=0.5)
+                _legend_b.get_frame().set_linewidth(1.0)
+
+                plt.tight_layout(pad=2.0)
+                _buf_b = io.BytesIO()
+                _fig_b.savefig(_buf_b, format='png', dpi=120,
+                               bbox_inches='tight', facecolor='white')
+                _buf_b.seek(0)
+                plt.close(_fig_b)
+                matplotlib.rcParams.update(matplotlib.rcParamsDefault)
+            st.image(_buf_b, width='stretch')
+
+        if not _any_breakdown_rendered:
+            st.info('None of the top cost drivers have multiple lower '
+                    'level accounts to break down.')
 
     # ─── Band 4 (cont.) Full breakdown ──────────────────────────────
     st.markdown(
