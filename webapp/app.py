@@ -307,8 +307,8 @@ def _run_memory_monitor():
     # Aggressive matplotlib cleanup: clf() forces each Figure to drop
     # its axes/artists/transforms before close('all') destroys it,
     # which seems to release more of the Agg renderer's C-side state
-    # than close() alone. findfont is a module-level lru_cache that
-    # st.cache_data.clear() does not touch.
+    # than close() alone. Cheap because Gcf.figs is typically empty
+    # at this point (previous rerun's close('all') drained it).
     try:
         import matplotlib._pylab_helpers as _gcf
         for _fig in list(_gcf.Gcf.figs.values()):
@@ -319,11 +319,6 @@ def _run_memory_monitor():
     except Exception:
         pass
     plt.close('all')
-    try:
-        import matplotlib.font_manager as _fm
-        _fm.findfont.cache_clear()
-    except Exception:
-        pass
 
     try:
         import ctypes as _ctypes
@@ -349,6 +344,16 @@ def _run_memory_monitor():
             pass
         try:
             _materials_cache.clear()
+        except Exception:
+            pass
+        # Font lookup cache (lru_cache on matplotlib.font_manager.findfont).
+        # Tiny (~few MB) so we never bother clearing it on every rerun —
+        # font lookups during chart text rendering are disk-bound and a
+        # cold cache 2-3x's the run time. Clear here only when we're
+        # already paying the cost of a full sweep.
+        try:
+            import matplotlib.font_manager as _fm
+            _fm.findfont.cache_clear()
         except Exception:
             pass
         # Triple gc pass breaks reference cycles that a single collect
