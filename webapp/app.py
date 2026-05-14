@@ -88,6 +88,15 @@ for _mod in ['openmc', 'openmc.deplete', 'openmc.mgxs']:
 
 sys.modules['watts'] = MagicMock()
 
+# matplotlib is imported at module level by core_design/utils.py and
+# core_design/correction_factor.py for plot helpers (create_universe_plot,
+# keff_comparison_vs_Time, etc.) that the webapp never calls. Stub it so
+# those imports succeed without installing the heavy matplotlib package.
+_mpl_stub = MagicMock()
+for _mod in ['matplotlib', 'matplotlib.pyplot', 'matplotlib.patches',
+             'matplotlib.colors']:
+    sys.modules[_mod] = _mpl_stub
+
 # ---------------------------------------------------------------------------
 # Cache the OpenMC materials database build. collect_materials_data is
 # called dozens of times per Run (drums.py alone calls it 7 times per
