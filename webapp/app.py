@@ -19,6 +19,17 @@ if _repo_root not in sys.path:
     sys.path.insert(0, _repo_root)
 
 # ---------------------------------------------------------------------------
+# Memory tracing: start as early as possible so tracemalloc captures
+# allocations from app startup. The memory monitor (defined further down)
+# dumps the top allocations whenever RAM crosses the cleanup threshold,
+# helping locate leaks the cache sweep doesn't reach.
+# Overhead is ~5-10 MB and a small per-allocation slowdown.
+# ---------------------------------------------------------------------------
+import tracemalloc as _tracemalloc
+if not _tracemalloc.is_tracing():
+    _tracemalloc.start(10)
+
+# ---------------------------------------------------------------------------
 # IMPORTANT: Stub openmc and watts BEFORE any MOUSE import.
 # ---------------------------------------------------------------------------
 from unittest.mock import MagicMock
@@ -226,11 +237,16 @@ _ce.pd.read_excel = _patched_read_excel
 #     - malloc_trim asks glibc to release freed pages back to the OS
 #       (no-op on macOS/Windows; load-bearing on Streamlit Cloud Linux)
 #
-#   At 800 MB (sweep — clears every cache we own):
+#   At 600 MB (sweep — clears every cache we own + dumps diagnostics):
 #     - st.cache_data (cost engine + anchors)
 #     - functools.lru_cache instances (_cached_inflation_multiplier,
 #       _cached_read_excel) — st.cache_data.clear() does NOT touch these
 #     - bounded OrderedDict _materials_cache
+#     - Logs tracemalloc top 10 allocation sites, gc top object types,
+#       and session_state size so we can identify what's leaking past
+#       the cache sweep. Threshold is intentionally low (600 vs the
+#       previous 800) to give ~350 MB of headroom before the friendly
+#       stop, and to surface diagnostics earlier in the leak cycle.
 #     Next Run rebuilds cold; this is the cost-warmth-for-survival trade.
 #
 #   At 950 MB (friendly stop):
@@ -238,6 +254,48 @@ _ce.pd.read_excel = _patched_read_excel
 #       Avoids Streamlit Cloud's OOM "Oh no" page that requires manual
 #       reboot. Do NOT use os._exit() — Streamlit Cloud treats it as a
 #       crash, not a restart.
+def _log_memory_diagnostics(rss_mb):
+    """Dumps what's holding RAM after the cache sweep: top tracemalloc
+    allocation sites, top gc object types by count, and session_state size.
+    Output goes to stdout (Streamlit Cloud logs)."""
+    print(f"[mem-diag] post-sweep RSS={rss_mb:.0f} MB — diagnostics follow",
+          flush=True)
+
+    try:
+        if _tracemalloc.is_tracing():
+            snap = _tracemalloc.take_snapshot()
+            top = snap.statistics('lineno')[:10]
+            print("[mem-diag] tracemalloc top 10 by size:", flush=True)
+            for i, stat in enumerate(top, 1):
+                frame = stat.traceback[0]
+                print(f"[mem-diag]   {i:2d}. {stat.size/1024/1024:6.1f} MB "
+                      f"{stat.count:>6} blocks  "
+                      f"{frame.filename}:{frame.lineno}", flush=True)
+        else:
+            print("[mem-diag] tracemalloc not running", flush=True)
+    except Exception as e:
+        print(f"[mem-diag] tracemalloc failed: {e}", flush=True)
+
+    try:
+        import gc as _gc
+        from collections import Counter as _Counter
+        type_counts = _Counter(type(o).__name__ for o in _gc.get_objects())
+        print("[mem-diag] top 10 gc object types by count:", flush=True)
+        for name, count in type_counts.most_common(10):
+            print(f"[mem-diag]   {count:>8}  {name}", flush=True)
+    except Exception as e:
+        print(f"[mem-diag] gc count failed: {e}", flush=True)
+
+    try:
+        import sys as _sys
+        keys = list(st.session_state.keys())
+        total = sum(_sys.getsizeof(st.session_state[k]) for k in keys)
+        print(f"[mem-diag] session_state: {len(keys)} keys, "
+              f"~{total/1024/1024:.2f} MB shallow", flush=True)
+    except Exception as e:
+        print(f"[mem-diag] session_state size failed: {e}", flush=True)
+
+
 def _run_memory_monitor():
     import gc as _gc
     _gc.collect()
@@ -254,7 +312,7 @@ def _run_memory_monitor():
     except ImportError:
         return
 
-    if _rss_mb > 800:
+    if _rss_mb > 600:
         st.cache_data.clear()
         try:
             _cached_inflation_multiplier.cache_clear()
@@ -275,8 +333,9 @@ def _run_memory_monitor():
         except (OSError, AttributeError):
             pass
         _new_rss = _psutil.Process().memory_info().rss / (1024 * 1024)
-        print(f"[mem] {_rss_mb:.0f} MB > 800 MB -> cleared caches, "
+        print(f"[mem] {_rss_mb:.0f} MB > 600 MB -> cleared caches, "
               f"now {_new_rss:.0f} MB", flush=True)
+        _log_memory_diagnostics(_new_rss)
 
     if _rss_mb > 950:
         print(f"[mem] {_rss_mb:.0f} MB > 950 MB -> friendly stop",
