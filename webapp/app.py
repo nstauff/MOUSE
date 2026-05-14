@@ -1221,6 +1221,28 @@ def _keff_altair_chart(times, keffs):
     return (_line + _pts + _ref).properties(height=260)
 
 
+def _wrap_label_two_lines(text, max_chars=22):
+    """Wrap a label string to 2 lines using '|' as the line-break
+    delimiter (Altair's labelExpr split on this delimiter renders the
+    pieces on separate lines). Returns the single-line input unchanged
+    if it already fits in max_chars or has fewer than 2 words. Splits
+    at the word boundary that minimizes the longer of the two lines."""
+    text = str(text).strip()
+    if len(text) <= max_chars:
+        return text
+    words = text.split()
+    if len(words) < 2:
+        return text
+    best_split, best_max = 1, float('inf')
+    for i in range(1, len(words)):
+        line1 = ' '.join(words[:i])
+        line2 = ' '.join(words[i:])
+        m = max(len(line1), len(line2))
+        if m < best_max:
+            best_max, best_split = m, i
+    return ' '.join(words[:best_split]) + '|' + ' '.join(words[best_split:])
+
+
 def _grouped_lcoe_bars_chart(df, label_col='Account Title', height=400,
                              label_angle=-35):
     """Altair grouped bar chart (FOAK / NOAK side by side) with error
@@ -1261,7 +1283,14 @@ def _grouped_lcoe_bars_chart(df, label_col='Account Title', height=400,
                    title=None,
                    axis=alt.Axis(labelAngle=label_angle, labelColor='#0a2540',
                                  labelFontSize=12, labelFontWeight=500,
-                                 labelLimit=200, labelOverlap=False))
+                                 labelLimit=200, labelOverlap=False,
+                                 # Multi-line wrap: labels passed through
+                                 # _wrap_label_two_lines insert '|' at the
+                                 # break point; split() turns that into a
+                                 # 2-line label. Labels without '|' render
+                                 # on a single line (split returns a
+                                 # 1-element array).
+                                 labelExpr="split(datum.label, '|')"))
     _bars = alt.Chart(_plot_df).mark_bar().encode(
         x=_x_enc,
         xOffset=alt.XOffset('Type:N', sort=['FOAK', 'NOAK']),
@@ -4358,47 +4387,12 @@ with streamlit_analytics.track():
     }
 
     _mode_groups = [
-        {
-            'name': 'Road',
-            'envelope_keys': ['iso20', 'iso40', 'iso40hc', 'us_no_permit'],
-            'closing_note': (
-                'Larger or heavier modules still ship by road, but '
-                'they need state permits, escort vehicles, route '
-                'surveys, and multiple axle heavy haul trailers. The '
-                'binding constraint in practice is often how the '
-                'weight is distributed across axles and what '
-                'individual bridges along the route can carry, not '
-                'just the total weight of the load.'
-            ),
-        },
-        {
-            'name': 'Rail',
-            'envelope_keys': ['iso20', 'iso40', 'iso40hc', 'aar_plate_f'],
-            'closing_note': (
-                'Containers above can move between truck, rail, and '
-                'ship without unpacking. For modules too big for any '
-                'container, an open rail flatcar handles oversized '
-                'cargo. For very large or heavy modules, specialized '
-                'railcars (such as Schnabel type cars, with 300 to '
-                '500+ t capability) become part of the load itself '
-                'and adapt to curves. These are planned per shipment '
-                'based on the specific route\'s bridges and '
-                'clearances.'
-            ),
-        },
-        {
-            'name': 'Sea',
-            'envelope_keys': ['iso20', 'iso40', 'iso40hc'],
-            'closing_note': (
-                'Beyond standard containers, two further options '
-                'exist: breakbulk (cargo crated and loaded individually '
-                'into general cargo ships) for modules larger than a '
-                'container, and heavy lift vessels (with single lift '
-                'capability of several hundred to 1000+ tons) for very '
-                'large or heavy modules. Alternatives to containers '
-                'are planned per shipment.'
-            ),
-        },
+        {'name': 'Road',
+         'envelope_keys': ['iso20', 'iso40', 'iso40hc', 'us_no_permit']},
+        {'name': 'Rail',
+         'envelope_keys': ['iso20', 'iso40', 'iso40hc', 'aar_plate_f']},
+        {'name': 'Sea',
+         'envelope_keys': ['iso20', 'iso40', 'iso40hc']},
     ]
 
     # Reactor envelope + total mass used by every fit-check.
@@ -4495,24 +4489,25 @@ with streamlit_analytics.track():
                 for k in _group['envelope_keys']
             )
             st.markdown(_cards_html, unsafe_allow_html=True)
-            st.markdown(
-                '<div style="background:#f7f8fa;border:1px solid #bfdbfe;'
-                'border-radius:8px;padding:0.7rem 0.85rem;margin-bottom:0.9rem;'
-                'font-size:0.85rem;line-height:1.45;color:#3c4257;">'
-                f'<strong>Beyond the envelopes above:</strong> '
-                f'{_group["closing_note"]}'
-                '</div>',
-                unsafe_allow_html=True,
-            )
 
-    # Footnote — what each badge does and doesn't check.
+    # Footnote — what each badge does and doesn't check, plus the
+    # oversized fallback for every mode. Rendered as two parallel
+    # bullets so they read as siblings, not as text + an afterthought.
     st.markdown(
         '<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;'
         'padding:0.85rem 1.1rem;margin-bottom:1rem;font-size:0.85rem;line-height:1.45;color:#92400e;">'
-        '<strong>Note:</strong> each badge compares the outermost RVACS '
-        'envelope (diameter, height) and the sum of all component masses '
-        'against the listed envelope. Per component dimensions and masses '
-        'are shown in the table above.'
+        '<strong>Notes:</strong>'
+        '<ul style="margin:0.4rem 0 0 1.2rem;padding:0;">'
+        '<li>Each badge compares the outermost RVACS envelope (diameter, '
+        'height) and the sum of all component masses against the listed '
+        'envelope. Per component dimensions and masses are shown in the '
+        'table above.</li>'
+        '<li>For modules larger than these envelopes, road uses permitted '
+        'heavy haul (axle bridge limits often the binding constraint), rail '
+        'uses specialized cars such as Schnabel (300 to 500+ tons), and sea '
+        'uses breakbulk or heavy lift vessels (hundreds to 1000+ tons). Each '
+        'oversized shipment is planned per route.</li>'
+        '</ul>'
         '</div>',
         unsafe_allow_html=True,
     )
@@ -4639,8 +4634,233 @@ with streamlit_analytics.track():
             unsafe_allow_html=True,
         )
 
-        st.altair_chart(_grouped_lcoe_bars_chart(_drv, height=420),
-                        use_container_width=True)
+        # Chart in a constrained-width column so it doesn't sprawl
+        # across the full page width on wide screens. Right column is
+        # intentionally blank  the account definitions go BELOW, full
+        # width, in a 2-column flow.
+        _plot_col, _ = st.columns([5, 2])
+        with _plot_col:
+            st.altair_chart(_grouped_lcoe_bars_chart(_drv, height=420),
+                            use_container_width=True)
+
+        # Definitions for the cost-driver accounts, sourced and
+        # condensed from the GN-COA (Generation IV Nuclear Cost of
+        # Account) appendix. Renders only the entries that match
+        # _drv['Account Title']; accounts without a known definition
+        # are silently skipped. CSS column-count flows entries into 2
+        # columns with break-inside:avoid keeping each title plus
+        # definition pair intact.
+        _ACCOUNT_DEFINITIONS = {
+            # Top-level accounts most likely to surface in the chart
+            'Plant Licensing': (
+                'Costs to obtain construction and operating licenses '
+                'for the plant: preapplication activities, preparation '
+                'of license applications, and regulator review '
+                'including public outreach.'
+            ),
+            'Structures and Improvements': (
+                'Civil work and buildings: reactor island structures, '
+                'energy conversion building, control building, support '
+                'buildings (spent fuel, maintenance, fire protection), '
+                'administration, and security. Excludes cooling towers.'
+            ),
+            'Reactor System': (
+                'The nuclear steam supply: reactor vessel and '
+                'internals, reactivity control (drums or rods), primary '
+                'coolant loop, safety and shutdown systems, fuel '
+                'handling, and reactor I&C. Initial fuel core is '
+                'tracked separately.'
+            ),
+            'Energy Conversion System': (
+                'Equipment that turns reactor heat into the final '
+                'product (electricity, hydrogen, process heat): '
+                'turbine and generator, condenser and cooling towers, '
+                'feed heating, and application-specific systems.'
+            ),
+            'Electrical Equipment': (
+                'Plant electrical systems: switchgear, station service '
+                'equipment, switchboards, protective systems, raceways, '
+                'and power/control cabling between buildings and '
+                'equipment.'
+            ),
+            'Initial Fuel Inventory': (
+                'Pre-commissioning fuel costs treated as part of total '
+                'capitalized investment: mining, conversion, '
+                'enrichment, and fabrication of the first core load.'
+            ),
+            'Miscellaneous Equipment': (
+                'Equipment not covered by other accounts: cranes and '
+                'hoists, air/water/steam utility systems, '
+                'communications, furnishings, and remote inspection '
+                'equipment.'
+            ),
+            'O&M Staff': (
+                'Annual salaries and benefits for the workforce: '
+                'reactor operators, remote monitoring technicians, '
+                'security, maintenance crews, engineering, management, '
+                'plus taxes and benefits.'
+            ),
+            'Capital Plant Expenditures': (
+                'Ongoing sustaining capital during operation. Driven by '
+                'how often reactor-system components need to be '
+                'replaced and by scheduled maintenance frequency. '
+                'Covers regulatory-compliance upgrades and plant-life '
+                'extension; treated as annualized.'
+            ),
+            'Additional Nuclear Fuel': (
+                'Annualized cost of replacement fuel after the initial '
+                'core (the initial fuel inventory is capitalized '
+                'separately and is not included here): uranium supply, '
+                'conversion, enrichment, fabrication, and tails '
+                'disposal. Reload costs are averaged across the years '
+                'between reloads.'
+            ),
+            'Variable Non-Fuel Costs': (
+                'Variable consumables used in operation that are not '
+                'fuel: borated water, control rods, burnable poisons, '
+                'and other process chemicals.'
+            ),
+            'Regulatory Costs': (
+                'Annual costs of ongoing regulator oversight: plant '
+                'inspections and the associated fees paid to the '
+                'regulator each year.'
+            ),
+            'Fixed O&M Utilities and Materials': (
+                'Annual operating supplies: chemicals and lubricants, '
+                'operational spare parts, utilities and consumables, '
+                'special-handling materials, and disposal of non-fuel '
+                'waste.'
+            ),
+            'Taxes and Insurance': (
+                'Annual property taxes and plant insurance during '
+                'operation, excluding salary-related taxes. May include '
+                'tax credits.'
+            ),
+            'Outage Expenses': (
+                'Costs for scheduled and unscheduled maintenance '
+                'outages during operation, excluding refueling costs '
+                '(those are in the fuel accounts).'
+            ),
+            'Spent Fuel Management': (
+                'Annual cost of handling used fuel: interim storage on '
+                'or off site, optional reprocessing for recovered '
+                'fissile material, and final disposal.'
+            ),
+            'Fees': (
+                'Annual fees such as the licensed reactor process fee, '
+                'nuclear operating license fees, and similar regulator '
+                'or government fees due each year.'
+            ),
+            'Cost of Money': (
+                'Value of money used for operating costs: external '
+                'financing or retained earnings, including loans, '
+                'green bonds, or other debt instruments.'
+            ),
+            # Higher-level groupings sometimes shown as drivers
+            'Capitalized Pre-Construction Costs': (
+                'Owner costs before construction starts: land '
+                'acquisition, site and plant permits, licensing, plant '
+                'studies and reports, community outreach, and pre-'
+                'construction site work.'
+            ),
+            'Capitalized Indirect Services Cost': (
+                'Construction support not in direct equipment: tools '
+                'and rented gear, supervision, startup and '
+                'demonstration, shipping, engineering services, and '
+                'PM/CM services.'
+            ),
+            'Capitalized Training Costs': (
+                'Pre-startup staff recruitment, training of plant '
+                'operators, relocation, and housing for permanent O&M '
+                'personnel.'
+            ),
+            'Capitalized Supplementary Costs': (
+                'Capitalized owner overhead: property taxes and '
+                'insurance during construction, spent fuel storage, '
+                'decommissioning provision, fees and royalties, and '
+                'other owner costs.'
+            ),
+            'Capitalized Financial Costs': (
+                'Financing costs that accrue before commercial '
+                'operation: allowance for funds used during '
+                'construction (interest), depreciation, and contingency '
+                'on financial costs.'
+            ),
+            'Annualized O&M Cost': (
+                'Per-year operating and maintenance costs: staff '
+                'salaries, non-fuel consumables, regulatory fees, '
+                'utilities and materials, sustaining capital, taxes, '
+                'and outage expenses.'
+            ),
+            'Annualized Decommissioning Cost': (
+                'Decommissioning costs accumulated as an annualized '
+                'expense rather than a capitalized provision. Covers '
+                'close-out engineering and dismantling.'
+            ),
+            'Annualized Fuel Cost': (
+                'Per-year fuel-cycle costs: refueling operations, '
+                'additional fuel procurement, and spent fuel '
+                'management (storage and final disposal).'
+            ),
+            'Refueling Operations': (
+                'Annual incremental costs of refueling: fuel management '
+                'and scheduling, licensing assistance, QA, inspection, '
+                'and intermediate storage of fresh and used assemblies.'
+            ),
+            'Annualized Financial Cost': (
+                'Per-year financing costs during operation: fees for '
+                'the operating license, cost of money on outstanding '
+                'debt or retained earnings, and contingency on '
+                'financial costs.'
+            ),
+        }
+        # Standard nuclear cost-taxonomy convention: account numbers
+        # < 60 are capitalized one-time costs (construction, initial
+        # fuel inventory, financing), >= 60 are annualized recurring
+        # costs (O&M, additional fuel, periodic capital outlays). This
+        # is the distinction the user cares about most.
+        def _cost_type_tag(account):
+            try:
+                n = float(account)
+            except (TypeError, ValueError):
+                return None
+            return 'Annualized' if n >= 60 else 'Capitalized'
+
+        _defs_html = []
+        for _acct, _t in zip(_drv['Account'], _drv['Account Title']):
+            # Account titles in the cost database carry leading
+            # whitespace for hierarchy indentation; strip before lookup.
+            _t_clean = str(_t).strip()
+            _def = _ACCOUNT_DEFINITIONS.get(_t_clean)
+            if _def is None:
+                continue
+            _tag = _cost_type_tag(_acct)
+            _tag_html = (f' <span style="color:#64748b;font-weight:500;'
+                         f'font-size:0.82rem;">({_tag})</span>'
+                         if _tag else '')
+            _defs_html.append(
+                '<div style="margin-bottom:0.7rem;break-inside:avoid;">'
+                f'<div style="font-weight:600;color:#0a2540;'
+                f'font-size:0.88rem;margin-bottom:0.15rem;">'
+                f'{_t_clean}{_tag_html}</div>'
+                f'<div style="color:#3c4257;line-height:1.45;'
+                f'font-size:0.85rem;">{_def}</div>'
+                '</div>'
+            )
+        if _defs_html:
+            st.markdown(
+                '<div style="margin-top:1rem;background:#f7f8fa;'
+                'border:1px solid #bfdbfe;border-radius:8px;'
+                'padding:0.9rem 1.1rem;">'
+                '<div style="font-size:0.85rem;font-weight:600;'
+                'color:#64748b;text-transform:uppercase;'
+                'letter-spacing:0.06em;margin-bottom:0.7rem;">'
+                'Account Definitions</div>'
+                '<div style="column-count:2;column-gap:1.8rem;">'
+                + ''.join(_defs_html) +
+                '</div></div>',
+                unsafe_allow_html=True,
+            )
 
     # --- Per parent breakdown ---
     # For each top driver in _drv (up to 7), if it has 2 or more 3-digit
@@ -4678,6 +4898,18 @@ with streamlit_analytics.track():
             if len(_children) < 2:
                 continue
             _children = _children.sort_values('FOAK LCOE', ascending=False).head(5)
+            # When there are 3-5 children, drop minor contributors
+            # (FOAK LCOE < $10/MWh) so the chart isn't dominated by
+            # near-zero bars. Always keep at least the top 2.
+            _FOAK_MIN = 10.0
+            if len(_children) >= 3:
+                _significant = _children[_children['FOAK LCOE'] >= _FOAK_MIN]
+                _children = (_significant if len(_significant) >= 2
+                             else _children.head(2))
+            # Wrap long titles for two-line rendering on the x-axis.
+            _children = _children.copy()
+            _children['Account Title'] = _children['Account Title'].apply(
+                _wrap_label_two_lines)
             _to_render.append((_parent_acct_int, _parent_title, _children))
 
         # Render two breakdowns per row using st.columns(2). If the
@@ -4690,9 +4922,7 @@ with streamlit_analytics.track():
                 with _col:
                     st.markdown(
                         f'<div style="font-size:0.9rem;font-weight:600;color:#0a2540;'
-                        f'margin:1.25rem 0 0.5rem 0;">'
-                        f'<span style="color:#94a3b8;font-weight:500;">'
-                        f'{_acct} &middot; </span>{_title}</div>',
+                        f'margin:1.25rem 0 0.5rem 0;">{_title}</div>',
                         unsafe_allow_html=True,
                     )
                     st.altair_chart(
