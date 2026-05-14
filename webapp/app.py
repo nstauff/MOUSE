@@ -213,6 +213,84 @@ _pd_orig.read_excel = _patched_read_excel
 _ce.pd.read_excel = _patched_read_excel
 
 # ---------------------------------------------------------------------------
+# Memory monitor
+# ---------------------------------------------------------------------------
+# Called once per rerun, right after the sidebar badge renders, BEFORE any
+# st.stop() upstream can short-circuit the script. Two tiers:
+#
+#   Every rerun (cheap, no UX cost):
+#     - gc.collect() reclaims the rerun's transient DataFrames
+#     - plt.close('all') drops matplotlib figure references after they've
+#       been serialized to PNG by st.pyplot (the single biggest non-cache
+#       source of RAM growth)
+#     - malloc_trim asks glibc to release freed pages back to the OS
+#       (no-op on macOS/Windows; load-bearing on Streamlit Cloud Linux)
+#
+#   At 800 MB (sweep — clears every cache we own):
+#     - st.cache_data (cost engine + anchors)
+#     - functools.lru_cache instances (_cached_inflation_multiplier,
+#       _cached_read_excel) — st.cache_data.clear() does NOT touch these
+#     - bounded OrderedDict _materials_cache
+#     Next Run rebuilds cold; this is the cost-warmth-for-survival trade.
+#
+#   At 950 MB (friendly stop):
+#     - Render an actionable banner and st.stop() the rerun cleanly.
+#       Avoids Streamlit Cloud's OOM "Oh no" page that requires manual
+#       reboot. Do NOT use os._exit() — Streamlit Cloud treats it as a
+#       crash, not a restart.
+def _run_memory_monitor():
+    import gc as _gc
+    _gc.collect()
+    plt.close('all')
+    try:
+        import ctypes as _ctypes
+        _ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except (OSError, AttributeError):
+        pass
+
+    try:
+        import psutil as _psutil
+        _rss_mb = _psutil.Process().memory_info().rss / (1024 * 1024)
+    except ImportError:
+        return
+
+    if _rss_mb > 800:
+        st.cache_data.clear()
+        try:
+            _cached_inflation_multiplier.cache_clear()
+        except Exception:
+            pass
+        try:
+            _cached_read_excel.cache_clear()
+        except Exception:
+            pass
+        try:
+            _materials_cache.clear()
+        except Exception:
+            pass
+        _gc.collect()
+        try:
+            import ctypes as _ctypes
+            _ctypes.CDLL("libc.so.6").malloc_trim(0)
+        except (OSError, AttributeError):
+            pass
+        _new_rss = _psutil.Process().memory_info().rss / (1024 * 1024)
+        print(f"[mem] {_rss_mb:.0f} MB > 800 MB -> cleared caches, "
+              f"now {_new_rss:.0f} MB", flush=True)
+
+    if _rss_mb > 950:
+        print(f"[mem] {_rss_mb:.0f} MB > 950 MB -> friendly stop",
+              flush=True)
+        st.error(
+            "**Memory limit reached.** The app is approaching its "
+            "1 GB memory ceiling. Please reload the page to start a "
+            "fresh session. If this keeps happening, the app may "
+            "have many concurrent users  try again in a few minutes."
+        )
+        st.stop()
+
+
+# ---------------------------------------------------------------------------
 # Reactor metadata: full names and design images
 # ---------------------------------------------------------------------------
 _REACTOR_LABELS = {
@@ -1876,6 +1954,12 @@ with streamlit_analytics.track():
             )
         except Exception:
             pass
+
+    # ── Memory monitor ──────────────────────────────────────────────────────
+    # Must run BEFORE any st.stop() upstream can short-circuit the rerun.
+    # Always cheap (gc + plt.close + malloc_trim); above 800 MB also sweeps
+    # caches; above 950 MB renders a friendly stop banner.
+    _run_memory_monitor()
 
     # ── Welcome banner ──────────────────────────────────────────────────────
     # Wrap all welcome content in a single slot so we can explicitly
@@ -5287,72 +5371,3 @@ with streamlit_analytics.track():
         unsafe_allow_html=True,
     )
 
-    # ── End-of-script housekeeping ───────────────────────────────
-    # Every Streamlit rerun re-executes this script top-to-bottom, so
-    # the variables holding the cost-engine DataFrames go out of scope
-    # here. A generational GC pass reclaims their memory promptly.
-    #
-    # Memory monitor: soft cleanup at 800 MB clears every cache we own —
-    # not just st.cache_data, but also the functools.lru_cache instances
-    # (_cached_inflation_multiplier, _cached_read_excel) and the bounded
-    # OrderedDict _materials_cache. Earlier versions cleared only
-    # st.cache_data, which left the lru_caches as a hidden floor that
-    # rose monotonically (~70 MB per cleanup cycle) until OOM. Then
-    # malloc_trim asks glibc to actually release freed pages back to the
-    # OS (it otherwise holds them as a high-water mark).
-    #
-    # Hard tier at 950 MB: don't try to self-restart via os._exit(0) —
-    # Streamlit Cloud treats that as a crash, not a restart, and the
-    # app shows an "Oh no" page that requires manual reboot. Instead
-    # render a friendly message and stop this rerun cleanly.
-    import gc as _gc
-    _gc.collect()
-    try:
-        import psutil as _psutil
-        _rss_mb = _psutil.Process().memory_info().rss / (1024 * 1024)
-
-        if _rss_mb > 800:
-            # Clear Streamlit-managed caches
-            st.cache_data.clear()
-            # Clear our own functools.lru_cache instances — st.cache_data.clear()
-            # does NOT touch these, and they were the hidden leak source.
-            try:
-                _cached_inflation_multiplier.cache_clear()
-            except Exception:
-                pass
-            try:
-                _cached_read_excel.cache_clear()
-            except Exception:
-                pass
-            # _materials_cache is a bounded OrderedDict, not lru_cache
-            try:
-                _materials_cache.clear()
-            except Exception:
-                pass
-            _gc.collect()
-            # Force glibc to release freed pages back to OS (Linux only;
-            # no-op on macOS/Windows where libc.so.6 doesn't exist)
-            try:
-                import ctypes as _ctypes
-                _ctypes.CDLL("libc.so.6").malloc_trim(0)
-            except (OSError, AttributeError):
-                pass
-            _new_rss = _psutil.Process().memory_info().rss / (1024 * 1024)
-            print(f"[mem] {_rss_mb:.0f} MB > 800 MB -> cleared caches, "
-                  f"now {_new_rss:.0f} MB", flush=True)
-
-        # Friendly stop at 950 MB — if the soft cleanup wasn't enough,
-        # tell the user clearly instead of letting Streamlit Cloud's
-        # OOM killer fire (which produces the same "Oh no" error page).
-        if _rss_mb > 950:
-            print(f"[mem] {_rss_mb:.0f} MB > 950 MB -> friendly stop",
-                  flush=True)
-            st.error(
-                "**Memory limit reached.** The app is approaching its "
-                "1 GB memory ceiling. Please reload the page to start a "
-                "fresh session. If this keeps happening, the app may "
-                "have many concurrent users — try again in a few minutes."
-            )
-            st.stop()
-    except ImportError:
-        pass
