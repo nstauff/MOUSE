@@ -258,45 +258,106 @@ _ce.pd.read_excel = _patched_read_excel
 #       reboot. Do NOT use os._exit() — Streamlit Cloud treats it as a
 #       crash, not a restart.
 def _log_memory_diagnostics(rss_mb):
-    """Dumps what's holding RAM after the cache sweep: top tracemalloc
-    allocation sites, top gc object types by count, and session_state size.
+    """Dumps targeted diagnostics to find the leak source:
+      - top gc object types by count (general orientation)
+      - top 5 functools.partial .func qualnames (what kind of partials)
+      - top 5 function qualnames (what kind of closures)
+      - session_state DEEP size with per-key breakdown for DataFrames
+        and ndarrays (shallow getsizeof misses C-allocated buffers)
+      - Streamlit cache_data storage size if discoverable
     Output goes to stdout (Streamlit Cloud logs)."""
     print(f"[mem-diag] post-sweep RSS={rss_mb:.0f} MB — diagnostics follow",
           flush=True)
 
     try:
-        if _tracemalloc.is_tracing():
-            snap = _tracemalloc.take_snapshot()
-            top = snap.statistics('lineno')[:10]
-            print("[mem-diag] tracemalloc top 10 by size:", flush=True)
-            for i, stat in enumerate(top, 1):
-                frame = stat.traceback[0]
-                print(f"[mem-diag]   {i:2d}. {stat.size/1024/1024:6.1f} MB "
-                      f"{stat.count:>6} blocks  "
-                      f"{frame.filename}:{frame.lineno}", flush=True)
-        else:
-            print("[mem-diag] tracemalloc not running", flush=True)
-    except Exception as e:
-        print(f"[mem-diag] tracemalloc failed: {e}", flush=True)
-
-    try:
         import gc as _gc
         from collections import Counter as _Counter
-        type_counts = _Counter(type(o).__name__ for o in _gc.get_objects())
+        objs = _gc.get_objects()
+        type_counts = _Counter(type(o).__name__ for o in objs)
         print("[mem-diag] top 10 gc object types by count:", flush=True)
         for name, count in type_counts.most_common(10):
             print(f"[mem-diag]   {count:>8}  {name}", flush=True)
     except Exception as e:
         print(f"[mem-diag] gc count failed: {e}", flush=True)
+        objs = []
+
+    try:
+        import functools as _ft
+        partials = [o for o in objs if isinstance(o, _ft.partial)]
+        partial_funcs = _Counter(
+            getattr(p.func, '__qualname__', None)
+            or getattr(p.func, '__name__', None)
+            or type(p.func).__name__
+            for p in partials
+        )
+        print(f"[mem-diag] {len(partials)} functools.partial — "
+              f"top 5 by .func:", flush=True)
+        for name, count in partial_funcs.most_common(5):
+            print(f"[mem-diag]   {count:>5}  {name}", flush=True)
+    except Exception as e:
+        print(f"[mem-diag] partial breakdown failed: {e}", flush=True)
+
+    try:
+        import types as _types
+        funcs = [o for o in objs if isinstance(o, _types.FunctionType)]
+        func_quals = _Counter(getattr(f, '__qualname__', '?') for f in funcs)
+        print(f"[mem-diag] {len(funcs)} functions — top 5 by qualname:",
+              flush=True)
+        for name, count in func_quals.most_common(5):
+            print(f"[mem-diag]   {count:>5}  {name}", flush=True)
+    except Exception as e:
+        print(f"[mem-diag] function breakdown failed: {e}", flush=True)
 
     try:
         import sys as _sys
+        import pandas as _pd_diag
+        import numpy as _np_diag
         keys = list(st.session_state.keys())
-        total = sum(_sys.getsizeof(st.session_state[k]) for k in keys)
-        print(f"[mem-diag] session_state: {len(keys)} keys, "
-              f"~{total/1024/1024:.2f} MB shallow", flush=True)
+        breakdown = []
+        for k in keys:
+            try:
+                v = st.session_state[k]
+                if isinstance(v, _pd_diag.DataFrame):
+                    sz = int(v.memory_usage(deep=True).sum())
+                elif isinstance(v, _np_diag.ndarray):
+                    sz = int(v.nbytes)
+                elif isinstance(v, dict):
+                    sz = _sys.getsizeof(v) + sum(
+                        _sys.getsizeof(x) for x in v.values()
+                    )
+                else:
+                    sz = _sys.getsizeof(v)
+                breakdown.append((str(k), sz, type(v).__name__))
+            except Exception:
+                continue
+        breakdown.sort(key=lambda x: x[1], reverse=True)
+        total = sum(sz for _, sz, _ in breakdown)
+        print(f"[mem-diag] session_state deep: {len(keys)} keys, "
+              f"~{total/1024/1024:.2f} MB total", flush=True)
+        for k, sz, tname in breakdown[:8]:
+            print(f"[mem-diag]   {sz/1024/1024:6.2f} MB  "
+                  f"{tname:<14}  {k}", flush=True)
     except Exception as e:
-        print(f"[mem-diag] session_state size failed: {e}", flush=True)
+        print(f"[mem-diag] session_state deep size failed: {e}", flush=True)
+
+    try:
+        from streamlit.runtime.caching import cache_data_api as _cd
+        store = getattr(_cd, 'CACHE_DATA_MESSAGE_REPLAY_CTX', None)
+        registry = getattr(_cd, '_data_caches', None)
+        if registry is not None:
+            caches = getattr(registry, '_caches', {})
+            print(f"[mem-diag] streamlit cache_data: {len(caches)} caches",
+                  flush=True)
+            for cname, c in list(caches.items())[:5]:
+                inner = getattr(c, '_mem_cache', None) or getattr(c, 'cache', None)
+                if inner is not None:
+                    try:
+                        size = len(inner)
+                    except Exception:
+                        size = '?'
+                    print(f"[mem-diag]   {size} entries  {cname}", flush=True)
+    except Exception as e:
+        print(f"[mem-diag] streamlit cache inspection failed: {e}", flush=True)
 
 
 def _run_memory_monitor():
