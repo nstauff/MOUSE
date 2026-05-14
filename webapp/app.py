@@ -4662,8 +4662,9 @@ with streamlit_analytics.track():
         _three_digit_pool = enriched_df[enriched_df['Account'].apply(
             is_three_digit_excluding_multiples_of_10)].copy()
 
-        _any_breakdown_rendered = False
-
+        # First pass: collect (account, title, children_df) for every
+        # parent that has 2+ children worth showing.
+        _to_render = []
         for _parent_idx, _parent_row in _drv.iterrows():
             try:
                 _parent_acct_int = int(_parent_row['Account'])
@@ -4671,34 +4672,36 @@ with streamlit_analytics.track():
                 continue
             _parent_title = _parent_row.get('Account Title',
                                             f'Account {_parent_acct_int}')
-
             _children = _three_digit_pool[_three_digit_pool['Account'].apply(
                 lambda x, p=_parent_acct_int: int(x) // 10 == p
             )].copy()
-
             if len(_children) < 2:
                 continue
+            _children = _children.sort_values('FOAK LCOE', ascending=False).head(5)
+            _to_render.append((_parent_acct_int, _parent_title, _children))
 
-            _children = _children.sort_values('FOAK LCOE', ascending=False)
-            _children = _children.head(5)
+        # Render two breakdowns per row using st.columns(2). If the
+        # total count is odd, the last row has one chart on the left
+        # and an empty cell on the right.
+        for _i in range(0, len(_to_render), 2):
+            _row_items = _to_render[_i:_i + 2]
+            _cols = st.columns(2)
+            for _col, (_acct, _title, _children) in zip(_cols, _row_items):
+                with _col:
+                    st.markdown(
+                        f'<div style="font-size:0.9rem;font-weight:600;color:#0a2540;'
+                        f'margin:1.25rem 0 0.5rem 0;">'
+                        f'<span style="color:#94a3b8;font-weight:500;">'
+                        f'{_acct} &middot; </span>{_title}</div>',
+                        unsafe_allow_html=True,
+                    )
+                    st.altair_chart(
+                        _grouped_lcoe_bars_chart(_children, height=320,
+                                                 label_angle=-30),
+                        use_container_width=True,
+                    )
 
-            _any_breakdown_rendered = True
-
-            st.markdown(
-                f'<div style="font-size:0.9rem;font-weight:600;color:#0a2540;'
-                f'margin:1.25rem 0 0.5rem 0;">'
-                f'<span style="color:#94a3b8;font-weight:500;">'
-                f'{_parent_acct_int} &middot; </span>{_parent_title}</div>',
-                unsafe_allow_html=True,
-            )
-
-            st.altair_chart(
-                _grouped_lcoe_bars_chart(_children, height=320,
-                                         label_angle=-30),
-                use_container_width=True,
-            )
-
-        if not _any_breakdown_rendered:
+        if not _to_render:
             st.info('None of the top cost drivers have multiple lower '
                     'level accounts to break down.')
 
