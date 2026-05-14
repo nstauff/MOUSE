@@ -91,42 +91,53 @@ sys.modules['watts'] = MagicMock()
 # ---------------------------------------------------------------------------
 # Cache the OpenMC materials database build. collect_materials_data is
 # called dozens of times per Run (drums.py alone calls it 7 times per
-# cost-engine run, and we have ~8 cost-engine runs). It only reads 6
-# params keys — caching on those keys turns every repeat call into a
-# dict lookup. Patch must run BEFORE reactor_config / core_design
-# templates are imported, so their `from ... import collect_materials_data`
-# binds to the cached version.
+# cost-engine run, and we have ~8 cost-engine runs).
+#
+# We replace the openmc-based collect_materials_data with a flat JSON
+# lookup. Audit showed only drums.py reads materials_database[X].density;
+# every other materials_database[X] access in core_design/openmc_template_*
+# is `cell.fill = mat`, a no-op because openmc is stubbed. So a thin
+# object with just .name and .density satisfies all callers.
+#
+# Patch must run BEFORE reactor_config / core_design templates are
+# imported, so their `from ... import collect_materials_data` binds to
+# the JSON version.
 # ---------------------------------------------------------------------------
+import json as _json
 import core_design.openmc_materials_database as _materials_db_mod
 
-_orig_collect_materials_data = _materials_db_mod.collect_materials_data
 
-_MATERIALS_PARAM_KEYS = (
-    'Enrichment', 'H_Zr_ratio', 'er_wo', 'U_met_wo',
-    'Common Temperature', 'UO2 atom fraction',
-)
-# Bounded LRU cache (was an unbounded dict). Prevents memory growth on
-# long Streamlit Cloud sessions where users iterate through many
-# parameter combinations. 4 entries is the minimum that still covers
-# the working set of a single Run (drums.py alone calls
-# collect_materials_data ~7 times per cost-engine run, all with the
-# same materials key, so 1 entry actually suffices — kept at 4 to
-# absorb the FOAK + intermediate-anchor + NOAK calls without churn).
-from collections import OrderedDict as _OrderedDict
-_materials_cache = _OrderedDict()
-_MATERIALS_CACHE_MAX = 4
+class _ThinMaterial:
+    """Minimal stand-in for openmc.Material. drums.py reads .density;
+    openmc_template_* assigns these to .fill on stubbed cells (no-op)."""
+    __slots__ = ('name', 'density')
+    def __init__(self, name, density):
+        self.name = name
+        self.density = density
+
+
+_MATERIALS_JSON_PATH = os.path.join(os.path.dirname(__file__),
+                                    'materials_densities.json')
+with open(_MATERIALS_JSON_PATH) as _f:
+    _MATERIALS_RAW = _json.load(_f)
+
+# Pre-build per-reactor lookup dicts at module load. Total objects ~80
+# (25-26 per reactor x 3 reactors), each __slots__ wrapper is ~80 bytes,
+# so ~6 KB of permanent footprint. Replaces the ~MB-scale per-Run cost
+# of repeatedly building openmc.Material objects (each carrying nuclides,
+# add_element call records, etc.).
+_THIN_MATERIALS_BY_REACTOR = {
+    rtype: {name: _ThinMaterial(name, float(density))
+            for name, density in mats.items()}
+    for rtype, mats in _MATERIALS_RAW.items()
+}
+
 
 def _cached_collect_materials_data(params):
-    key = tuple((k, params.get(k)) for k in _MATERIALS_PARAM_KEYS)
-    cached = _materials_cache.get(key)
-    if cached is not None:
-        _materials_cache.move_to_end(key)  # LRU touch
-        return cached
-    result = _orig_collect_materials_data(params)
-    _materials_cache[key] = result
-    if len(_materials_cache) > _MATERIALS_CACHE_MAX:
-        _materials_cache.popitem(last=False)  # evict least-recently-used
-    return result
+    rtype = params.get('reactor type', 'LTMR')
+    return _THIN_MATERIALS_BY_REACTOR.get(rtype,
+                                          _THIN_MATERIALS_BY_REACTOR['LTMR'])
+
 
 _materials_db_mod.collect_materials_data = _cached_collect_materials_data
 
@@ -244,7 +255,8 @@ _ce.pd.read_excel = _patched_read_excel
 #     - st.cache_data (cost engine + anchors)
 #     - functools.lru_cache instances (_cached_inflation_multiplier,
 #       _cached_read_excel) — st.cache_data.clear() does NOT touch these
-#     - bounded OrderedDict _materials_cache
+#     (the former bounded OrderedDict _materials_cache is gone now that
+#     collect_materials_data is a flat JSON lookup with no runtime build)
 #     - Logs tracemalloc top 10 allocation sites, gc top object types,
 #       and session_state size so we can identify what's leaking past
 #       the cache sweep. Threshold is intentionally low (600 vs the
@@ -391,10 +403,6 @@ def _run_memory_monitor():
             pass
         try:
             _cached_read_excel.cache_clear()
-        except Exception:
-            pass
-        try:
-            _materials_cache.clear()
         except Exception:
             pass
         # Font lookup cache (lru_cache on matplotlib.font_manager.findfont).
