@@ -1303,6 +1303,95 @@ def _grouped_lcoe_bars_chart(df, label_col='Account Title', height=400,
     )
 
 
+def _side_view_altair_chart(diameter_cm, active_height_cm,
+                            axial_reflector_cm, radial_reflector_cm):
+    """Altair to-scale side view of the reactor cylinder. Replaces a
+    matplotlib version that created one Figure + Axes + 4 annotations
+    per Run; with Streamlit's PNG cache pinning, that cost ~2-3 MB/Run
+    of TransformNode/CallbackRegistry state. Two nested rectangles
+    (outer envelope + active core) with four dimension labels."""
+    total_h = active_height_cm + 2 * axial_reflector_cm
+    active_d = diameter_cm - 2 * radial_reflector_cm
+    half_d = diameter_cm / 2.0
+    half_h = total_h / 2.0
+    half_active_d = active_d / 2.0
+    half_active_h = active_height_cm / 2.0
+
+    # Domain with padding on the right (for H_active/H_total labels)
+    # and below (for D_active/D_total labels) so labels never clip.
+    x_pad_l = diameter_cm * 0.05
+    x_pad_r = diameter_cm * 0.30
+    y_pad_t = total_h * 0.05
+    y_pad_b = total_h * 0.18
+    x_min = -half_d - x_pad_l
+    x_max = half_d + x_pad_r
+    y_min = -half_h - y_pad_b
+    y_max = half_h + y_pad_t
+
+    _x_scale = alt.Scale(domain=[x_min, x_max], nice=False)
+    _y_scale = alt.Scale(domain=[y_min, y_max], nice=False)
+
+    _rect_df = pd.DataFrame([
+        {'x': -half_d, 'x2': half_d,
+         'y': -half_h, 'y2': half_h},
+        {'x': -half_active_d, 'x2': half_active_d,
+         'y': -half_active_h, 'y2': half_active_h},
+    ])
+    _rects = alt.Chart(_rect_df).mark_rect(
+        fill='white', stroke='#0a2540', strokeWidth=1.5,
+    ).encode(
+        x=alt.X('x:Q', scale=_x_scale, axis=None),
+        x2='x2:Q',
+        y=alt.Y('y:Q', scale=_y_scale, axis=None),
+        y2='y2:Q',
+    )
+
+    _labels_left = pd.DataFrame([
+        {'x': half_active_d + diameter_cm * 0.02,
+         'y': half_h * 0.30,
+         'text': f'H_active = {active_height_cm:.0f} cm'},
+        {'x': half_d + diameter_cm * 0.02,
+         'y': -half_h * 0.30,
+         'text': f'H_total = {total_h:.0f} cm'},
+    ])
+    _labels_center = pd.DataFrame([
+        {'x': 0,
+         'y': -half_active_h - total_h * 0.04,
+         'text': f'D_active = {active_d:.0f} cm'},
+        {'x': 0,
+         'y': -half_h - total_h * 0.06,
+         'text': f'D_total = {diameter_cm:.0f} cm'},
+    ])
+    _text_left = alt.Chart(_labels_left).mark_text(
+        fontSize=11, fontWeight='bold', color='#0a2540',
+        baseline='middle', align='left',
+    ).encode(
+        x=alt.X('x:Q', scale=_x_scale, axis=None),
+        y=alt.Y('y:Q', scale=_y_scale, axis=None),
+        text='text:N',
+    )
+    _text_center = alt.Chart(_labels_center).mark_text(
+        fontSize=11, fontWeight='bold', color='#0a2540',
+        baseline='top', align='center',
+    ).encode(
+        x=alt.X('x:Q', scale=_x_scale, axis=None),
+        y=alt.Y('y:Q', scale=_y_scale, axis=None),
+        text='text:N',
+    )
+
+    # Aspect-preserved sizing: 1 cm in x ~ 1 cm in y on screen.
+    aspect = (y_max - y_min) / (x_max - x_min)
+    base_w = 380
+    chart_h = max(160, min(640, int(base_w * aspect)))
+
+    return (_rects + _text_left + _text_center).properties(
+        width=base_w, height=chart_h,
+        title=alt.TitleParams('Side View (to scale)',
+                              fontSize=11, fontWeight='bold',
+                              color='#0a2540', anchor='start'),
+    ).configure_view(stroke=None)
+
+
 def _make_side_view_figure(diameter_cm, active_height_cm,
                            axial_reflector_cm, radial_reflector_cm):
     """Return a matplotlib figure showing a to-scale side view of the
@@ -2779,14 +2868,10 @@ with streamlit_analytics.track():
             _h = float(params['Active Height'])
             _ax_r = float(params.get('Axial Reflector Thickness', 0.0))
             _rad_r = float(params.get('Radial Reflector Thickness', 0.0))
-            with _MPL_LOCK:
-                _fig = _make_side_view_figure(_diam, _h, _ax_r, _rad_r)
-                _buf = io.BytesIO()
-                _fig.savefig(_buf, format='png', bbox_inches=None,
-                             facecolor='white', dpi=120)
-                _buf.seek(0)
-                plt.close(_fig)
-            st.image(_buf, width='stretch')
+            st.altair_chart(
+                _side_view_altair_chart(_diam, _h, _ax_r, _rad_r),
+                use_container_width=False,
+            )
 
     with geo_right:
         # Materials & components table at the top of the right column,
@@ -5002,152 +5087,176 @@ with streamlit_analytics.track():
     if _u_arr.size >= 2:
         _fill_color, _edge_color = '#1B4F8C', '#0a2540'
 
-        with _MPL_LOCK:
-            _fig, _ax = plt.subplots(figsize=(11, 5.8))
+        # Plain linear interpolation between anchor points  no spline,
+        # no overshoot; np.interp gives straight line segments which is
+        # the honest representation when we only have 2-3 anchors.
+        try:
+            _x_smooth = np.linspace(_u_arr.min(), _u_arr.max(), 300)
+            _m_smooth = np.interp(_x_smooth, _u_arr, _m_arr)
+            _s_smooth = np.interp(_x_smooth, _u_arr, _s_arr)
+        except Exception:
+            _x_smooth = _u_arr
+            _m_smooth = _m_arr
+            _s_smooth = _s_arr
 
-            # Plain linear interpolation between the anchor points 
-            # no spline, no overshoot. np.interp gives straight line
-            # segments between consecutive anchors, which is the
-            # honest representation when we only have 2-3 anchors.
-            try:
-                _x_smooth = np.linspace(_u_arr.min(), _u_arr.max(), 300)
-                _m_smooth = np.interp(_x_smooth, _u_arr, _m_arr)
-                _s_smooth = np.interp(_x_smooth, _u_arr, _s_arr)
-            except Exception:
-                _x_smooth = _u_arr
-                _m_smooth = _m_arr
-                _s_smooth = _s_arr
+        # Y-axis sizing  90th-percentile of (mean + std) rather than
+        # max, so a single outlier point doesn't blow up the y-range
+        # and squash the rest of the data. Hard cap at $800 so even
+        # outliers stay readable.
+        if _m_arr.size:
+            _band_vals = _m_arr + _s_arr
+            _band_p90 = float(np.nanpercentile(_band_vals, 90))
+        else:
+            _band_p90 = 0.0
+        _ymax = max(410.0, _band_p90 * 1.15)
+        _ymax = min(_ymax, 800.0)
 
-            _ax.fill_between(_x_smooth,
-                             _m_smooth - _s_smooth,
-                             _m_smooth + _s_smooth,
-                             color=_fill_color, alpha=0.45,
-                             edgecolor=_edge_color, linewidth=1.5, zorder=2)
-            # Mean line + scatter markers at the actual computed
-            # sweep points so the LCOE curve is always visible even if
-            # the spline interpolation produces something degenerate.
-            _ax.plot(_x_smooth, _m_smooth, color=_edge_color,
-                     linewidth=2.0, linestyle='-', zorder=3)
-            _ax.scatter(_u_arr, _m_arr, s=42, color=_edge_color,
-                        edgecolor='white', linewidth=1.2, zorder=4)
-
-            # Market benchmark arrows. Markets are grouped by category;
-            # within a group all entries share one color so the legend
-            # reads "Premium / Alaska / U.S. grid" rather than 7 hues.
-            _PREMIUM = '#92400e'   # Remote, Defense, Island & Mining
-            _ALASKA = '#64748b'    # Alaska railbelt (electricity + generation)
-            _US_GRID = '#15803d'   # U.S. grid (electricity + generation)
-            _markets = {
-                'Remote communities': {'x': 2, 'y_start': 400, 'y_end': 290, 'color': _PREMIUM, 'arrow_only_down': True},
-                'Defense': {'x': 8, 'y_start': 316, 'y_end': 296, 'color': _PREMIUM, 'arrow_only_down': False},
-                'Island & Mining': {'x': 30, 'y_start': 380, 'y_end': 190, 'color': _PREMIUM, 'arrow_only_down': False},
-                'Alaska railbelt electricity': {'x': 48, 'y_start': 313, 'y_end': 182, 'color': _ALASKA, 'arrow_only_down': False},
-                'Alaska railbelt generation': {'x': 60, 'y_start': 166, 'y_end': 62, 'color': _ALASKA, 'arrow_only_down': False},
-                'U.S. grid electricity': {'x': 75, 'y_start': 270, 'y_end': 79, 'color': _US_GRID, 'arrow_only_down': False},
-                'U.S. grid generation': {'x': 88, 'y_start': 55, 'y_end': 29, 'color': _US_GRID, 'arrow_only_down': False},
-            }
-            _bar_widths = {
-                'Remote communities': 4,
-                'Defense': 4,
-                'Island & Mining': 12,
-                'Alaska railbelt electricity': 8,
-                'Alaska railbelt generation': 8,
-                'U.S. grid electricity': 12,
-                'U.S. grid generation': 10,
-            }
-            _label_offsets = {
-                'Remote communities': +8,
-                'Defense': +25,
-                'Alaska railbelt generation': -15,
-                'U.S. grid generation': +20,
-            }
-            for _name, _d in _markets.items():
-                _x = _d['x']
-                _ys = min(_d['y_start'], 400)
-                _ye = _d['y_end']
-                _c = _d['color']
-                _down = _d['arrow_only_down']
-                _w = _bar_widths[_name]
-                _xa, _xb = _x, _x + _w
-                _xm = _x + _w / 2
-
-                if not _down:
-                    _ax.plot([_xa, _xb], [_ys, _ys], color=_c, linewidth=4,
-                             solid_capstyle='round', zorder=5)
-                _ax.plot([_xa, _xb], [_ye, _ye], color=_c, linewidth=4,
-                         solid_capstyle='round', zorder=5)
-                _astyle = '->' if _down else '<->'
-                if _down:
-                    _ax.plot([_xm, _xm], [_ys, _ye], color=_c, linewidth=2.8,
-                             solid_capstyle='round', zorder=5)
-                _ax.annotate('', xy=(_xm, _ye), xytext=(_xm, _ys),
-                             arrowprops=dict(arrowstyle=_astyle, color=_c,
-                                             lw=2.8, mutation_scale=16), zorder=5)
-
-                if _name == 'Alaska railbelt generation':
-                    _ly = _ye + _label_offsets[_name]
-                else:
-                    _ly = _ys + _label_offsets.get(_name, +15)
-                _ax.text(_xm, _ly, _name, fontsize=8.5, ha='center', color=_c,
-                         fontweight='bold',
-                         bbox=dict(facecolor='white', edgecolor=_c,
-                                   boxstyle='round,pad=0.25',
-                                   linewidth=1.0, alpha=0.9),
-                         zorder=6)
-
-            _ax.set_xlim(1, 100)
-            # Y-axis sizing use the 90th-percentile of (mean + std)
-            # rather than max, so a single outlier point doesn't blow
-            # up the y-range and squash the rest of the data. Hard
-            # cap at $800 so even outliers stay readable.
-            if _m_arr.size:
-                _band_vals = _m_arr + _s_arr
-                _band_p90 = float(np.nanpercentile(_band_vals, 90))
+        # Market benchmark ranges. Each market has a top (high) and
+        # bottom (low) y-value bracketing an indicative cost range.
+        # Within a category all entries share one color.
+        _PREMIUM = '#92400e'   # Remote, Defense, Island & Mining
+        _ALASKA = '#64748b'    # Alaska railbelt
+        _US_GRID = '#15803d'   # U.S. grid
+        _markets = [
+            ('Remote communities', 2, 4, 400, 290, _PREMIUM, True),
+            ('Defense', 8, 4, 316, 296, _PREMIUM, False),
+            ('Island & Mining', 30, 12, 380, 190, _PREMIUM, False),
+            ('Alaska railbelt electricity', 48, 8, 313, 182, _ALASKA, False),
+            ('Alaska railbelt generation', 60, 8, 166, 62, _ALASKA, False),
+            ('U.S. grid electricity', 75, 12, 270, 79, _US_GRID, False),
+            ('U.S. grid generation', 88, 10, 55, 29, _US_GRID, False),
+        ]
+        _label_offsets = {
+            'Remote communities': 8, 'Defense': 25,
+            'Alaska railbelt generation': -15, 'U.S. grid generation': 20,
+        }
+        _market_rows = []
+        for _name, _x, _w, _ys, _ye, _c, _down in _markets:
+            _ys_capped = min(_ys, 400)
+            if _name == 'Alaska railbelt generation':
+                _ly = _ye + _label_offsets[_name]
             else:
-                _band_p90 = 0.0
-            _ymax = max(410.0, _band_p90 * 1.15)
-            _ymax = min(_ymax, 800.0)
-            _ax.set_ylim(0, _ymax)
-            _ax.set_xlabel('Number of Units Deployed', fontsize=12, fontweight='bold')
-            _ax.set_ylabel('LCOE ($/MWh)', fontsize=12, fontweight='bold')
-            _ax.set_xticks([1, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100])
-            from matplotlib.ticker import MaxNLocator
-            _ax.yaxis.set_major_locator(MaxNLocator(nbins=10, integer=True))
-            _ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
-            _ax.set_axisbelow(True)
-            _ax.set_facecolor('white')
-            _fig.patch.set_facecolor('white')
+                _ly = _ys_capped + _label_offsets.get(_name, 15)
+            _market_rows.append({
+                'name': _name, 'x_left': _x, 'x_right': _x + _w,
+                'x_mid': _x + _w / 2.0, 'color': _c,
+                'y_start': _ys_capped, 'y_end': _ye, 'label_y': _ly,
+                'down_only': _down,
+            })
+        _market_df = pd.DataFrame(_market_rows)
 
-            _fig.tight_layout()
+        # ----- LCOE band + mean line + anchor points -----
+        _band_df = pd.DataFrame({
+            'units': _x_smooth,
+            'lower': _m_smooth - _s_smooth,
+            'upper': _m_smooth + _s_smooth,
+            'mean': _m_smooth,
+        })
+        _anchor_df = pd.DataFrame({'units': _u_arr, 'lcoe': _m_arr})
 
-            # If the LCOE band sits entirely above the y-axis cap
-            # ($800 max), the band is invisible on the chart. Warn
-            # the user explicitly so they know why nothing is plotted
-            # for the reactor and what to do about it. Use a custom-
-            # colored markdown box rather than st.warning, which
-            # renders white text on yellow (illegible).
-            _band_min_visible = (_m_arr - _s_arr).min() if _m_arr.size else 0.0
-            if _band_min_visible > _ymax:
-                _band_lo = (_m_arr - _s_arr).min()
-                _band_hi = (_m_arr + _s_arr).max()
-                st.markdown(
-                    f'<div style="background:#fffbeb;border:1px solid #f59e0b;'
-                    f'border-radius:8px;padding:0.85rem 1.1rem;margin-bottom:0.6rem;'
-                    f'color:#92400e;font-size:0.85rem;line-height:1.55;">'
-                    f'<strong style="color:#92400e;">⚠️ Reactor LCOE off the chart.</strong> '
-                    f'The reactor LCOE band ranges roughly '
-                    f'<strong>${_band_lo:,.0f}-${_band_hi:,.0f}/MWh</strong>, which is above '
-                    f'the chart\'s <strong>${int(_ymax)}/MWh</strong> ceiling, so the curve is '
-                    f'not visible on the plot below. The market benchmarks remain visible for '
-                    f'reference. To bring the curve into the chart, try a higher reactor power, '
-                    f'higher enrichment, longer plant lifetime, or a larger NOAK Unit Number '
-                    f'any of those reduces the LCOE.'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
+        _x_axis = alt.Axis(
+            values=[1, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
+            title='Number of Units Deployed',
+            titleFontSize=12, titleFontWeight='bold', titleColor='#000000',
+            labelFontSize=11, labelColor='#000000', labelFontWeight=500,
+            domain=True, domainColor='#000000', domainWidth=1.5,
+            tickColor='#000000',
+            gridDash=[3, 3], gridColor='#cbd5e1',
+        )
+        _y_axis = alt.Axis(
+            title='LCOE ($/MWh)',
+            titleFontSize=12, titleFontWeight='bold', titleColor='#000000',
+            labelFontSize=11, labelColor='#000000', labelFontWeight=500,
+            domain=True, domainColor='#000000', domainWidth=1.5,
+            tickColor='#000000',
+            gridDash=[3, 3], gridColor='#cbd5e1',
+        )
 
-            st.pyplot(_fig)
-            plt.close(_fig)
+        _band = alt.Chart(_band_df).mark_area(
+            color=_fill_color, opacity=0.45,
+            stroke=_edge_color, strokeWidth=1.5,
+        ).encode(
+            x=alt.X('units:Q', scale=alt.Scale(domain=[1, 100]), axis=_x_axis),
+            y=alt.Y('lower:Q', scale=alt.Scale(domain=[0, _ymax]),
+                    axis=_y_axis),
+            y2='upper:Q',
+        )
+        _mean_line = alt.Chart(_band_df).mark_line(
+            color=_edge_color, strokeWidth=2.0,
+        ).encode(
+            x=alt.X('units:Q', scale=alt.Scale(domain=[1, 100])),
+            y=alt.Y('mean:Q', scale=alt.Scale(domain=[0, _ymax])),
+        )
+        _anchors = alt.Chart(_anchor_df).mark_point(
+            color=_edge_color, size=80, filled=True,
+            stroke='white', strokeWidth=1.2,
+        ).encode(
+            x=alt.X('units:Q', scale=alt.Scale(domain=[1, 100])),
+            y=alt.Y('lcoe:Q', scale=alt.Scale(domain=[0, _ymax])),
+        )
+
+        # ----- Market benchmark bars -----
+        # Top bar (skip rows where down_only=True)
+        _top_df = _market_df[~_market_df['down_only']]
+        _top = alt.Chart(_top_df).mark_rule(
+            strokeWidth=4, strokeCap='round',
+        ).encode(
+            x=alt.X('x_left:Q', scale=alt.Scale(domain=[1, 100])),
+            x2='x_right:Q',
+            y=alt.Y('y_start:Q', scale=alt.Scale(domain=[0, _ymax])),
+            color=alt.Color('color:N', scale=None, legend=None),
+        )
+        _bottom = alt.Chart(_market_df).mark_rule(
+            strokeWidth=4, strokeCap='round',
+        ).encode(
+            x=alt.X('x_left:Q', scale=alt.Scale(domain=[1, 100])),
+            x2='x_right:Q',
+            y=alt.Y('y_end:Q', scale=alt.Scale(domain=[0, _ymax])),
+            color=alt.Color('color:N', scale=None, legend=None),
+        )
+        _vert = alt.Chart(_market_df).mark_rule(
+            strokeWidth=2.4, strokeCap='round',
+        ).encode(
+            x=alt.X('x_mid:Q', scale=alt.Scale(domain=[1, 100])),
+            y=alt.Y('y_start:Q', scale=alt.Scale(domain=[0, _ymax])),
+            y2='y_end:Q',
+            color=alt.Color('color:N', scale=None, legend=None),
+        )
+        _market_labels = alt.Chart(_market_df).mark_text(
+            fontSize=9, fontWeight='bold', baseline='middle', align='center',
+        ).encode(
+            x=alt.X('x_mid:Q', scale=alt.Scale(domain=[1, 100])),
+            y=alt.Y('label_y:Q', scale=alt.Scale(domain=[0, _ymax])),
+            text='name:N',
+            color=alt.Color('color:N', scale=None, legend=None),
+        )
+
+        # If the LCOE band sits entirely above the y-axis cap, warn
+        # the user before rendering the (invisible) curve.
+        _band_min_visible = (_m_arr - _s_arr).min() if _m_arr.size else 0.0
+        if _band_min_visible > _ymax:
+            _band_lo = (_m_arr - _s_arr).min()
+            _band_hi = (_m_arr + _s_arr).max()
+            st.markdown(
+                f'<div style="background:#fffbeb;border:1px solid #f59e0b;'
+                f'border-radius:8px;padding:0.85rem 1.1rem;margin-bottom:0.6rem;'
+                f'color:#92400e;font-size:0.85rem;line-height:1.55;">'
+                f'<strong style="color:#92400e;">⚠️ Reactor LCOE off the chart.</strong> '
+                f'The reactor LCOE band ranges roughly '
+                f'<strong>${_band_lo:,.0f}-${_band_hi:,.0f}/MWh</strong>, which is above '
+                f'the chart\'s <strong>${int(_ymax)}/MWh</strong> ceiling, so the curve is '
+                f'not visible on the plot below. The market benchmarks remain visible for '
+                f'reference. To bring the curve into the chart, try a higher reactor power, '
+                f'higher enrichment, longer plant lifetime, or a larger NOAK Unit Number '
+                f'any of those reduces the LCOE.'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+        _lcoe_chart = (
+            _band + _mean_line + _anchors + _top + _bottom + _vert + _market_labels
+        ).properties(height=420).configure_view(stroke=None)
+        st.altair_chart(_lcoe_chart, use_container_width=True)
 
         # Market definitions panel (matches the user-provided spec)
         st.markdown(
