@@ -149,7 +149,6 @@ import html
 import io
 import math
 import sqlite3
-import threading
 import uuid
 import warnings
 from datetime import datetime, timezone
@@ -157,21 +156,8 @@ from pathlib import Path
 
 warnings.filterwarnings('ignore')
 
-# Serialise all matplotlib plot creation, drawing, and saving across
-# concurrent Streamlit sessions. Matplotlib's pyplot interface is NOT
-# thread-safe (mathtext parser cache, font cache, and figure manager
-# state are all global) and under concurrent load it raises cryptic
-# ValueError / ParseException from inside the renderer. The lock is
-# acquired around each plot block (subplots -> draw/savefig -> close)
-# so simultaneous sessions still progress through non-plot UI while
-# plot rendering itself serialises briefly (each plot is ~50 ms).
-_MPL_LOCK = threading.Lock()
-
 import numpy as np
 import pandas as pd
-import matplotlib
-import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
 import altair as alt
 import streamlit as st
 # streamlit_analytics2 removed (memory: ~10-25 MB freed). Replace the
@@ -376,13 +362,6 @@ def _log_memory_diagnostics(rss_mb):
 def _run_memory_monitor():
     import gc as _gc
     _gc.collect()
-    # plt.close('all') alone — do NOT loop Figure.clf() over Gcf.figs.
-    # That race-conditions with figures created mid-rerun that haven't
-    # been rendered yet, severing their artists' figure refs and
-    # crashing in collections.py at draw time ("'NoneType' has no
-    # attribute 'dpi'"). close('all') is safe because it only acts on
-    # figures whose pyplot lifecycle is done.
-    plt.close('all')
 
     try:
         import ctypes as _ctypes
@@ -406,19 +385,11 @@ def _run_memory_monitor():
             _cached_read_excel.cache_clear()
         except Exception:
             pass
-        # Font lookup cache (lru_cache on matplotlib.font_manager.findfont).
-        # Tiny (~few MB) so we never bother clearing it on every rerun —
-        # font lookups during chart text rendering are disk-bound and a
-        # cold cache 2-3x's the run time. Clear here only when we're
-        # already paying the cost of a full sweep.
-        try:
-            import matplotlib.font_manager as _fm
-            _fm.findfont.cache_clear()
-        except Exception:
-            pass
         # Triple gc pass breaks reference cycles that a single collect
-        # leaves untouched (e.g., matplotlib Figure <-> Axes <-> Artist
-        # mutual refs). Each pass picks up cycles freed by the previous.
+        # leaves untouched. (Was originally added for matplotlib Figure
+        # <-> Axes <-> Artist mutual refs; now matplotlib is fully gone
+        # but the practice of multiple passes is cheap and still helps
+        # with pandas/numpy intermediate cycles.)
         _gc.collect()
         _gc.collect()
         _gc.collect()
@@ -1390,91 +1361,6 @@ def _side_view_altair_chart(diameter_cm, active_height_cm,
                               fontSize=11, fontWeight='bold',
                               color='#0a2540', anchor='start'),
     ).configure_view(stroke=None)
-
-
-def _make_side_view_figure(diameter_cm, active_height_cm,
-                           axial_reflector_cm, radial_reflector_cm):
-    """Return a matplotlib figure showing a to-scale side view of the
-    reactor cylinder.
-
-    Layout matches the cross-section image directly above it: the plot
-    box is placed in the LEFT ~55% of the figure (the right ~35% is left
-    empty to mirror where the cross-section's material legend sits), and
-    its xlim spans the same range the cross-section uses (= ±ceil(D/2)).
-    The axis box dimensions are picked so 1 cm in x equals 1 cm in y,
-    without invoking aspect='equal' that way the rectangle width
-    (= D) renders at exactly the same horizontal pixel range as the
-    circle in the cross-section above.
-    """
-    total_h = active_height_cm + 2 * axial_reflector_cm
-    active_d = diameter_cm - 2 * radial_reflector_cm
-
-    # Match the cross-section's xlim/ylim convention (ceil to integer)
-    half_d_int = max(1, int(np.ceil(diameter_cm / 2.0)))
-    half_h_int = max(1, int(np.ceil(total_h / 2.0)))
-
-    # Axis box dimensions in inches, sized so cm/inch is the same in x and y.
-    box_w = 4.0
-    box_h = box_w * (half_h_int / half_d_int) # H/D aspect, preserved exactly
-    # Cap very tall/short reactors so the figure stays a reasonable size.
-    box_h = max(0.6, min(8.0, box_h))
-
-    # The plot occupies the same x-range as the cross-section's plot
-    # box (≈ 13%-62% of the column width between the leftmost and
-    # rightmost x-tick of the cross-section image). The right ~38% is
-    # empty (mirroring the cross-section legend area), and the left
-    # ~13% is empty (matching the cross-section's y-axis label margin).
-    ax_left_frac, ax_width_frac = 0.13, 0.49
-    ax_bot_frac, ax_height_frac = 0.13, 0.72
-    fig_w = box_w / ax_width_frac
-    fig_h = box_h / ax_height_frac + 0.4 # +0.4 inches for title/labels
-
-    fig = plt.figure(figsize=(fig_w, fig_h))
-    ax = fig.add_axes([ax_left_frac, ax_bot_frac, ax_width_frac, ax_height_frac])
-
-    # Outer envelope (radial reflector) and active core rendered as
-    # nested white rectangles with navy edges; size + labels carry
-    # the meaning, no fill colour needed.
-    outer = mpatches.Rectangle((-diameter_cm / 2.0, -total_h / 2.0),
-                               diameter_cm, total_h,
-                               facecolor='white', edgecolor='#0a2540', lw=1.0)
-    ax.add_patch(outer)
-
-    core = mpatches.Rectangle((-active_d / 2.0, -active_height_cm / 2.0),
-                              active_d, active_height_cm,
-                              facecolor='white', edgecolor='#0a2540', lw=1.0)
-    ax.add_patch(core)
-
-    # Dimension labels. All at 10 pt bold navy to match the body-
-    # text colour used elsewhere in the app; single font size keeps
-    # the figure on the global type ladder.
-    ax.annotate(f'H_active = {active_height_cm:.0f} cm',
-                xy=(active_d / 2.0 + 0.01 * half_d_int, +half_h_int * 0.30),
-                ha='left', va='center', fontsize=10, fontweight='bold',
-                color='#0a2540', annotation_clip=False)
-    ax.annotate(f'H_total = {total_h:.0f} cm',
-                xy=(half_d_int * 1.04, -half_h_int * 0.30),
-                ha='left', va='center', fontsize=10, fontweight='bold',
-                color='#0a2540', annotation_clip=False)
-    ax.annotate(f'D_active = {active_d:.0f} cm',
-                xy=(0, -active_height_cm / 2.0 - 0.01 * half_h_int),
-                ha='center', va='top', fontsize=10, fontweight='bold',
-                color='#0a2540', annotation_clip=False)
-    ax.annotate(f'D_total = {diameter_cm:.0f} cm',
-                xy=(0, -half_h_int * 1.08),
-                ha='center', va='top', fontsize=10, fontweight='bold',
-                color='#0a2540', annotation_clip=False)
-
-    ax.set_xlim(-half_d_int, half_d_int)
-    ax.set_ylim(-half_h_int, half_h_int)
-    ax.set_xticks([])
-    ax.set_yticks([])
-    for spine in ax.spines.values():
-        spine.set_visible(False)
-    ax.set_title('Side View (to scale)', fontsize=10, fontweight='bold',
-                 color='#0a2540')
-
-    return fig
 
 
 def _materials_section(reactor_type, params):
