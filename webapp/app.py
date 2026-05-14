@@ -4922,31 +4922,55 @@ with streamlit_analytics.track():
         cell = f'{bg};{fg};{fw}'
         return [cell] * len(row)
 
+    # Hand-rolled HTML table instead of pandas Styler. Each call to
+    # df.style.apply() allocates ~one functools.partial(_default_formatter)
+    # per cell that Streamlit's forward-message cache pins across reruns,
+    # accumulating ~700-1000 partials per Run with no mechanism to release
+    # them. The HTML approach uses inline styles directly and creates no
+    # pandas internals at all. Tradeoff: loses st.dataframe's interactive
+    # column resize / sort UI. The Excel download below still gives users
+    # interactive analysis.
+    import html as _html_lib
     _num_cols = [c for c in table_df.columns if c not in ('Account', 'Account Title')]
-    styled = (
-        table_df.style
-        .apply(_row_style, axis=1)
-        .set_properties(subset=_num_cols, **{'text-align': 'right', 'padding': '2px 8px'})
-        .set_table_styles([{
-            'selector': 'thead tr th',
-            'props': ('background-color:#0a2540;color:#ffffff;'
-                      'font-weight:600;font-size:0.85rem;'
-                      'text-transform:uppercase;letter-spacing:0.05em;')
-        }])
+    _num_col_set = set(_num_cols)
+    _thead_style = (
+        'background:#0a2540;color:#fff;font-weight:600;'
+        'font-size:0.85rem;text-transform:uppercase;letter-spacing:0.05em;'
+        'padding:8px 10px;text-align:left;'
+    )
+    _thead_html = ''.join(
+        f'<th style="{_thead_style}">{_html_lib.escape(str(c))}</th>'
+        for c in table_df.columns
     )
 
-    _col_cfg = {
-        'Account': st.column_config.TextColumn(width='small'),
-        'Account Title': st.column_config.TextColumn(width='medium'),
-        'FOAK Cost ($)': st.column_config.TextColumn(width='small'),
-        'NOAK Cost ($)': st.column_config.TextColumn(width='small'),
-    }
-    if _have_lcoe:
-        _col_cfg['FOAK LCOE ($/MWh)'] = st.column_config.TextColumn(width='small')
-        _col_cfg['NOAK LCOE ($/MWh)'] = st.column_config.TextColumn(width='small')
+    _rows_html = []
+    _cols_list = list(table_df.columns)
+    for pos, (_idx, row) in enumerate(table_df.iterrows()):
+        lv = _acct_levels[pos]
+        bg, fg, fw = _LEVEL_STYLE.get(
+            lv, ('background-color:#ffffff', 'color:#3c4257', 'font-weight:400')
+        )
+        row_style = f'{bg};{fg};{fw}'
+        cells = []
+        for col in _cols_list:
+            align = 'right' if col in _num_col_set else 'left'
+            val = _html_lib.escape(str(row[col]))
+            cells.append(
+                f'<td style="{row_style};text-align:{align};'
+                f'padding:2px 10px;border-bottom:1px solid #f1f5f9;">{val}</td>'
+            )
+        _rows_html.append('<tr>' + ''.join(cells) + '</tr>')
 
-    st.dataframe(styled, width='stretch', height=580,
-                 hide_index=True, column_config=_col_cfg)
+    _html_table = (
+        '<div style="max-height:580px;overflow-y:auto;'
+        'border:1px solid #e2e8f0;border-radius:6px;margin-bottom:0.5rem;">'
+        '<table style="width:100%;border-collapse:collapse;font-size:0.9rem;">'
+        f'<thead><tr>{_thead_html}</tr></thead>'
+        f'<tbody>{"".join(_rows_html)}</tbody>'
+        '</table></div>'
+    )
+    st.markdown(_html_table, unsafe_allow_html=True)
+    del _rows_html, _html_table, _thead_html
 
     st.markdown('<div style="height:1rem"></div>', unsafe_allow_html=True)
 
