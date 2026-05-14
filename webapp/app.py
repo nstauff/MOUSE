@@ -19,17 +19,16 @@ if _repo_root not in sys.path:
     sys.path.insert(0, _repo_root)
 
 # ---------------------------------------------------------------------------
-# Memory tracing: start as early as possible so tracemalloc captures
-# allocations from app startup. The memory monitor (defined further down)
-# dumps the top allocations whenever RAM crosses the cleanup threshold,
-# helping locate leaks the cache sweep doesn't reach.
-# Frame depth is 1 (just the allocation site, no stack walk) to keep
-# per-allocation overhead minimal — higher values slow pandas-heavy
-# code paths like the cost engine by 2-3x.
+# Memory tracing (disabled). tracemalloc was enabled briefly to identify
+# the leak source; the diagnostic dump showed Python-side allocations are
+# minor (~60 MB of ~688 MB total) — the real memory lives in C-extension
+# buffers (numpy/pandas/matplotlib/openmc) that tracemalloc can't see.
+# Even at depth=1 it adds measurable per-allocation overhead on the
+# pandas-heavy cost engine, so it stays off in production. The diagnostic
+# helper still works (it checks _tracemalloc.is_tracing() and falls
+# back to gc-based counts if tracing is off).
 # ---------------------------------------------------------------------------
 import tracemalloc as _tracemalloc
-if not _tracemalloc.is_tracing():
-    _tracemalloc.start(1)
 
 # ---------------------------------------------------------------------------
 # IMPORTANT: Stub openmc and watts BEFORE any MOUSE import.
