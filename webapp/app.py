@@ -23,11 +23,13 @@ if _repo_root not in sys.path:
 # allocations from app startup. The memory monitor (defined further down)
 # dumps the top allocations whenever RAM crosses the cleanup threshold,
 # helping locate leaks the cache sweep doesn't reach.
-# Overhead is ~5-10 MB and a small per-allocation slowdown.
+# Frame depth is 1 (just the allocation site, no stack walk) to keep
+# per-allocation overhead minimal — higher values slow pandas-heavy
+# code paths like the cost engine by 2-3x.
 # ---------------------------------------------------------------------------
 import tracemalloc as _tracemalloc
 if not _tracemalloc.is_tracing():
-    _tracemalloc.start(10)
+    _tracemalloc.start(1)
 
 # ---------------------------------------------------------------------------
 # IMPORTANT: Stub openmc and watts BEFORE any MOUSE import.
