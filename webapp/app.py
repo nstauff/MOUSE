@@ -172,6 +172,7 @@ import pandas as pd
 import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
+import altair as alt
 import streamlit as st
 # streamlit_analytics2 removed (memory: ~10-25 MB freed). Replace the
 # library with a no-op context manager so the existing
@@ -1201,6 +1202,93 @@ def _kpi_card(col, title, foak_val, noak_val, help_text=None):
               </div>
             </div>''',
         unsafe_allow_html=True,
+    )
+
+
+def _keff_altair_chart(times, keffs):
+    """Altair line+markers chart of k_eff vs Time with a horizontal
+    reference line at k_eff=1. Returns the chart; caller renders it.
+
+    Replaces a matplotlib version that contributed to the per-Run leak
+    (TransformNode lambdas pinned by Streamlit's PNG cache). Vega-Lite
+    renders client-side so the server holds only the data points."""
+    _df = pd.DataFrame({'time': times, 'keff': keffs})
+    _ymax = max(1.005, float(np.max(keffs)) + 0.005)
+    _line = alt.Chart(_df).mark_line(color='#1B4F8C', strokeWidth=2).encode(
+        x=alt.X('time:Q', title='Time (days)',
+                axis=alt.Axis(labelFontSize=10, titleFontSize=10)),
+        y=alt.Y('keff:Q', title='k_eff',
+                scale=alt.Scale(domain=[0.98, _ymax]),
+                axis=alt.Axis(labelFontSize=10, titleFontSize=10)),
+    )
+    _pts = alt.Chart(_df).mark_point(
+        color='#1B4F8C', size=60, filled=True, stroke='white', strokeWidth=1
+    ).encode(x='time:Q', y='keff:Q')
+    _ref = alt.Chart(pd.DataFrame({'y': [1.0]})).mark_rule(
+        color='#0a2540', strokeDash=[4, 4], strokeWidth=1
+    ).encode(y='y:Q')
+    return (_line + _pts + _ref).properties(height=220)
+
+
+def _grouped_lcoe_bars_chart(df, label_col='Account Title', height=400,
+                             label_angle=-35):
+    """Altair grouped bar chart (FOAK / NOAK side by side) with error
+    bars. Used by the main cost-driver chart and the per-parent
+    breakdown loop. df must already be in the desired display order
+    (typically sorted descending by FOAK LCOE); columns required:
+    <label_col>, 'FOAK LCOE', 'NOAK LCOE'; optional: 'FOAK LCOE_std',
+    'NOAK LCOE_std'.
+
+    Replaces a matplotlib version that, multiplied across the ~7
+    per-parent breakdown calls per Run, was a major leak source."""
+    _has_foak_std = 'FOAK LCOE_std' in df.columns
+    _has_noak_std = 'NOAK LCOE_std' in df.columns
+    _rows = []
+    for _, _row in df.iterrows():
+        _fv = float(_row['FOAK LCOE'])
+        _fs = float(_row['FOAK LCOE_std']) if _has_foak_std else 0.0
+        _nv = float(_row['NOAK LCOE'])
+        _ns = float(_row['NOAK LCOE_std']) if _has_noak_std else 0.0
+        _rows.append({label_col: str(_row[label_col]),
+                      'Type': 'FOAK', 'LCOE': _fv,
+                      'lower': _fv - _fs, 'upper': _fv + _fs})
+        _rows.append({label_col: str(_row[label_col]),
+                      'Type': 'NOAK', 'LCOE': _nv,
+                      'lower': _nv - _ns, 'upper': _nv + _ns})
+    _plot_df = pd.DataFrame(_rows)
+    # Explicit sort list preserves df's existing row order. Without
+    # this, Vega-Lite falls back to alphabetical, which scrambles the
+    # "largest driver first" ordering we want. labelOverlap=False
+    # forces every x-axis label to render (the default 'greedy' policy
+    # hides ~half the labels when they collide).
+    _label_order = [str(v) for v in df[label_col]]
+
+    _color_scale = alt.Scale(domain=['FOAK', 'NOAK'],
+                             range=['#c84b1e', '#1B4F8C'])
+    _x_enc = alt.X(f'{label_col}:N',
+                   sort=_label_order,
+                   title=None,
+                   axis=alt.Axis(labelAngle=label_angle, labelColor='#0a2540',
+                                 labelFontSize=12, labelFontWeight=500,
+                                 labelLimit=200, labelOverlap=False))
+    _bars = alt.Chart(_plot_df).mark_bar().encode(
+        x=_x_enc,
+        xOffset=alt.XOffset('Type:N', sort=['FOAK', 'NOAK']),
+        y=alt.Y('LCOE:Q', title='LCOE Contribution ($/MWh)',
+                axis=alt.Axis(titleColor='#0a2540', labelColor='#0a2540',
+                              gridDash=[3, 3], gridColor='#cbd5e1')),
+        color=alt.Color('Type:N', scale=_color_scale,
+                        legend=alt.Legend(title=None, orient='top-right')),
+    )
+    _errs = alt.Chart(_plot_df).mark_errorbar(thickness=1.8, ticks=True,
+                                              color='#0a2540').encode(
+        x=_x_enc,
+        xOffset=alt.XOffset('Type:N', sort=['FOAK', 'NOAK']),
+        y=alt.Y('lower:Q', title='LCOE Contribution ($/MWh)'),
+        y2='upper:Q',
+    )
+    return (_bars + _errs).properties(height=height).configure_view(
+        stroke=None, fill='#f8fafc'
     )
 
 
@@ -2839,28 +2927,8 @@ with streamlit_analytics.track():
                     'margin-bottom:0.6rem;">k_eff vs Time</div>',
                     unsafe_allow_html=True,
                 )
-                with _MPL_LOCK:
-                    _kfig, _kax = plt.subplots(figsize=(5.5, 2.8))
-                    # Show discrete interpolated points (markers) connected
-                    # by straight segments so the user can see we only
-                    # have data at specific depletion timesteps, not a
-                    # continuous curve.
-                    _kax.plot(_times, _keffs, color='#1B4F8C', lw=1.5,
-                              marker='o', markersize=5, markerfacecolor='#1B4F8C',
-                              markeredgecolor='white', markeredgewidth=0.8)
-                    _kax.axhline(1.0, color='#0a2540', lw=1.0, ls='--')
-                    _kax.set_xlabel('Time (days)', fontsize=9)
-                    _kax.set_ylabel(r'$k_{\rm eff}$', fontsize=10)
-                    _kax.tick_params(axis='both', labelsize=8)
-                    _kax.set_xlim(left=0)
-                    # Pad the y-axis a hair above the highest value for readability
-                    _kax.set_ylim(0.98, max(1.005, _keffs.max() + 0.005))
-                    _kax.grid(True, alpha=0.3)
-                    for _spine in ('top', 'right'):
-                        _kax.spines[_spine].set_visible(False)
-                    _kfig.tight_layout()
-                    st.pyplot(_kfig, width='stretch')
-                    plt.close(_kfig)
+                st.altair_chart(_keff_altair_chart(_times, _keffs),
+                                use_container_width=True)
                 st.caption(
                     '**k_eff** (the neutron multiplication factor) measures '
                     'whether the chain reaction sustains itself: > 1 it grows, '
@@ -2896,23 +2964,8 @@ with streamlit_analytics.track():
                     'margin-bottom:0.6rem;">k_eff vs Time</div>',
                     unsafe_allow_html=True,
                 )
-                with _MPL_LOCK:
-                    _kfig, _kax = plt.subplots(figsize=(5.5, 2.8))
-                    _kax.plot(_times, _keffs, color='#1B4F8C', lw=1.5,
-                              marker='o', markersize=5, markerfacecolor='#1B4F8C',
-                              markeredgecolor='white', markeredgewidth=0.8)
-                    _kax.axhline(1.0, color='#0a2540', lw=1.0, ls='--')
-                    _kax.set_xlabel('Time (days)', fontsize=9)
-                    _kax.set_ylabel(r'$k_{\rm eff}$', fontsize=10)
-                    _kax.tick_params(axis='both', labelsize=8)
-                    _kax.set_xlim(left=0)
-                    _kax.set_ylim(0.98, max(1.005, _keffs.max() + 0.005))
-                    _kax.grid(True, alpha=0.3)
-                    for _spine in ('top', 'right'):
-                        _kax.spines[_spine].set_visible(False)
-                    _kfig.tight_layout()
-                    st.pyplot(_kfig, width='stretch')
-                    plt.close(_kfig)
+                st.altair_chart(_keff_altair_chart(_times, _keffs),
+                                use_container_width=True)
                 st.caption(
                     '**k_eff** (the neutron multiplication factor) measures '
                     'whether the chain reaction sustains itself: > 1 it grows, '
@@ -2949,23 +3002,8 @@ with streamlit_analytics.track():
                     'margin-bottom:0.6rem;">k_eff vs Time</div>',
                     unsafe_allow_html=True,
                 )
-                with _MPL_LOCK:
-                    _kfig, _kax = plt.subplots(figsize=(5.5, 2.8))
-                    _kax.plot(_times, _keffs, color='#1B4F8C', lw=1.5,
-                              marker='o', markersize=5, markerfacecolor='#1B4F8C',
-                              markeredgecolor='white', markeredgewidth=0.8)
-                    _kax.axhline(1.0, color='#0a2540', lw=1.0, ls='--')
-                    _kax.set_xlabel('Time (days)', fontsize=9)
-                    _kax.set_ylabel(r'$k_{\rm eff}$', fontsize=10)
-                    _kax.tick_params(axis='both', labelsize=8)
-                    _kax.set_xlim(left=0)
-                    _kax.set_ylim(0.98, max(1.005, _keffs.max() + 0.005))
-                    _kax.grid(True, alpha=0.3)
-                    for _spine in ('top', 'right'):
-                        _kax.spines[_spine].set_visible(False)
-                    _kfig.tight_layout()
-                    st.pyplot(_kfig, width='stretch')
-                    plt.close(_kfig)
+                st.altair_chart(_keff_altair_chart(_times, _keffs),
+                                use_container_width=True)
                 st.caption(
                     '**k_eff** (the neutron multiplication factor) measures '
                     'whether the chain reaction sustains itself: > 1 it grows, '
@@ -4610,66 +4648,8 @@ with streamlit_analytics.track():
             unsafe_allow_html=True,
         )
 
-        bar_width = 0.38
-        r1 = np.arange(len(_drv))
-        r2 = r1 + bar_width
-
-        matplotlib.rcParams.update({
-            'font.family': 'DejaVu Sans',
-            'font.size': 13,
-            'axes.titlesize': 15,
-            'axes.labelsize': 13,
-            'xtick.labelsize': 12,
-            'ytick.labelsize': 12,
-        })
-
-        with _MPL_LOCK:
-            fig, ax = plt.subplots(figsize=(max(13, len(_drv) * 1.6), 7))
-            fig.patch.set_facecolor('white')
-            ax.set_facecolor('#f8fafc')
-
-            foak_err = _drv['FOAK LCOE_std'] if 'FOAK LCOE_std' in _drv.columns else None
-            noak_err = _drv['NOAK LCOE_std'] if 'NOAK LCOE_std' in _drv.columns else None
-
-            ax.bar(r1, _drv['FOAK LCOE'], width=bar_width,
-                   color='#c84b1e', edgecolor='white', linewidth=0.8,
-                   label='FOAK', zorder=3,
-                   yerr=foak_err, capsize=5,
-                   error_kw=dict(elinewidth=1.8, ecolor='#9a3412', capthick=1.8))
-            ax.bar(r2, _drv['NOAK LCOE'], width=bar_width,
-                   color='#1B4F8C', edgecolor='white', linewidth=0.8,
-                   label='NOAK', zorder=3,
-                   yerr=noak_err, capsize=5,
-                   error_kw=dict(elinewidth=1.8, ecolor='#0a2540', capthick=1.8))
-
-            ax.set_xticks(r1 + bar_width / 2)
-            ax.set_xticklabels(_drv['Account Title'], rotation=35, ha='right',
-                               fontsize=12, color='#0a2540', fontweight='500')
-            ax.set_ylabel('LCOE Contribution ($/MWh)', fontsize=13,
-                          color='#0a2540', labelpad=10)
-            ax.yaxis.set_tick_params(labelcolor='#0a2540', labelsize=12)
-            ax.set_xlim(-0.4, len(_drv) - 0.15)
-
-            for spine in ['top', 'right', 'left']:
-                ax.spines[spine].set_visible(False)
-            ax.spines['bottom'].set_color('#cbd5e1')
-            ax.yaxis.grid(True, linestyle='--', linewidth=0.7,
-                          alpha=0.7, color='#cbd5e1', zorder=0)
-            ax.set_axisbelow(True)
-
-            legend = ax.legend(fontsize=12, frameon=True, framealpha=1,
-                               edgecolor='#bfdbfe', facecolor='white',
-                               loc='upper right', handlelength=1.5,
-                               borderpad=0.8, labelspacing=0.5)
-            legend.get_frame().set_linewidth(1.0)
-
-            plt.tight_layout(pad=2.0)
-            buf = io.BytesIO()
-            fig.savefig(buf, format='png', dpi=120, bbox_inches='tight', facecolor='white')
-            buf.seek(0)
-            plt.close(fig)
-            matplotlib.rcParams.update(matplotlib.rcParamsDefault)
-        st.image(buf, width='stretch')
+        st.altair_chart(_grouped_lcoe_bars_chart(_drv, height=420),
+                        use_container_width=True)
 
     # --- Per parent breakdown ---
     # For each top driver in _drv (up to 7), if it has 2 or more 3-digit
@@ -4721,76 +4701,11 @@ with streamlit_analytics.track():
                 unsafe_allow_html=True,
             )
 
-            _n_bars = len(_children)
-            bar_width = 0.38
-            r1 = np.arange(_n_bars)
-            r2 = r1 + bar_width
-
-            matplotlib.rcParams.update({
-                'font.family': 'DejaVu Sans',
-                'font.size': 13,
-                'axes.titlesize': 15,
-                'axes.labelsize': 13,
-                'xtick.labelsize': 12,
-                'ytick.labelsize': 12,
-            })
-
-            with _MPL_LOCK:
-                _fig_b, _ax_b = plt.subplots(
-                    figsize=(max(10, _n_bars * 2.2), 5))
-                _fig_b.patch.set_facecolor('white')
-                _ax_b.set_facecolor('#f8fafc')
-
-                _foak_err = (_children['FOAK LCOE_std']
-                             if 'FOAK LCOE_std' in _children.columns else None)
-                _noak_err = (_children['NOAK LCOE_std']
-                             if 'NOAK LCOE_std' in _children.columns else None)
-
-                _ax_b.bar(r1, _children['FOAK LCOE'], width=bar_width,
-                          color='#c84b1e', edgecolor='white', linewidth=0.8,
-                          label='FOAK', zorder=3,
-                          yerr=_foak_err, capsize=5,
-                          error_kw=dict(elinewidth=1.8, ecolor='#9a3412',
-                                        capthick=1.8))
-                _ax_b.bar(r2, _children['NOAK LCOE'], width=bar_width,
-                          color='#1B4F8C', edgecolor='white', linewidth=0.8,
-                          label='NOAK', zorder=3,
-                          yerr=_noak_err, capsize=5,
-                          error_kw=dict(elinewidth=1.8, ecolor='#0a2540',
-                                        capthick=1.8))
-
-                _ax_b.set_xticks(r1 + bar_width / 2)
-                _ax_b.set_xticklabels(_children['Account Title'],
-                                      rotation=30, ha='right', fontsize=11,
-                                      color='#0a2540', fontweight='500')
-                _ax_b.set_ylabel('LCOE ($/MWh)', fontsize=12,
-                                 color='#0a2540', labelpad=10)
-                _ax_b.yaxis.set_tick_params(labelcolor='#0a2540',
-                                            labelsize=11)
-                _ax_b.set_xlim(-0.4, _n_bars - 0.15)
-
-                for spine in ['top', 'right', 'left']:
-                    _ax_b.spines[spine].set_visible(False)
-                _ax_b.spines['bottom'].set_color('#cbd5e1')
-                _ax_b.yaxis.grid(True, linestyle='--', linewidth=0.7,
-                                 alpha=0.7, color='#cbd5e1', zorder=0)
-                _ax_b.set_axisbelow(True)
-
-                _legend_b = _ax_b.legend(
-                    fontsize=11, frameon=True, framealpha=1,
-                    edgecolor='#bfdbfe', facecolor='white',
-                    loc='upper right', handlelength=1.5,
-                    borderpad=0.8, labelspacing=0.5)
-                _legend_b.get_frame().set_linewidth(1.0)
-
-                plt.tight_layout(pad=2.0)
-                _buf_b = io.BytesIO()
-                _fig_b.savefig(_buf_b, format='png', dpi=120,
-                               bbox_inches='tight', facecolor='white')
-                _buf_b.seek(0)
-                plt.close(_fig_b)
-                matplotlib.rcParams.update(matplotlib.rcParamsDefault)
-            st.image(_buf_b, width='stretch')
+            st.altair_chart(
+                _grouped_lcoe_bars_chart(_children, height=320,
+                                         label_angle=-30),
+                use_container_width=True,
+            )
 
         if not _any_breakdown_rendered:
             st.info('None of the top cost drivers have multiple lower '
@@ -5386,87 +5301,109 @@ with streamlit_analytics.track():
             else:
                 _bar_colors.append(_GRAY)
 
-        # Vertical column chart: states on X, price on Y. Each
-        # column carries the state's 2-letter code rotated 90°,
-        # rendered in white bold so it's legible on every column
-        # color (green / yellow / gray).
-        with _MPL_LOCK:
-            _fig_btm, _ax_btm = plt.subplots(figsize=(15, 6.5))
-            _x = np.arange(len(_state_codes))
-            _bars = _ax_btm.bar(_x, _state_vals, color=_bar_colors,
-                                edgecolor='white', linewidth=0.6, width=0.86)
+        # Altair version of the state retail price chart. Layers:
+        #   1) ±1σ shaded bands for FOAK and NOAK LCOE (mark_rect)
+        #   2) Dashed reference lines at the FOAK and NOAK means
+        #      (mark_rule with legend labels)
+        #   3) Per-state bars colored by competitiveness tier
+        #      (green = beats FOAK, yellow = beats NOAK only, gray = loses)
+        #   4) Full state names labeled below the bars rotated -90°
+        # The original matplotlib version placed labels INSIDE each bar
+        # with a navy bbox; Altair doesn't natively support per-mark
+        # bboxes, so labels move to the x-axis. Same data, cleaner code,
+        # zero matplotlib state per Run.
+        _band_top_btm = max(
+            _foak_m_btm + _foak_s_btm,
+            _noak_m_btm + _noak_s_btm,
+            max(_state_vals),
+        )
+        _ymax_chart = _band_top_btm * 1.18
 
-            # Horizontal reference bands for FOAK and NOAK LCOE (±1σ).
-            _ax_btm.axhspan(_foak_m_btm - _foak_s_btm,
-                            _foak_m_btm + _foak_s_btm,
-                            color='#c84b1e', alpha=0.16, zorder=0)
-            _ax_btm.axhline(_foak_m_btm, color='#c84b1e',
-                            linewidth=1.8, linestyle='--', zorder=2,
-                            label=f'FOAK LCOE ${_foak_m_btm:.0f}/MWh')
-            _ax_btm.axhspan(_noak_m_btm - _noak_s_btm,
-                            _noak_m_btm + _noak_s_btm,
-                            color='#1B4F8C', alpha=0.16, zorder=0)
-            _ax_btm.axhline(_noak_m_btm, color='#1B4F8C',
-                            linewidth=1.8, linestyle='--', zorder=2,
-                            label=f'NOAK LCOE ${_noak_m_btm:.0f}/MWh')
+        _bars_df = pd.DataFrame({
+            'state_code': _state_codes,
+            'state_name': [_STATE_FULL_NAMES.get(c, c) for c in _state_codes],
+            'price': _state_vals,
+            'tier': [
+                'Beats FOAK' if c == _GREEN
+                else 'Beats NOAK' if c == _YELLOW
+                else 'Loses'
+                for c in _bar_colors
+            ],
+        })
+        _tier_scale = alt.Scale(
+            domain=['Beats FOAK', 'Beats NOAK', 'Loses'],
+            range=[_GREEN, _YELLOW, _GRAY],
+        )
 
-            # Y-axis must accommodate the FOAK and NOAK reference
-            # bands even when they exceed the highest state retail
-            # price (e.g. high-power FOAK at $800+/MWh against a
-            # max state of ~$330/MWh). Use the larger of (max state
-            # price, FOAK upper band) as the basis.
-            _band_top_btm = max(
-                _foak_m_btm + _foak_s_btm,
-                _noak_m_btm + _noak_s_btm,
-                max(_state_vals),
-            )
-            _ymax_chart = _band_top_btm * 1.18
+        # Two ±1σ bands rendered as background rectangles spanning the
+        # full x range.
+        _bands_df = pd.DataFrame([
+            {'low': _foak_m_btm - _foak_s_btm,
+             'high': _foak_m_btm + _foak_s_btm, 'band': 'FOAK'},
+            {'low': _noak_m_btm - _noak_s_btm,
+             'high': _noak_m_btm + _noak_s_btm, 'band': 'NOAK'},
+        ])
+        _bands = alt.Chart(_bands_df).mark_rect(opacity=0.16).encode(
+            y='low:Q', y2='high:Q',
+            color=alt.Color(
+                'band:N',
+                scale=alt.Scale(domain=['FOAK', 'NOAK'],
+                                range=['#c84b1e', '#1B4F8C']),
+                legend=None,
+            ),
+        )
 
-            # Place full state name vertically OVERLAPPING each
-            # column. Anchor just above the x-axis (small positive
-            # offset so the label doesn't collide with the baseline)
-            # and extend UPWARD with rotation=90 / va='bottom' so the
-            # name reads bottom-to-top. Each label gets a dark-blue
-            # rounded-rectangle bbox with WHITE bold text much
-            # higher contrast than the previous dark-on-light-with-
-            # halo approach. Long names ("Massachusetts", "North
-            # Carolina") that exceed the column top extend into the
-            # white plot background; the blue pill keeps them
-            # crisply legible there too.
-            _baseline_offset = _ymax_chart * 0.015
-            _label_bbox = dict(
-                facecolor='#0a2540', # deep navy blue
-                edgecolor='none',
-                pad=2.2,
-                boxstyle='round,pad=0.18',
-            )
-            for _i, (_code, _val) in enumerate(zip(_state_codes, _state_vals)):
-                _full_name = _STATE_FULL_NAMES.get(_code, _code)
-                _ax_btm.text(
-                    _i, _baseline_offset, _full_name,
-                    rotation=90, ha='center', va='bottom',
-                    fontsize=10.5, fontweight='bold',
-                    color='white',
-                    bbox=_label_bbox,
-                    zorder=4,
-                )
+        # Mean reference lines  use a separate legend for these so
+        # the user sees the FOAK/NOAK $/MWh values without cluttering
+        # the bar color legend.
+        _lines_df = pd.DataFrame([
+            {'mean': _foak_m_btm,
+             'label': f'FOAK LCOE ${_foak_m_btm:.0f}/MWh'},
+            {'mean': _noak_m_btm,
+             'label': f'NOAK LCOE ${_noak_m_btm:.0f}/MWh'},
+        ])
+        _lines = alt.Chart(_lines_df).mark_rule(
+            strokeDash=[6, 4], strokeWidth=1.8,
+        ).encode(
+            y='mean:Q',
+            color=alt.Color(
+                'label:N',
+                scale=alt.Scale(
+                    domain=[f'FOAK LCOE ${_foak_m_btm:.0f}/MWh',
+                            f'NOAK LCOE ${_noak_m_btm:.0f}/MWh'],
+                    range=['#c84b1e', '#1B4F8C'],
+                ),
+                legend=alt.Legend(title=None, orient='top-right'),
+            ),
+        )
 
-            _ax_btm.set_xticks([]) # state names are on the columns themselves
-            _ax_btm.set_xlim(-0.7, len(_state_codes) - 0.3)
-            _ax_btm.set_ylim(0, _ymax_chart)
-            _ax_btm.set_ylabel('Average retail price ($/MWh) EIA 2023, industrial sector',
-                               fontsize=11, fontweight='bold')
-            _ax_btm.set_xlabel('U.S. States and DC (sorted by retail price, high → low)',
-                               fontsize=11, fontweight='bold')
-            _ax_btm.grid(True, axis='y', alpha=0.3, linestyle='--', linewidth=0.5)
-            _ax_btm.set_axisbelow(True)
-            _ax_btm.set_facecolor('white')
-            _fig_btm.patch.set_facecolor('white')
-            _ax_btm.legend(loc='upper right', fontsize=10, framealpha=0.95,
-                           edgecolor='grey')
-            _fig_btm.tight_layout()
-            st.pyplot(_fig_btm)
-            plt.close(_fig_btm)
+        _x_state = alt.X(
+            'state_name:N',
+            sort=list(_bars_df['state_name']),
+            title='U.S. States and DC (sorted by retail price, high to low)',
+            axis=alt.Axis(labelAngle=-90, labelFontSize=9,
+                          titleFontWeight='bold',
+                          labelLimit=200, labelOverlap=False),
+        )
+        _bars_chart = alt.Chart(_bars_df).mark_bar().encode(
+            x=_x_state,
+            y=alt.Y('price:Q',
+                    title='Average retail price ($/MWh) EIA 2023, industrial sector',
+                    scale=alt.Scale(domain=[0, _ymax_chart]),
+                    axis=alt.Axis(titleFontWeight='bold',
+                                  gridDash=[3, 3])),
+            color=alt.Color(
+                'tier:N', scale=_tier_scale,
+                legend=alt.Legend(title=None, orient='top-left'),
+            ),
+            tooltip=[alt.Tooltip('state_name:N', title='State'),
+                     alt.Tooltip('price:Q', title='Retail $/MWh',
+                                 format='.1f')],
+        )
+        _state_chart = (
+            _bands + _bars_chart + _lines
+        ).properties(height=420).resolve_scale(color='independent')
+        st.altair_chart(_state_chart, use_container_width=True)
 
         # Summary line + competitive-states lists
         _summary_html = (
