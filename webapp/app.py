@@ -302,21 +302,12 @@ def _log_memory_diagnostics(rss_mb):
 def _run_memory_monitor():
     import gc as _gc
     _gc.collect()
-
-    # Aggressive matplotlib cleanup: clf() forces each Figure to drop
-    # its axes/artists/transforms before close('all') destroys it,
-    # which seems to release more of the Agg renderer's C-side state
-    # than close() alone. Cheap because Gcf.figs is typically empty
-    # at this point (previous rerun's close('all') drained it).
-    try:
-        import matplotlib._pylab_helpers as _gcf
-        for _fig in list(_gcf.Gcf.figs.values()):
-            try:
-                _fig.canvas.figure.clf()
-            except Exception:
-                pass
-    except Exception:
-        pass
+    # plt.close('all') alone — do NOT loop Figure.clf() over Gcf.figs.
+    # That race-conditions with figures created mid-rerun that haven't
+    # been rendered yet, severing their artists' figure refs and
+    # crashing in collections.py at draw time ("'NoneType' has no
+    # attribute 'dpi'"). close('all') is safe because it only acts on
+    # figures whose pyplot lifecycle is done.
     plt.close('all')
 
     try:
