@@ -108,12 +108,14 @@ _MATERIALS_PARAM_KEYS = (
 )
 # Bounded LRU cache (was an unbounded dict). Prevents memory growth on
 # long Streamlit Cloud sessions where users iterate through many
-# parameter combinations. 32 entries comfortably covers the working set
-# of a single Run (drums.py alone calls collect_materials_data ~7 times
-# per cost-engine run, all with the same materials key).
+# parameter combinations. 4 entries is the minimum that still covers
+# the working set of a single Run (drums.py alone calls
+# collect_materials_data ~7 times per cost-engine run, all with the
+# same materials key, so 1 entry actually suffices — kept at 4 to
+# absorb the FOAK + intermediate-anchor + NOAK calls without churn).
 from collections import OrderedDict as _OrderedDict
 _materials_cache = _OrderedDict()
-_MATERIALS_CACHE_MAX = 32
+_MATERIALS_CACHE_MAX = 4
 
 def _cached_collect_materials_data(params):
     key = tuple((k, params.get(k)) for k in _MATERIALS_PARAM_KEYS)
@@ -204,7 +206,7 @@ import cost.cost_escalation as _ce
 
 _orig_inflation = _ce.calculate_inflation_multiplier
 
-@functools.lru_cache(maxsize=512)
+@functools.lru_cache(maxsize=128)
 def _cached_inflation_multiplier(file_path, base_dollar_year, cost_type, escalation_year):
     return _orig_inflation(file_path, base_dollar_year, cost_type, escalation_year)
 
@@ -213,7 +215,7 @@ _ce.calculate_inflation_multiplier = _cached_inflation_multiplier
 import pandas as _pd_orig
 _orig_read_excel = _pd_orig.read_excel
 
-@functools.lru_cache(maxsize=32)
+@functools.lru_cache(maxsize=8)
 def _cached_read_excel(file_path, sheet_name):
     return _orig_read_excel(file_path, sheet_name=sheet_name)
 
@@ -301,7 +303,28 @@ def _log_memory_diagnostics(rss_mb):
 def _run_memory_monitor():
     import gc as _gc
     _gc.collect()
+
+    # Aggressive matplotlib cleanup: clf() forces each Figure to drop
+    # its axes/artists/transforms before close('all') destroys it,
+    # which seems to release more of the Agg renderer's C-side state
+    # than close() alone. findfont is a module-level lru_cache that
+    # st.cache_data.clear() does not touch.
+    try:
+        import matplotlib._pylab_helpers as _gcf
+        for _fig in list(_gcf.Gcf.figs.values()):
+            try:
+                _fig.canvas.figure.clf()
+            except Exception:
+                pass
+    except Exception:
+        pass
     plt.close('all')
+    try:
+        import matplotlib.font_manager as _fm
+        _fm.findfont.cache_clear()
+    except Exception:
+        pass
+
     try:
         import ctypes as _ctypes
         _ctypes.CDLL("libc.so.6").malloc_trim(0)
@@ -328,6 +351,11 @@ def _run_memory_monitor():
             _materials_cache.clear()
         except Exception:
             pass
+        # Triple gc pass breaks reference cycles that a single collect
+        # leaves untouched (e.g., matplotlib Figure <-> Axes <-> Artist
+        # mutual refs). Each pass picks up cycles freed by the previous.
+        _gc.collect()
+        _gc.collect()
         _gc.collect()
         try:
             import ctypes as _ctypes
