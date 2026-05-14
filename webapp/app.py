@@ -1214,20 +1214,31 @@ def _keff_altair_chart(times, keffs):
     renders client-side so the server holds only the data points."""
     _df = pd.DataFrame({'time': times, 'keff': keffs})
     _ymax = max(1.005, float(np.max(keffs)) + 0.005)
+    _x_axis = alt.Axis(
+        labelFontSize=13, labelColor='#000000', labelFontWeight=500,
+        titleFontSize=14, titleColor='#000000', titleFontWeight='bold',
+        domain=True, domainColor='#000000', domainWidth=1.5,
+        tickColor='#000000', tickWidth=1.2,
+    )
+    _y_axis = alt.Axis(
+        labelFontSize=13, labelColor='#000000', labelFontWeight=500,
+        titleFontSize=14, titleColor='#000000', titleFontWeight='bold',
+        domain=True, domainColor='#000000', domainWidth=1.5,
+        tickColor='#000000', tickWidth=1.2,
+    )
     _line = alt.Chart(_df).mark_line(color='#1B4F8C', strokeWidth=2).encode(
-        x=alt.X('time:Q', title='Time (days)',
-                axis=alt.Axis(labelFontSize=10, titleFontSize=10)),
+        x=alt.X('time:Q', title='Time (days)', axis=_x_axis),
         y=alt.Y('keff:Q', title='k_eff',
                 scale=alt.Scale(domain=[0.98, _ymax]),
-                axis=alt.Axis(labelFontSize=10, titleFontSize=10)),
+                axis=_y_axis),
     )
     _pts = alt.Chart(_df).mark_point(
         color='#1B4F8C', size=60, filled=True, stroke='white', strokeWidth=1
     ).encode(x='time:Q', y='keff:Q')
     _ref = alt.Chart(pd.DataFrame({'y': [1.0]})).mark_rule(
-        color='#0a2540', strokeDash=[4, 4], strokeWidth=1
+        color='#0a2540', strokeDash=[4, 4], strokeWidth=1.5
     ).encode(y='y:Q')
-    return (_line + _pts + _ref).properties(height=220)
+    return (_line + _pts + _ref).properties(height=260)
 
 
 def _grouped_lcoe_bars_chart(df, label_col='Account Title', height=400,
@@ -5378,31 +5389,63 @@ with streamlit_analytics.track():
         )
 
         _x_state = alt.X(
-            'state_name:N',
-            sort=list(_bars_df['state_name']),
+            'state_code:N',
+            sort=list(_bars_df['state_code']),
             title='U.S. States and DC (sorted by retail price, high to low)',
-            axis=alt.Axis(labelAngle=-90, labelFontSize=9,
-                          titleFontWeight='bold',
-                          labelLimit=200, labelOverlap=False),
+            axis=alt.Axis(
+                labels=False, ticks=False,
+                titleFontSize=13, titleFontWeight='bold',
+                titleColor='#000000',
+                domain=True, domainColor='#000000', domainWidth=1.5,
+            ),
         )
         _bars_chart = alt.Chart(_bars_df).mark_bar().encode(
             x=_x_state,
-            y=alt.Y('price:Q',
-                    title='Average retail price ($/MWh) EIA 2023, industrial sector',
-                    scale=alt.Scale(domain=[0, _ymax_chart]),
-                    axis=alt.Axis(titleFontWeight='bold',
-                                  gridDash=[3, 3])),
-            color=alt.Color(
-                'tier:N', scale=_tier_scale,
-                legend=alt.Legend(title=None, orient='top-left'),
+            y=alt.Y(
+                'price:Q',
+                title='Average retail price ($/MWh, EIA 2023)',
+                scale=alt.Scale(domain=[0, _ymax_chart]),
+                axis=alt.Axis(
+                    labelFontSize=12, labelColor='#000000',
+                    labelFontWeight=500,
+                    titleFontSize=13, titleFontWeight='bold',
+                    titleColor='#000000',
+                    domain=True, domainColor='#000000', domainWidth=1.5,
+                    tickColor='#000000', tickWidth=1.2,
+                    gridDash=[3, 3], gridColor='#cbd5e1',
+                ),
             ),
+            color=alt.Color('tier:N', scale=_tier_scale, legend=None),
             tooltip=[alt.Tooltip('state_name:N', title='State'),
                      alt.Tooltip('price:Q', title='Retail $/MWh',
                                  format='.1f')],
         )
+
+        # State labels rendered at the base of each column, rotated to
+        # read bottom-to-top. No background pill  earlier attempts
+        # added one to mimic the original matplotlib navy bbox, but it
+        # made every column look the same height, misleading the eye
+        # about actual retail prices. Plain dark navy text is readable
+        # against the colored bars (green / yellow / gray) and against
+        # the white background where labels extend above short bars.
+        _label_df = pd.DataFrame({
+            'state_code': _state_codes,
+            'state_name': [_STATE_FULL_NAMES.get(c, c) for c in _state_codes],
+            'y_anchor': [_ymax_chart * 0.012] * len(_state_codes),
+        })
+        _labels = alt.Chart(_label_df).mark_text(
+            angle=270, baseline='middle', align='left',
+            fontSize=11, color='#000000',
+        ).encode(
+            x=alt.X('state_code:N',
+                    sort=list(_label_df['state_code'])),
+            y='y_anchor:Q',
+            text='state_name:N',
+        )
+
         _state_chart = (
-            _bands + _bars_chart + _lines
-        ).properties(height=420).resolve_scale(color='independent')
+            _bands + _bars_chart + _lines + _labels
+        ).properties(height=440).resolve_scale(color='independent')
         st.altair_chart(_state_chart, use_container_width=True)
 
         # Summary line + competitive-states lists
