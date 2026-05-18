@@ -207,7 +207,6 @@ from webapp.estimate_service import (
     run_estimate,
     run_lcoe_at_noak_unit,
 )
-from cost.cost_drivers import is_double_digit_excluding_multiples_of_10, is_three_digit_excluding_multiples_of_10, get_detailed_driver_rows
 
 # ---------------------------------------------------------------------------
 # Performance patches: cache Excel reads that would otherwise repeat on every run.
@@ -1258,6 +1257,210 @@ def _grouped_lcoe_bars_chart(df, label_col='Account Title', height=400,
     )
     return (_bars + _errs).properties(height=height).configure_view(
         stroke=None, fill='#f8fafc'
+    )
+
+
+CURATED_COST_DRIVER_ACCOUNTS = [
+    # 10: pre-construction expanded one level.
+    '11', '12', '13', '14', '15',
+    # 20: direct cost curated to familiar user-facing groupings.
+    '21',
+    '221.1', '221.2', '221.31', '221.32', '221.33', '221.34',
+    '222', '223.2', '226', '227', '228',
+    '23', '24', '25', '26',
+    # 30, 40, 60: expanded to available children.
+    '31', '32', '33', '34', '35', '36',
+    '41',
+    '61', '62', '63', '64', '65', '66', '67', '68', '69',
+    # 70: O&M curated, with account 75 expanded to replacement drivers.
+    '71', '72', '73',
+    '751', '752', '753', '754', '755', '756', '757', '758', '759',
+    '76', '77', '78', '79',
+    # 80: fuel cycle expanded one level.
+    '81', '82', '83',
+]
+
+
+COST_DRIVER_TITLE_OVERRIDES = {
+    '759': 'Other Direct Plant Maintenance & Replacements',
+}
+
+
+COST_DRIVER_DEFINITION_SOURCE = (
+    'Definitions are condensed from the EPRI GN-COA appendix on final account '
+    'descriptions. Replacement rows use the same sustaining-capital category.'
+)
+
+
+COST_DRIVER_DEFINITIONS = {
+    '11': 'Land needed for the reactor site and related facilities; examples include land purchases and land rights.',
+    '12': 'Permits that allow permanent plant construction to proceed; examples include federal, state, and local site permits.',
+    '13': 'Licensing work needed to construct and operate the plant; examples include preapplication work, application preparation, and regulator review.',
+    '14': 'Plant construction and operating permits beyond the main license; examples include environmental and energy-market approvals.',
+    '15': 'Studies supporting plant construction and operation; examples include traffic, archaeological, historical, and site studies.',
+    '21': 'Civil work and permanent structures for the plant; examples include site preparation, reactor island structures, buildings, roads, and foundations.',
+    '221.1': 'Reactor vessel boundary and supporting accessories; examples include vessel shells, supports, and structural accessories.',
+    '221.2': 'Equipment that changes or shuts down reactor reactivity; examples include drums, rods, blades, shutdown rods, and drives.',
+    '221.31': 'Core materials that reflect neutrons back into the reactor; examples include reflector assemblies or blocks.',
+    '221.32': 'Shielding located inside the core geometry; external biological shielding is counted with civil structures.',
+    '221.33': 'Non-coolant material that moderates the neutron spectrum; examples include moderator blocks or assemblies.',
+    '221.34': 'Supplemental moderator material within non-fuel core internals; examples include booster moderator elements.',
+    '222': 'System that carries heat from the core to the application interface; examples include coolant, piping, pumps, circulators, and heat exchangers.',
+    '223.2': 'Safety cooling equipment that removes heat through the reactor vessel; examples include external cavity cooling components.',
+    '226': 'Supporting reactor plant systems not otherwise itemized; examples include inert gas, makeup coolant, treatment, auxiliary cooling, and sampling equipment.',
+    '227': 'Controls and instruments for monitoring and protecting the reactor; examples include panels, computers, sensors, cables, and software.',
+    '228': 'Miscellaneous reactor-plant installation items; examples include painting, welder qualification, and insulation.',
+    '23': 'Equipment that converts reactor heat into the final product; examples include turbines, generators, process-heat export, hydrogen equipment, and heat rejection.',
+    '24': 'Electrical service and distribution equipment; examples include switchgear, station service, switchboards, protective equipment, raceways, and wiring.',
+    '25': 'First core fuel purchased before commissioning; examples include mining, conversion, enrichment, fabrication, and other fissionable feed material.',
+    '26': 'Plant equipment not captured in the major systems; examples include cranes, utility systems, communications, furnishings, and remote inspection equipment.',
+    '31': 'Temporary construction support and field indirects; examples include tools, vehicles, consumables, utilities, laydown areas, field shops, and insurance.',
+    '32': 'Supervision of construction craft work; examples include field engineers, superintendents, and contractor supervisory staff.',
+    '33': 'Startup and commissioning work before commercial operation; examples include trial runs, fuel loading, coolant loading, and test runs.',
+    '34': 'Transport of major project equipment and modules; examples include fuel, reactor modules, energy-conversion modules, and construction modules.',
+    '35': 'Engineering and design services for the plant; examples include layout, site engineering, project engineering, design QA, and owner oversight.',
+    '36': 'Project and construction management support; examples include QA, procurement, contracts, controls, HR, medical, and safety support.',
+    '41': 'Pre-startup staffing preparation; examples include recruiting and training operators before commissioning or demonstration testing.',
+    '61': 'Allowance for capital-cost escalation; normally excluded from fixed-year constant-dollar estimates.',
+    '62': 'Financing cost before commercial operation; examples include interest during construction on financed upfront costs.',
+    '63': 'Accounting depreciation of plant assets.',
+    '64': 'Capitalized financial allowance represented in the estimate.',
+    '65': 'Capitalized financial allowance represented in the estimate.',
+    '66': 'Capitalized financial allowance represented in the estimate.',
+    '67': 'Capitalized financial allowance represented in the estimate.',
+    '68': 'Capitalized financial allowance represented in the estimate.',
+    '69': 'Financial-cost contingency for uncertainty before operation; examples include schedule-related financing uncertainty.',
+    '71': 'Annual staffing cost for operations and maintenance; examples include operators, security, maintenance, engineering, management, and benefits.',
+    '72': 'Recurring non-fuel consumables used in operation; examples include borated water, control rods, burnable poisons, and process chemicals.',
+    '73': 'Recurring regulatory oversight cost; examples include plant inspections and regulator fees.',
+    '751': 'Sustaining-capital cost for maintaining long-term plant capability; this row represents reactor pressure vessel replacement.',
+    '752': 'Sustaining-capital cost for maintaining long-term plant capability; this row represents core barrel or inner-vessel replacement.',
+    '753': 'Sustaining-capital cost for maintaining long-term plant capability; this row represents moderator replacement.',
+    '754': 'Sustaining-capital cost for maintaining long-term plant capability; this row represents reflector replacement.',
+    '755': 'Sustaining-capital cost for maintaining long-term plant capability; this row represents reactivity-control equipment replacement.',
+    '756': 'Sustaining-capital cost for maintaining long-term plant capability; this row represents integrated heat-transfer equipment replacement.',
+    '757': 'Sustaining-capital cost for maintaining long-term plant capability; examples include additional major replacement work.',
+    '758': 'Sustaining-capital cost for maintaining long-term plant capability; examples include additional major replacement work.',
+    '759': ('Sustaining-capital cost for maintaining or improving plant capability after '
+            'operation begins. Examples include replacements or upgrades for civil '
+            'structures, safety systems, fuel handling, I&C, energy conversion, '
+            'electrical equipment, cranes, utilities, communications, and fixtures.'),
+    '76': 'Recurring taxes and insurance during operation; salary-related taxes are counted with staffing.',
+    '77': 'Maintenance outage cost during operation; examples include scheduled and unscheduled outages, excluding refueling work.',
+    '78': 'Recurring provision for plant end-of-life work; examples include decommissioning, decontamination, dismantling, and close-out engineering.',
+    '79': 'Contingency for annual O&M uncertainty; management reserve is excluded.',
+    '81': 'Recurring cost of refueling operations; examples include fuel management, licensing support, QA, inspection, handling, and storage planning.',
+    '82': 'Recurring cost of buying additional fuel; examples include reload uranium supply, conversion, enrichment, fabrication, and tails disposal.',
+    '83': 'Recurring cost of spent-fuel management; examples include interim storage, reprocessing, recovered-material credits, and final disposal.',
+}
+
+
+def _account_code(x):
+    try:
+        code = f'{float(x):.6f}'.rstrip('0').rstrip('.')
+    except (TypeError, ValueError):
+        code = str(x).strip()
+    return code
+
+
+def _cost_driver_title(code, title):
+    return COST_DRIVER_TITLE_OVERRIDES.get(code, str(title).strip())
+
+
+def _cost_driver_treatment(code):
+    return 'Annualized' if str(code).strip()[0] in ('7', '8') else 'Capitalized'
+
+
+def _curated_cost_driver_candidates(enriched_df):
+    _df = enriched_df.copy()
+    _df['_Account Code'] = _df['Account'].apply(_account_code)
+    _df = _df[_df['_Account Code'].isin(CURATED_COST_DRIVER_ACCOUNTS)].copy()
+    if _df.empty:
+        return _df
+    _df = (_df.sort_values('FOAK LCOE', ascending=False)
+             .drop_duplicates('_Account Code', keep='first'))
+    _df['Driver Title'] = [
+        _cost_driver_title(code, title)
+        for code, title in zip(_df['_Account Code'], _df['Account Title'])
+    ]
+    return _df
+
+
+def _hidden_cost_driver_lcoe_totals(enriched_df, min_foak_lcoe=10.0):
+    _df = _curated_cost_driver_candidates(enriched_df)
+    if _df.empty:
+        return 0.0, 0.0, 0
+    _hidden = _df[pd.to_numeric(_df['FOAK LCOE'], errors='coerce') < min_foak_lcoe]
+    if _hidden.empty:
+        return 0.0, 0.0, 0
+    _foak = pd.to_numeric(_hidden['FOAK LCOE'], errors='coerce').fillna(0.0).sum()
+    _noak = pd.to_numeric(_hidden['NOAK LCOE'], errors='coerce').fillna(0.0).sum()
+    return float(_foak), float(_noak), int(len(_hidden))
+
+
+def _curated_cost_drivers(enriched_df, min_foak_lcoe=10.0,
+                          max_drivers=28):
+    """Return the curated cost-driver rows requested for the app plot.
+
+    The account list intentionally mixes levels in the Code of Accounts:
+    some parent accounts stay aggregated, while selected parents are expanded
+    to the account level most recognizable to users.
+    """
+    _df = _curated_cost_driver_candidates(enriched_df)
+    if _df.empty:
+        return _df
+
+    _df = _df[_df['FOAK LCOE'] >= min_foak_lcoe]
+    _df = _df.sort_values('FOAK LCOE', ascending=False).head(max_drivers)
+    _df['Driver Label'] = [
+        _wrap_label_two_lines(title, max_chars=26)
+        for title in _df['Driver Title']
+    ]
+    return _df
+
+
+def _render_cost_driver_definition_table(driver_df):
+    if driver_df.empty:
+        return
+
+    _rows = []
+    for _, _row in driver_df.sort_values('FOAK LCOE', ascending=False).iterrows():
+        _code = str(_row['_Account Code'])
+        _name = str(_row.get('Driver Title') or _row['Account Title']).strip()
+        _treatment = _cost_driver_treatment(_code)
+        _definition = COST_DRIVER_DEFINITIONS.get(
+            _code,
+            f'Includes cost allowances for {_name.lower()}.'
+        )
+        _rows.append(
+            '<div style="border:1px solid #e2e8f0;border-radius:6px;'
+            'padding:0.65rem 0.75rem;background:#ffffff;">'
+            '<div style="font-size:0.85rem;font-weight:700;color:#0a2540;'
+            'line-height:1.25;margin-bottom:0.25rem;">'
+            f'{html.escape(_name)} ({_treatment})</div>'
+            '<div style="font-size:0.82rem;line-height:1.35;color:#3c4257;'
+            'display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;'
+            'overflow:hidden;">'
+            f'{html.escape(_definition)}</div>'
+            '</div>'
+        )
+
+    st.markdown(
+        '<div style="font-size:0.9rem;font-weight:600;color:#0a2540;'
+        'margin:1.25rem 0 0.45rem 0;">Account definitions</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<p style="color:#64748b;font-size:0.8rem;line-height:1.35;'
+        'margin:0 0 0.65rem 0;">'
+        f'{html.escape(COST_DRIVER_DEFINITION_SOURCE)}</p>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));'
+        'gap:0.65rem;margin-bottom:0.25rem;">'
+        f'{"".join(_rows)}</div>',
+        unsafe_allow_html=True,
     )
 
 
@@ -4567,322 +4770,56 @@ with streamlit_analytics.track():
         'margin:0 0 0.85rem 0;">Cost drivers</div>',
         unsafe_allow_html=True,
     )
-    _drv = enriched_df[enriched_df['Account'].apply(
-        is_double_digit_excluding_multiples_of_10)].copy()
-    _drv = _drv.sort_values('FOAK LCOE', ascending=False)
-    _drv = _drv[_drv['FOAK LCOE'] >= 5]
-    _drv = _drv.head(7)
+    _drv = _curated_cost_drivers(enriched_df, min_foak_lcoe=10.0,
+                                 max_drivers=28)
 
     if _drv.empty:
-        st.info('No accounts with FOAK LCOE >= 5 $/MWh found.')
+        st.info('No curated cost drivers with FOAK LCOE >= 10 $/MWh found.')
     else:
+        _hidden_foak, _hidden_noak, _hidden_count = (
+            _hidden_cost_driver_lcoe_totals(enriched_df, min_foak_lcoe=10.0)
+        )
+        _hidden_note = (
+            f' The {_hidden_count} hidden small drivers sum to '
+            f'{_hidden_foak:.1f} $/MWh FOAK and {_hidden_noak:.1f} $/MWh NOAK.'
+            if _hidden_count else
+            ' No curated cost drivers are hidden by the 10 $/MWh threshold.'
+        )
         st.markdown(
             '<p style="color:#64748b;font-size:0.85rem;margin-bottom:1rem;">'
-            'Per-account LCOE contributions ($/MWh) sorted by FOAK impact. '
-            'Error bars show +/-1 standard deviation across Monte Carlo samples.</p>',
+            'Curated cost-driver view using account levels familiar to most '
+            'users. Drivers are sorted by FOAK LCOE contribution; rows below '
+            '10 $/MWh are hidden. Error bars show +/-1 standard deviation '
+            f'across Monte Carlo samples.{_hidden_note}</p>',
             unsafe_allow_html=True,
         )
 
-        # Chart in a constrained-width column so it doesn't sprawl
-        # across the full page width on wide screens. Right column is
-        # intentionally blank  the account definitions go BELOW, full
-        # width, in a 2-column flow.
-        _plot_col, _ = st.columns([5, 2])
+        _chunk_size = 7
+        _chunks = [_drv.iloc[i:i + _chunk_size].copy()
+                   for i in range(0, len(_drv), _chunk_size)]
+        _plot_col, _ = st.columns([7, 3])
         with _plot_col:
-            st.altair_chart(_grouped_lcoe_bars_chart(_drv, height=420),
-                            use_container_width=True)
-
-        # Definitions for the cost-driver accounts, sourced and
-        # condensed from the GN-COA (Generation IV Nuclear Cost of
-        # Account) appendix. Renders only the entries that match
-        # _drv['Account Title']; accounts without a known definition
-        # are silently skipped. CSS column-count flows entries into 2
-        # columns with break-inside:avoid keeping each title plus
-        # definition pair intact.
-        _ACCOUNT_DEFINITIONS = {
-            # Top-level accounts most likely to surface in the chart
-            'Plant Licensing': (
-                'Costs to obtain construction and operating licenses '
-                'for the plant: preapplication activities, preparation '
-                'of license applications, and regulator review '
-                'including public outreach.'
-            ),
-            'Structures and Improvements': (
-                'Civil work and buildings: reactor island structures, '
-                'energy conversion building, control building, support '
-                'buildings (spent fuel, maintenance, fire protection), '
-                'administration, and security. Excludes cooling towers.'
-            ),
-            'Reactor System': (
-                'The nuclear steam supply: reactor vessel and '
-                'internals, reactivity control (drums or rods), primary '
-                'coolant loop, safety and shutdown systems, fuel '
-                'handling, and reactor I&C. Initial fuel core is '
-                'tracked separately.'
-            ),
-            'Energy Conversion System': (
-                'Equipment that turns reactor heat into the final '
-                'product (electricity, hydrogen, process heat): '
-                'turbine and generator, condenser and cooling towers, '
-                'feed heating, and application-specific systems.'
-            ),
-            'Electrical Equipment': (
-                'Plant electrical systems: switchgear, station service '
-                'equipment, switchboards, protective systems, raceways, '
-                'and power/control cabling between buildings and '
-                'equipment.'
-            ),
-            'Initial Fuel Inventory': (
-                'Pre-commissioning fuel costs treated as part of total '
-                'capitalized investment: mining, conversion, '
-                'enrichment, and fabrication of the first core load.'
-            ),
-            'Miscellaneous Equipment': (
-                'Equipment not covered by other accounts: cranes and '
-                'hoists, air/water/steam utility systems, '
-                'communications, furnishings, and remote inspection '
-                'equipment.'
-            ),
-            'O&M Staff': (
-                'Annual salaries and benefits for the workforce: '
-                'reactor operators, remote monitoring technicians, '
-                'security, maintenance crews, engineering, management, '
-                'plus taxes and benefits.'
-            ),
-            'Capital Plant Expenditures': (
-                'Ongoing sustaining capital during operation. Driven by '
-                'how often reactor-system components need to be '
-                'replaced and by scheduled maintenance frequency. '
-                'Covers regulatory-compliance upgrades and plant-life '
-                'extension; treated as annualized.'
-            ),
-            'Additional Nuclear Fuel': (
-                'Annualized cost of replacement fuel after the initial '
-                'core (the initial fuel inventory is capitalized '
-                'separately and is not included here): uranium supply, '
-                'conversion, enrichment, fabrication, and tails '
-                'disposal. Reload costs are averaged across the years '
-                'between reloads.'
-            ),
-            'Variable Non-Fuel Costs': (
-                'Variable consumables used in operation that are not '
-                'fuel: borated water, control rods, burnable poisons, '
-                'and other process chemicals.'
-            ),
-            'Regulatory Costs': (
-                'Annual costs of ongoing regulator oversight: plant '
-                'inspections and the associated fees paid to the '
-                'regulator each year.'
-            ),
-            'Fixed O&M Utilities and Materials': (
-                'Annual operating supplies: chemicals and lubricants, '
-                'operational spare parts, utilities and consumables, '
-                'special-handling materials, and disposal of non-fuel '
-                'waste.'
-            ),
-            'Taxes and Insurance': (
-                'Annual property taxes and plant insurance during '
-                'operation, excluding salary-related taxes. May include '
-                'tax credits.'
-            ),
-            'Outage Expenses': (
-                'Costs for scheduled and unscheduled maintenance '
-                'outages during operation, excluding refueling costs '
-                '(those are in the fuel accounts).'
-            ),
-            'Spent Fuel Management': (
-                'Annual cost of handling used fuel: interim storage on '
-                'or off site, optional reprocessing for recovered '
-                'fissile material, and final disposal.'
-            ),
-            'Fees': (
-                'Annual fees such as the licensed reactor process fee, '
-                'nuclear operating license fees, and similar regulator '
-                'or government fees due each year.'
-            ),
-            'Cost of Money': (
-                'Value of money used for operating costs: external '
-                'financing or retained earnings, including loans, '
-                'green bonds, or other debt instruments.'
-            ),
-            # Higher-level groupings sometimes shown as drivers
-            'Capitalized Pre-Construction Costs': (
-                'Owner costs before construction starts: land '
-                'acquisition, site and plant permits, licensing, plant '
-                'studies and reports, community outreach, and pre-'
-                'construction site work.'
-            ),
-            'Capitalized Indirect Services Cost': (
-                'Construction support not in direct equipment: tools '
-                'and rented gear, supervision, startup and '
-                'demonstration, shipping, engineering services, and '
-                'PM/CM services.'
-            ),
-            'Capitalized Training Costs': (
-                'Pre-startup staff recruitment, training of plant '
-                'operators, relocation, and housing for permanent O&M '
-                'personnel.'
-            ),
-            'Capitalized Supplementary Costs': (
-                'Capitalized owner overhead: property taxes and '
-                'insurance during construction, spent fuel storage, '
-                'decommissioning provision, fees and royalties, and '
-                'other owner costs.'
-            ),
-            'Capitalized Financial Costs': (
-                'Financing costs that accrue before commercial '
-                'operation: allowance for funds used during '
-                'construction (interest), depreciation, and contingency '
-                'on financial costs.'
-            ),
-            'Annualized O&M Cost': (
-                'Per-year operating and maintenance costs: staff '
-                'salaries, non-fuel consumables, regulatory fees, '
-                'utilities and materials, sustaining capital, taxes, '
-                'and outage expenses.'
-            ),
-            'Annualized Decommissioning Cost': (
-                'Decommissioning costs accumulated as an annualized '
-                'expense rather than a capitalized provision. Covers '
-                'close-out engineering and dismantling.'
-            ),
-            'Annualized Fuel Cost': (
-                'Per-year fuel-cycle costs: refueling operations, '
-                'additional fuel procurement, and spent fuel '
-                'management (storage and final disposal).'
-            ),
-            'Refueling Operations': (
-                'Annual incremental costs of refueling: fuel management '
-                'and scheduling, licensing assistance, QA, inspection, '
-                'and intermediate storage of fresh and used assemblies.'
-            ),
-            'Annualized Financial Cost': (
-                'Per-year financing costs during operation: fees for '
-                'the operating license, cost of money on outstanding '
-                'debt or retained earnings, and contingency on '
-                'financial costs.'
-            ),
-        }
-        # Standard nuclear cost-taxonomy convention: account numbers
-        # < 60 are capitalized one-time costs (construction, initial
-        # fuel inventory, financing), >= 60 are annualized recurring
-        # costs (O&M, additional fuel, periodic capital outlays). This
-        # is the distinction the user cares about most.
-        def _cost_type_tag(account):
-            try:
-                n = float(account)
-            except (TypeError, ValueError):
-                return None
-            return 'Annualized' if n >= 60 else 'Capitalized'
-
-        _defs_html = []
-        for _acct, _t in zip(_drv['Account'], _drv['Account Title']):
-            # Account titles in the cost database carry leading
-            # whitespace for hierarchy indentation; strip before lookup.
-            _t_clean = str(_t).strip()
-            _def = _ACCOUNT_DEFINITIONS.get(_t_clean)
-            if _def is None:
-                continue
-            _tag = _cost_type_tag(_acct)
-            _tag_html = (f' <span style="color:#64748b;font-weight:500;'
-                         f'font-size:0.82rem;">({_tag})</span>'
-                         if _tag else '')
-            _defs_html.append(
-                '<div style="margin-bottom:0.7rem;break-inside:avoid;">'
-                f'<div style="font-weight:600;color:#0a2540;'
-                f'font-size:0.88rem;margin-bottom:0.15rem;">'
-                f'{_t_clean}{_tag_html}</div>'
-                f'<div style="color:#3c4257;line-height:1.45;'
-                f'font-size:0.85rem;">{_def}</div>'
-                '</div>'
-            )
-        if _defs_html:
-            st.markdown(
-                '<div style="margin-top:1rem;background:#f7f8fa;'
-                'border:1px solid #bfdbfe;border-radius:8px;'
-                'padding:0.9rem 1.1rem;">'
-                '<div style="font-size:0.85rem;font-weight:600;'
-                'color:#64748b;text-transform:uppercase;'
-                'letter-spacing:0.06em;margin-bottom:0.7rem;">'
-                'Account Definitions</div>'
-                '<div style="column-count:2;column-gap:1.8rem;">'
-                + ''.join(_defs_html) +
-                '</div></div>',
-                unsafe_allow_html=True,
-            )
-
-    # --- Per parent breakdown ---
-    # For each top driver in _drv (up to 7), if it has 2 or more 3-digit
-    # children in enriched_df, render a breakdown plot of those children
-    # (max 5 children per plot, sorted by FOAK LCOE descending). Parents
-    # with fewer than 2 children are skipped silently.
-    if not _drv.empty:
-        st.markdown('---')
-        st.markdown(
-            '<p style="color:#64748b;font-size:0.85rem;margin-bottom:1rem;">'
-            '<strong>Per driver breakdown.</strong> For each high level '
-            'driver above that has multiple lower level accounts, the chart '
-            'below shows how the cost splits across those accounts (top 5 '
-            'by FOAK LCOE).</p>',
-            unsafe_allow_html=True,
-        )
-
-        # Pool of all 3-digit accounts in the cost table
-        _three_digit_pool = enriched_df[enriched_df['Account'].apply(
-            is_three_digit_excluding_multiples_of_10)].copy()
-
-        # First pass: collect (account, title, children_df) for every
-        # parent that has 2+ children worth showing.
-        _to_render = []
-        for _parent_idx, _parent_row in _drv.iterrows():
-            try:
-                _parent_acct_int = int(_parent_row['Account'])
-            except (TypeError, ValueError):
-                continue
-            _parent_title = _parent_row.get('Account Title',
-                                            f'Account {_parent_acct_int}')
-            _children = _three_digit_pool[_three_digit_pool['Account'].apply(
-                lambda x, p=_parent_acct_int: int(x) // 10 == p
-            )].copy()
-            if len(_children) < 2:
-                continue
-            _children = _children.sort_values('FOAK LCOE', ascending=False).head(5)
-            # When there are 3-5 children, drop minor contributors
-            # (FOAK LCOE < $10/MWh) so the chart isn't dominated by
-            # near-zero bars. Always keep at least the top 2.
-            _FOAK_MIN = 10.0
-            if len(_children) >= 3:
-                _significant = _children[_children['FOAK LCOE'] >= _FOAK_MIN]
-                _children = (_significant if len(_significant) >= 2
-                             else _children.head(2))
-            # Wrap long titles for two-line rendering on the x-axis.
-            _children = _children.copy()
-            _children['Account Title'] = _children['Account Title'].apply(
-                _wrap_label_two_lines)
-            _to_render.append((_parent_acct_int, _parent_title, _children))
-
-        # Render two breakdowns per row using st.columns(2). If the
-        # total count is odd, the last row has one chart on the left
-        # and an empty cell on the right.
-        for _i in range(0, len(_to_render), 2):
-            _row_items = _to_render[_i:_i + 2]
-            _cols = st.columns(2)
-            for _col, (_acct, _title, _children) in zip(_cols, _row_items):
-                with _col:
-                    st.markdown(
-                        f'<div style="font-size:0.9rem;font-weight:600;color:#0a2540;'
-                        f'margin:1.25rem 0 0.5rem 0;">{_title}</div>',
-                        unsafe_allow_html=True,
-                    )
-                    st.altair_chart(
-                        _grouped_lcoe_bars_chart(_children, height=320,
-                                                 label_angle=-30),
-                        use_container_width=True,
-                    )
-
-        if not _to_render:
-            st.info('None of the top cost drivers have multiple lower '
-                    'level accounts to break down.')
+            for _i, _chunk in enumerate(_chunks[:4]):
+                _start = _i * _chunk_size + 1
+                _end = _start + len(_chunk) - 1
+                _title = (f'Top {_end} cost drivers'
+                          if _i == 0 else f'Cost drivers ranked {_start}-{_end}')
+                st.markdown(
+                    f'<div style="font-size:0.9rem;font-weight:600;color:#0a2540;'
+                    f'margin:{0 if _i == 0 else 1.25}rem 0 0.45rem 0;">'
+                    f'{_title}</div>',
+                    unsafe_allow_html=True,
+                )
+                st.altair_chart(
+                    _grouped_lcoe_bars_chart(
+                        _chunk,
+                        label_col='Driver Label',
+                        height=390,
+                        label_angle=-35,
+                    ),
+                    use_container_width=True,
+                )
+        _render_cost_driver_definition_table(_drv)
 
     # ─── Band 4 (cont.) Full breakdown ──────────────────────────────
     st.markdown(
