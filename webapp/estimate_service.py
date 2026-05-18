@@ -55,6 +55,7 @@ class EstimateResult:
 @dataclass(frozen=True)
 class LcoeAtNoakInputs(EstimateInputs):
     noak_unit_number: int = 10
+    include_diagnostics: bool = False
 
 
 @dataclass
@@ -167,12 +168,6 @@ def run_lcoe_at_noak_unit(inputs: LcoeAtNoakInputs) -> LcoeAtNoakResult:
     # skipped to save one full enrichment pass per anchor.
     mean, std = _get_mean_std(raw_df, lcoe_account, 'NOAK')
 
-    _foak_cols = [c for c in raw_df.columns if c.startswith('FOAK Estimated Cost (')]
-    _noak_cols = [c for c in raw_df.columns if c.startswith('NOAK Estimated Cost (')]
-    _keep = [c for c in (['Account', 'Account Title'] + _foak_cols + _noak_cols)
-             if c in raw_df.columns]
-    diag_df = raw_df[_keep].copy() if _keep else None
-
     diag_params = {
         'NOAK Unit Number': params.get('NOAK Unit Number'),
         'Power MWt': params.get('Power MWt'),
@@ -186,6 +181,14 @@ def run_lcoe_at_noak_unit(inputs: LcoeAtNoakInputs) -> LcoeAtNoakResult:
         'Levelization Period': params.get('Levelization Period'),
         'Annual Electricity Production': params.get('Annual Electricity Production'),
     }
+
+    diag_df = None
+    if inputs.include_diagnostics:
+        _foak_cols = [c for c in raw_df.columns if c.startswith('FOAK Estimated Cost (')]
+        _noak_cols = [c for c in raw_df.columns if c.startswith('NOAK Estimated Cost (')]
+        _keep = [c for c in (['Account', 'Account Title'] + _foak_cols + _noak_cols)
+                 if c in raw_df.columns]
+        diag_df = raw_df[_keep].copy() if _keep else None
 
     return LcoeAtNoakResult(
         mean=float(mean) if mean == mean else float('nan'),

@@ -228,6 +228,7 @@ class EstimateServiceTest(unittest.TestCase):
             **BASE_INPUTS,
             **REACTOR_CASES['LTMR']['inputs'],
             noak_unit_number=10,
+            include_diagnostics=True,
         ))
 
         self.assertTrue(math.isfinite(anchor.mean))
@@ -236,6 +237,17 @@ class EstimateServiceTest(unittest.TestCase):
         self.assertGreaterEqual(anchor.std, 0)
         self.assertIsNotNone(anchor.diag_df)
         self.assertFalse(anchor.diag_df.empty)
+        self.assertEqual(10, anchor.diag_params['NOAK Unit Number'])
+
+    def test_noak_lcoe_anchor_omits_diagnostics_by_default(self):
+        anchor = run_lcoe_at_noak_unit(LcoeAtNoakInputs(
+            **BASE_INPUTS,
+            **REACTOR_CASES['LTMR']['inputs'],
+            noak_unit_number=10,
+        ))
+
+        self.assertTrue(math.isfinite(anchor.mean))
+        self.assertIsNone(anchor.diag_df)
         self.assertEqual(10, anchor.diag_params['NOAK Unit Number'])
 
 
