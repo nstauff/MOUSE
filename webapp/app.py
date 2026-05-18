@@ -1192,16 +1192,20 @@ def _wrap_label_two_lines(text, max_chars=22):
 
 
 def _grouped_lcoe_bars_chart(df, label_col='Account Title', height=400,
-                             label_angle=-35):
+                             label_angle=-35, category_col=None):
     """Altair grouped bar chart (FOAK / NOAK side by side) with error
-    bars. Used by the main cost-driver chart and the per-parent
-    breakdown loop. df must already be in the desired display order
-    (typically sorted descending by FOAK LCOE); columns required:
+    bars. df must already be in the desired display order (typically
+    sorted descending by FOAK LCOE); columns required:
     <label_col>, 'FOAK LCOE', 'NOAK LCOE'; optional: 'FOAK LCOE_std',
-    'NOAK LCOE_std'.
+    'NOAK LCOE_std', <category_col>.
 
-    Replaces a matplotlib version that, multiplied across the ~7
-    per-parent breakdown calls per Run, was a major leak source."""
+    When category_col is supplied, the x-axis tick labels are colored
+    by COST_DRIVER_CATEGORY_PALETTE so the cost category is conveyed
+    without spending the bar color channel (which stays reserved for
+    FOAK vs NOAK).
+
+    Replaces a matplotlib version that, multiplied across the
+    per-section calls per Run, was a major leak source."""
     _has_foak_std = 'FOAK LCOE_std' in df.columns
     _has_noak_std = 'NOAK LCOE_std' in df.columns
     _rows = []
@@ -1224,13 +1228,35 @@ def _grouped_lcoe_bars_chart(df, label_col='Account Title', height=400,
     # hides ~half the labels when they collide).
     _label_order = [str(v) for v in df[label_col]]
 
+    # Per-label color via Vega expression: each x-axis tick gets the
+    # color of its cost category. Falls back to the default text color
+    # when no category column is provided or a label has no mapping.
+    _default_label_color = '#0a2540'
+    _label_color = _default_label_color
+    if category_col is not None and category_col in df.columns:
+        _label_to_color = {
+            str(_lbl): COST_DRIVER_CATEGORY_PALETTE.get(
+                str(_cat), _default_label_color)
+            for _lbl, _cat in zip(df[label_col], df[category_col])
+        }
+        if _label_to_color:
+            _ternaries = ''.join(
+                f'datum.value === {_json.dumps(_lbl)} ? '
+                f'{_json.dumps(_col)} : '
+                for _lbl, _col in _label_to_color.items()
+            )
+            _label_color = alt.ExprRef(
+                f'{_ternaries}{_json.dumps(_default_label_color)}'
+            )
+
     _color_scale = alt.Scale(domain=['FOAK', 'NOAK'],
                              range=['#c84b1e', '#1B4F8C'])
     _x_enc = alt.X(f'{label_col}:N',
                    sort=_label_order,
                    title=None,
-                   axis=alt.Axis(labelAngle=label_angle, labelColor='#0a2540',
-                                 labelFontSize=12, labelFontWeight=500,
+                   axis=alt.Axis(labelAngle=label_angle,
+                                 labelColor=_label_color,
+                                 labelFontSize=12, labelFontWeight=600,
                                  labelLimit=200, labelOverlap=False,
                                  # Multi-line wrap: labels passed through
                                  # _wrap_label_two_lines insert '|' at the
@@ -1355,6 +1381,39 @@ COST_DRIVER_DEFINITIONS = {
 }
 
 
+COST_DRIVER_CATEGORY_ORDER = [
+    'Preconstruction',
+    'Direct',
+    'Indirect',
+    'Training',
+    'Financial',
+    'Annualized O&M',
+    'Annualized fuel',
+]
+
+
+COST_DRIVER_CATEGORY_BY_LEAD_DIGIT = {
+    '1': 'Preconstruction',
+    '2': 'Direct',
+    '3': 'Indirect',
+    '4': 'Training',
+    '6': 'Financial',
+    '7': 'Annualized O&M',
+    '8': 'Annualized fuel',
+}
+
+
+COST_DRIVER_CATEGORY_PALETTE = {
+    'Preconstruction': '#6b7280',
+    'Direct':          '#1B4F8C',
+    'Indirect':        '#0891b2',
+    'Training':        '#7c3aed',
+    'Financial':       '#c84b1e',
+    'Annualized O&M':  '#15803d',
+    'Annualized fuel': '#b45309',
+}
+
+
 def _account_code(x):
     try:
         code = f'{float(x):.6f}'.rstrip('0').rstrip('.')
@@ -1371,6 +1430,11 @@ def _cost_driver_treatment(code):
     return 'Annualized' if str(code).strip()[0] in ('7', '8') else 'Capitalized'
 
 
+def _cost_driver_category(code):
+    _lead = str(code).strip()[:1]
+    return COST_DRIVER_CATEGORY_BY_LEAD_DIGIT.get(_lead, 'Other')
+
+
 def _curated_cost_driver_candidates(enriched_df):
     _df = enriched_df.copy()
     _df['_Account Code'] = _df['Account'].apply(_account_code)
@@ -1383,6 +1447,7 @@ def _curated_cost_driver_candidates(enriched_df):
         _cost_driver_title(code, title)
         for code, title in zip(_df['_Account Code'], _df['Account Title'])
     ]
+    _df['Category'] = [_cost_driver_category(code) for code in _df['_Account Code']]
     return _df
 
 
@@ -4786,11 +4851,27 @@ with streamlit_analytics.track():
             ' No curated cost drivers are hidden by the 10 $/MWh threshold.'
         )
         st.markdown(
-            '<p style="color:#64748b;font-size:0.85rem;margin-bottom:1rem;">'
+            '<p style="color:#64748b;font-size:0.85rem;margin-bottom:0.6rem;">'
             'Curated cost-driver view using account levels familiar to most '
             'users. Drivers are sorted by FOAK LCOE contribution; rows below '
-            '10 $/MWh are hidden. Error bars show +/-1 standard deviation '
-            f'across Monte Carlo samples.{_hidden_note}</p>',
+            '10 $/MWh are hidden. Bars show FOAK (orange) and NOAK (navy). '
+            'Error bars show +/-1 standard deviation across Monte Carlo '
+            f'samples.{_hidden_note}</p>',
+            unsafe_allow_html=True,
+        )
+        _category_inline = '&nbsp; '.join(
+            f'<span style="color:{COST_DRIVER_CATEGORY_PALETTE[_c]};'
+            f'font-weight:700;">{html.escape(_c)}</span>'
+            for _c in COST_DRIVER_CATEGORY_ORDER
+        )
+        st.markdown(
+            '<div style="border:1px solid #e2e8f0;border-radius:6px;'
+            'background:#ffffff;padding:0.55rem 0.75rem;'
+            'margin:0 0 1rem 0;font-size:0.85rem;color:#3c4257;'
+            'line-height:1.45;">'
+            'Each x-axis label is colored by cost category: '
+            f'{_category_inline}.'
+            '</div>',
             unsafe_allow_html=True,
         )
 
@@ -4816,6 +4897,7 @@ with streamlit_analytics.track():
                         label_col='Driver Label',
                         height=390,
                         label_angle=-35,
+                        category_col='Category',
                     ),
                     use_container_width=True,
                 )
