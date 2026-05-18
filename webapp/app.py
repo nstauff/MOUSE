@@ -2001,6 +2001,22 @@ def _load_logo_b64(path):
     with open(path, 'rb') as f:
         return base64.b64encode(f.read()).decode('ascii')
 
+
+@st.cache_data(show_spinner=False)
+def _load_state_industrial_price_distribution():
+    """Per-state industrial retail price distribution (cents/kWh).
+
+    Precomputed from EIA Form 861 (Sales_Ult_Cust_2024.xlsx) by
+    cost_drivers_and_markets/build_state_industrial_price_distribution.py.
+    One row per state with n_utilities, weighted_mean (the EIA Table 5.6.A
+    sales-weighted definition), and the empirical distribution of
+    per-utility prices: min / p10 / q1 / median / q3 / p90 / max.
+    """
+    _path = (Path(__file__).resolve().parent.parent
+             / 'assets' / 'Ref_Results'
+             / 'state_industrial_price_distribution_2024.csv')
+    return pd.read_csv(_path)
+
 cookies = _get_cookie_manager()
 if not cookies.ready():
     st.stop()
@@ -5384,34 +5400,19 @@ with streamlit_analytics.track():
 
     # ─────────────────────────────────────────────────────────
     # Behind-the-meter / Distributed Generation comparison:
-    # state-by-state retail electricity price vs FOAK / NOAK LCOE
+    # within-state industrial retail price distribution vs LCOE
     # ─────────────────────────────────────────────────────────
-    # EIA "State Electricity Profiles" 2023 annual average
-    # retail price of electricity to ULTIMATE INDUSTRIAL
-    # CUSTOMERS (Industrial sector). This is more representative
-    # of the BTM/BYOG customer types listed below than the all-
-    # sectors average (industrials typically pay 30-50% less than
-    # the all-sectors number, so using the industrial column gives
-    # a more honest competitiveness check). Source:
-    # https://www.eia.gov/electricity/state/ Table 5.6.A,
-    # "Average Retail Price of Electricity to Ultimate Customers
-    # by End-Use Sector Industrial". Values in cents/kWh,
-    # converted to $/MWh by ×10.
-    _STATE_RETAIL_CENTS_PER_KWH_2023 = {
-        'AL': 6.77, 'AK': 18.46, 'AZ': 7.11, 'AR': 6.50,
-        'CA': 18.27, 'CO': 8.10, 'CT': 13.84, 'DE': 8.29,
-        'DC': 8.39, 'FL': 8.97, 'GA': 7.12, 'HI': 33.16,
-        'ID': 7.29, 'IL': 7.64, 'IN': 7.85, 'IA': 6.86,
-        'KS': 8.30, 'KY': 6.27, 'LA': 6.36, 'ME': 11.03,
-        'MD': 8.81, 'MA': 13.28, 'MI': 8.18, 'MN': 8.16,
-        'MS': 6.76, 'MO': 7.40, 'MT': 6.34, 'NE': 8.10,
-        'NV': 7.28, 'NH': 12.59, 'NJ': 11.83, 'NM': 7.39,
-        'NY': 7.34, 'NC': 6.92, 'ND': 8.46, 'OH': 7.13,
-        'OK': 6.40, 'OR': 7.95, 'PA': 7.79, 'RI': 14.13,
-        'SC': 6.86, 'SD': 8.44, 'TN': 6.77, 'TX': 6.97,
-        'UT': 6.80, 'VT': 9.91, 'VA': 7.74, 'WA': 6.10,
-        'WV': 7.54, 'WI': 8.17, 'WY': 6.77,
-    }
+    # Data source: EIA Form 861 "Sales to Ultimate Customers",
+    # 2024 final data. Per-utility industrial revenue / sales
+    # gives an effective $/kWh for every utility in a state;
+    # aggregating yields a true within-state distribution
+    # rather than a single state-average number. Filters:
+    # drop Utility Number 99999 (EIA imputation), keep
+    # Service Type == 'Bundled' so generation + T&D are
+    # bundled (apples-to-apples with reactor LCOE), drop rows
+    # with non-positive industrial revenue or sales.
+    # Precomputed by:
+    # cost_drivers_and_markets/build_state_industrial_price_distribution.py
     _STATE_FULL_NAMES = {
         'AL': 'Alabama', 'AK': 'Alaska', 'AZ': 'Arizona',
         'AR': 'Arkansas', 'CA': 'California', 'CO': 'Colorado',
@@ -5442,29 +5443,66 @@ with streamlit_analytics.track():
     )
     st.markdown(
         '<div style="background:#f7f8fa;border:1px solid #bfdbfe;border-radius:8px;'
-        'padding:0.85rem 1.1rem;margin-bottom:0.9rem;font-size:0.85rem;line-height:1.45;color:#3c4257;">'
+        'padding:0.85rem 1.1rem;margin-bottom:0.9rem;font-size:0.85rem;line-height:1.55;color:#3c4257;">'
+
+        '<p style="margin:0 0 0.55rem 0;">'
+        '<strong>What this shows.</strong> '
         'For behind-the-meter (BTM) and bring-your-own-generator (BYOG) deployments '
         'data centers, industrial loads, mining, defense a useful '
-        '<em>first-order</em> cost benchmark is the average retail electricity price '
-        'the customer would otherwise pay. The chart compares the FOAK and NOAK LCOE '
-        '(with one-sigma bands) against the 2023 average retail price for the '
-        '<strong>industrial sector</strong> by state from the U.S. Energy Information '
-        'Administration. States are color-coded by competitiveness:'
-        '<ul style="margin:0.4rem 0 0 1.2rem;">'
-        '<li><span style="color:#15803d;font-weight:600;">Green:</span> retail price '
-        'exceeds the FOAK upper band reactor wins even at FOAK.</li>'
-        '<li><span style="color:#92400e;font-weight:600;">Yellow:</span> retail price '
-        'between NOAK and FOAK bands reactor wins only at NOAK scale.</li>'
-        '<li><span style="color:#64748b;font-weight:600;">Gray:</span> retail price '
-        'below the NOAK band not competitive even at scale.</li>'
+        '<em>first-order</em> cost benchmark is the retail electricity price the '
+        'customer would otherwise pay.'
+        '</p>'
+
+        '<p style="margin:0 0 0.4rem 0;"><strong>How to read it.</strong></p>'
+        '<ul style="margin:0 0 0.55rem 1.2rem;padding:0;">'
+        '<li><strong>Bar height</strong> = sales-weighted mean industrial retail '
+        'price in that state (the EIA Table 5.6.A state-average definition).</li>'
+        '<li><strong>Whisker</strong> = 10th to 90th percentile of individual '
+        'utility prices in that state, showing how much variation exists within '
+        'the state.</li>'
+        '<li><strong>Horizontal bands</strong> = reactor FOAK and NOAK LCOE '
+        '±1&sigma; ranges.</li>'
         '</ul>'
-        '<div style="margin-top:0.5rem;font-size:0.85rem;color:#64748b;line-height:1.45;">'
-        '<strong>Caveat:</strong> this is a simplified comparison. Actual avoided cost '
-        'depends on customer sector, demand charges, standby tariffs, time-of-use '
-        'structure, and ancillary value streams. Defense and remote sites often have '
-        'reliability/security premiums; large data centers commonly have direct PPAs '
-        'rather than retail tariffs.'
-        '</div>'
+
+        '<p style="margin:0 0 0.4rem 0;"><strong>Bar color (competitiveness of '
+        'the sales-weighted mean vs the LCOE bands).</strong></p>'
+        '<ul style="margin:0 0 0.55rem 1.2rem;padding:0;">'
+        '<li><span style="color:#15803d;font-weight:600;">Green:</span> state-average '
+        'retail price exceeds the FOAK lower band reactor wins even at FOAK.</li>'
+        '<li><span style="color:#92400e;font-weight:600;">Yellow:</span> state-average '
+        'price between NOAK and FOAK bands reactor wins only at NOAK scale.</li>'
+        '<li><span style="color:#64748b;font-weight:600;">Gray:</span> state-average '
+        'price below the NOAK lower band not competitive even at scale.</li>'
+        '</ul>'
+
+        '<p style="margin:0 0 0.55rem 0;border-left:2px solid #cbd5e1;'
+        'padding:0 0 0 0.6rem;font-size:0.85rem;color:#3c4257;">'
+        '<strong>Note.</strong> The bar top is usually not in the middle of the '
+        'whisker. The bar (sales-weighted mean) and the whisker (10th-90th '
+        'percentile of utility prices) answer different questions. Each utility '
+        'counts equally in the percentiles, but the weighted mean is dominated '
+        'by whichever utilities sell the most MWh. In most states a few big '
+        'investor-owned utilities sell the bulk of industrial power at '
+        'lower-than-typical rates, so the weighted mean sits in the lower part '
+        'of the whisker.'
+        '</p>'
+
+        '<p style="margin:0 0 0.55rem 0;font-size:0.8rem;color:#64748b;line-height:1.4;">'
+        '<strong>Caveat.</strong> First-order benchmark only; actual avoided cost '
+        'depends on demand charges, time-of-use structure, standby tariffs, and '
+        'PPAs. D.C. is omitted (no bundled industrial utilities in 2024).'
+        '</p>'
+
+        '<ul style="margin:0 0 0 1.2rem;padding:0;font-size:0.85rem;color:#64748b;">'
+        '<li>Source: U.S. EIA Form 861, 2024 final data, '
+        '<code>Sales_Ult_Cust_2024.xlsx</code> (sheet <code>States</code>). '
+        '<a href="https://www.eia.gov/electricity/data/eia861/" target="_blank" '
+        'style="color:#1B4F8C;">eia.gov/electricity/data/eia861</a>.</li>'
+        '<li>Per-utility price = INDUSTRIAL Revenues / Sales. '
+        'Per state: weighted mean = &Sigma;(revenue) / &Sigma;(sales); '
+        'p10 / p90 are unweighted percentiles of the per-utility prices.</li>'
+        '</ul>'
+
         '</div>',
         unsafe_allow_html=True,
     )
@@ -5479,80 +5517,60 @@ with streamlit_analytics.track():
         _foak_s_btm = _noak_s_btm = 0.0
 
     if (_foak_m_btm == _foak_m_btm and _noak_m_btm == _noak_m_btm):
-        # Convert cents/kWh -> $/MWh (multiply by 10) and sort
-        # descending (highest-priced states at the top).
-        _state_prices = {s: c * 10.0 for s, c
-                         in _STATE_RETAIL_CENTS_PER_KWH_2023.items()}
-        _sorted = sorted(_state_prices.items(),
-                         key=lambda kv: kv[1], reverse=True)
-        _state_codes = [s for s, _ in _sorted]
-        _state_vals = [v for _, v in _sorted]
+        # Load per-state distribution and convert cents/kWh -> $/MWh
+        # (×10) for every percentile / mean column so chart units match
+        # the reactor LCOE.
+        _dist_df = _load_state_industrial_price_distribution().copy()
+        _PRICE_COLS = ['weighted_mean', 'min', 'p10', 'q1', 'median',
+                       'q3', 'p90', 'max']
+        for _c in _PRICE_COLS:
+            _dist_df[_c] = _dist_df[_c] * 10.0
+        _dist_df['state_name'] = _dist_df['state'].map(_STATE_FULL_NAMES)
+        _dist_df = _dist_df.sort_values('weighted_mean', ascending=False).reset_index(drop=True)
 
         # Competitiveness thresholds: use the LOWER edge of each
-        # uncertainty band so any state whose retail price falls
-        # inside the FOAK or NOAK band counts as competitive.
-        # - State price >= FOAK_low -> green (potentially wins
-        # even at FOAK; price intersects or exceeds the FOAK
-        # band)
-        # - State price >= NOAK_low -> yellow (potentially wins
-        # at NOAK; price intersects or exceeds the NOAK band)
-        # - State price < NOAK_low -> gray (clearly loses)
+        # uncertainty band so any state whose sales-weighted mean
+        # falls inside the FOAK or NOAK band counts as competitive.
+        # Sales-weighted mean is used (not median) because it is the
+        # direct analog of the EIA Table 5.6.A state-average number
+        # the chart used to display as a single bar.
         _foak_low = _foak_m_btm - _foak_s_btm
         _noak_low = _noak_m_btm - _noak_s_btm
 
-        # Per-state classification + bar colors
         _GREEN = '#16a34a'
         _YELLOW = '#d97706'
         _GRAY = '#94a3b8'
-        _bar_colors = []
-        _foak_winners, _noak_winners = [], []
-        for s, v in _sorted:
-            if v >= _foak_low:
-                _bar_colors.append(_GREEN)
-                _foak_winners.append(s)
-                _noak_winners.append(s)
-            elif v >= _noak_low:
-                _bar_colors.append(_YELLOW)
-                _noak_winners.append(s)
-            else:
-                _bar_colors.append(_GRAY)
 
-        # Altair version of the state retail price chart. Layers:
-        #   1) ±1σ shaded bands for FOAK and NOAK LCOE (mark_rect)
-        #   2) Dashed reference lines at the FOAK and NOAK means
-        #      (mark_rule with legend labels)
-        #   3) Per-state bars colored by competitiveness tier
-        #      (green = beats FOAK, yellow = beats NOAK only, gray = loses)
-        #   4) Full state names labeled below the bars rotated -90°
-        # The original matplotlib version placed labels INSIDE each bar
-        # with a navy bbox; Altair doesn't natively support per-mark
-        # bboxes, so labels move to the x-axis. Same data, cleaner code,
-        # zero matplotlib state per Run.
+        def _tier(_v):
+            if _v >= _foak_low:
+                return 'Beats FOAK'
+            if _v >= _noak_low:
+                return 'Beats NOAK'
+            return 'Loses'
+
+        _dist_df['tier'] = _dist_df['weighted_mean'].apply(_tier)
+
+        # Composed box plot per state:
+        #   1) ±1σ FOAK/NOAK background bands (mark_rect)
+        #   2) Whisker rule from p10 to p90 (tier color, slim)
+        #   3) Box from q1 to q3 (tier color)
+        #   4) Median line (mark_tick, dark, slightly thicker)
+        #   5) Sales-weighted mean marker (diamond)
+        #   6) Dashed FOAK / NOAK mean reference lines
+        #   7) State labels rotated at the base of the chart
         _band_top_btm = max(
             _foak_m_btm + _foak_s_btm,
             _noak_m_btm + _noak_s_btm,
-            max(_state_vals),
+            float(_dist_df['p90'].max()),
+            float(_dist_df['weighted_mean'].max()),
         )
         _ymax_chart = _band_top_btm * 1.18
 
-        _bars_df = pd.DataFrame({
-            'state_code': _state_codes,
-            'state_name': [_STATE_FULL_NAMES.get(c, c) for c in _state_codes],
-            'price': _state_vals,
-            'tier': [
-                'Beats FOAK' if c == _GREEN
-                else 'Beats NOAK' if c == _YELLOW
-                else 'Loses'
-                for c in _bar_colors
-            ],
-        })
         _tier_scale = alt.Scale(
             domain=['Beats FOAK', 'Beats NOAK', 'Loses'],
             range=[_GREEN, _YELLOW, _GRAY],
         )
 
-        # Two ±1σ bands rendered as background rectangles spanning the
-        # full x range.
         _bands_df = pd.DataFrame([
             {'low': _foak_m_btm - _foak_s_btm,
              'high': _foak_m_btm + _foak_s_btm, 'band': 'FOAK'},
@@ -5569,9 +5587,6 @@ with streamlit_analytics.track():
             ),
         )
 
-        # Mean reference lines  use a separate legend for these so
-        # the user sees the FOAK/NOAK $/MWh values without cluttering
-        # the bar color legend.
         _lines_df = pd.DataFrame([
             {'mean': _foak_m_btm,
              'label': f'FOAK LCOE ${_foak_m_btm:.0f}/MWh'},
@@ -5593,10 +5608,11 @@ with streamlit_analytics.track():
             ),
         )
 
+        _state_order = list(_dist_df['state'])
         _x_state = alt.X(
-            'state_code:N',
-            sort=list(_bars_df['state_code']),
-            title='U.S. States and DC (sorted by retail price, high to low)',
+            'state:N',
+            sort=_state_order,
+            title='U.S. states (sorted by sales-weighted mean, high to low)',
             axis=alt.Axis(
                 labels=False, ticks=False,
                 titleFontSize=13, titleFontWeight='bold',
@@ -5604,93 +5620,141 @@ with streamlit_analytics.track():
                 domain=True, domainColor='#000000', domainWidth=1.5,
             ),
         )
-        _bars_chart = alt.Chart(_bars_df).mark_bar().encode(
+        _y_axis = alt.Axis(
+            labelFontSize=12, labelColor='#000000', labelFontWeight=500,
+            titleFontSize=13, titleFontWeight='bold', titleColor='#000000',
+            domain=True, domainColor='#000000', domainWidth=1.5,
+            tickColor='#000000', tickWidth=1.2,
+            gridDash=[3, 3], gridColor='#cbd5e1',
+        )
+        _y_scale = alt.Scale(domain=[0, _ymax_chart])
+
+        _tooltip = [
+            alt.Tooltip('state_name:N', title='State'),
+            alt.Tooltip('n_utilities:Q', title='Utilities (n)'),
+            alt.Tooltip('weighted_mean:Q', title='Weighted mean $/MWh',
+                        format='.1f'),
+            alt.Tooltip('median:Q', title='Median utility $/MWh', format='.1f'),
+            alt.Tooltip('p10:Q', title='p10 $/MWh', format='.1f'),
+            alt.Tooltip('p90:Q', title='p90 $/MWh', format='.1f'),
+        ]
+
+        _bars = alt.Chart(_dist_df).mark_bar().encode(
             x=_x_state,
-            y=alt.Y(
-                'price:Q',
-                title='Average retail price ($/MWh, EIA 2023)',
-                scale=alt.Scale(domain=[0, _ymax_chart]),
-                axis=alt.Axis(
-                    labelFontSize=12, labelColor='#000000',
-                    labelFontWeight=500,
-                    titleFontSize=13, titleFontWeight='bold',
-                    titleColor='#000000',
-                    domain=True, domainColor='#000000', domainWidth=1.5,
-                    tickColor='#000000', tickWidth=1.2,
-                    gridDash=[3, 3], gridColor='#cbd5e1',
-                ),
-            ),
+            y=alt.Y('weighted_mean:Q',
+                    title='Industrial retail price ($/MWh, EIA 861, 2024)',
+                    scale=_y_scale, axis=_y_axis),
             color=alt.Color('tier:N', scale=_tier_scale, legend=None),
-            tooltip=[alt.Tooltip('state_name:N', title='State'),
-                     alt.Tooltip('price:Q', title='Retail $/MWh',
-                                 format='.1f')],
+            tooltip=_tooltip,
+        )
+        _whiskers = alt.Chart(_dist_df).mark_rule(
+            color='#0a2540', strokeWidth=1.2,
+        ).encode(
+            x=_x_state,
+            y=alt.Y('p10:Q', scale=_y_scale, axis=_y_axis),
+            y2='p90:Q',
+            tooltip=_tooltip,
+        )
+        _whisker_caps = alt.Chart(_dist_df).transform_fold(
+            ['p10', 'p90'], as_=['percentile', 'value'],
+        ).mark_tick(color='#0a2540', thickness=1.2, size=8).encode(
+            x=_x_state,
+            y=alt.Y('value:Q', scale=_y_scale, axis=_y_axis),
+            tooltip=_tooltip,
         )
 
-        # State labels rendered at the base of each column, rotated to
-        # read bottom-to-top. No background pill  earlier attempts
-        # added one to mimic the original matplotlib navy bbox, but it
-        # made every column look the same height, misleading the eye
-        # about actual retail prices. Plain dark navy text is readable
-        # against the colored bars (green / yellow / gray) and against
-        # the white background where labels extend above short bars.
         _label_df = pd.DataFrame({
-            'state_code': _state_codes,
-            'state_name': [_STATE_FULL_NAMES.get(c, c) for c in _state_codes],
-            'y_anchor': [_ymax_chart * 0.012] * len(_state_codes),
+            'state': _state_order,
+            'state_name': [_STATE_FULL_NAMES.get(c, c) for c in _state_order],
+            'y_anchor': [_ymax_chart * 0.012] * len(_state_order),
         })
         _labels = alt.Chart(_label_df).mark_text(
             angle=270, baseline='middle', align='left',
             fontSize=11, color='#000000',
         ).encode(
-            x=alt.X('state_code:N',
-                    sort=list(_label_df['state_code'])),
+            x=alt.X('state:N', sort=_state_order),
             y='y_anchor:Q',
             text='state_name:N',
         )
 
         _state_chart = (
-            _bands + _bars_chart + _lines + _labels
-        ).properties(height=440).resolve_scale(color='independent')
+            _bands + _bars + _whiskers + _whisker_caps + _lines + _labels
+        ).properties(height=460).resolve_scale(color='independent')
         st.altair_chart(_state_chart, use_container_width=True)
 
-        # Summary line + competitive-states lists
-        _summary_html = (
-            f'Of <strong>{len(_sorted)}</strong> jurisdictions, the reactor beats '
-            f'the average retail price in <strong style="color:#15803d;">'
-            f'{len(_foak_winners)}</strong> at FOAK (orange band) and '
-            f'<strong style="color:#1B4F8C;">{len(_noak_winners)}</strong> at NOAK '
-            f'(blue band).'
-        )
-        _foak_list_html = (', '.join(_foak_winners) if _foak_winners
-                           else '<em>none</em>')
-        _noak_only = [s for s in _noak_winners if s not in _foak_winners]
-        _noak_only_html = (', '.join(_noak_only) if _noak_only
-                           else '<em>none</em>')
+        # Distribution-aware competitiveness counts. For each LCOE tier
+        # (FOAK, NOAK) we ask three questions of the within-state utility
+        # price distribution:
+        #   beats every utility    = state p10    >= LCOE_low
+        #     (even the cheapest utility's price is at or above the
+        #      reactor's lower band: reactor wins regardless of which
+        #      utility serves the site)
+        #   beats the median       = state median >= LCOE_low
+        #     (reactor wins against more than half the utilities in
+        #      the state)
+        #   beats some utilities   = state p90    >= LCOE_low
+        #     (reactor wins only against the priciest utilities the
+        #      expensive end of the state's distribution: competitive
+        #      in pockets of the state, not state-wide)
+        # NOAK lists are inclusive of FOAK (any FOAK-competitive state
+        # is automatically NOAK-competitive since NOAK_low < FOAK_low).
+        _foak_beats_p10    = _dist_df.loc[_dist_df['p10']    >= _foak_low, 'state'].tolist()
+        _foak_beats_median = _dist_df.loc[_dist_df['median'] >= _foak_low, 'state'].tolist()
+        _foak_beats_p90    = _dist_df.loc[_dist_df['p90']    >= _foak_low, 'state'].tolist()
+        _noak_beats_p10    = _dist_df.loc[_dist_df['p10']    >= _noak_low, 'state'].tolist()
+        _noak_beats_median = _dist_df.loc[_dist_df['median'] >= _noak_low, 'state'].tolist()
+        _noak_beats_p90    = _dist_df.loc[_dist_df['p90']    >= _noak_low, 'state'].tolist()
+
+        def _state_list_html(states):
+            return ', '.join(states) if states else '<em>none</em>'
 
         st.markdown(
             f'<div style="background:#f7f8fa;border:1px solid #bfdbfe;'
             f'border-radius:8px;padding:0.85rem 1.1rem;margin-bottom:0.9rem;'
             f'font-size:0.85rem;line-height:1.55;color:#3c4257;">'
-            f'{_summary_html}'
+            f'Out of <strong>{len(_dist_df)}</strong> states, the reactor\'s '
+            f'competitiveness depends on which utility serves the site:'
             f'<div style="margin-top:0.55rem;">'
             f'<span style="display:inline-block;width:0.85rem;height:0.85rem;'
             f'background:{_GREEN};border-radius:3px;margin-right:0.35rem;'
             f'vertical-align:middle;"></span>'
-            f'<strong>FOAK-competitive ({len(_foak_winners)}):</strong> '
-            f'{_foak_list_html}'
+            f'<strong>FOAK competitive</strong>'
+            f'<div style="margin-left:1.2rem;margin-top:0.2rem;">'
+            f'More cost-competitive than <em>every</em> utility in '
+            f'<strong>{len(_foak_beats_p10)}</strong> states: '
+            f'{_state_list_html(_foak_beats_p10)}'
             f'</div>'
-            f'<div style="margin-top:0.35rem;">'
+            f'<div style="margin-left:1.2rem;margin-top:0.2rem;">'
+            f'More cost-competitive than the <em>median</em> utility in '
+            f'<strong>{len(_foak_beats_median)}</strong> states: '
+            f'{_state_list_html(_foak_beats_median)}'
+            f'</div>'
+            f'<div style="margin-left:1.2rem;margin-top:0.2rem;">'
+            f'More cost-competitive than <em>at least the priciest</em> utilities in '
+            f'<strong>{len(_foak_beats_p90)}</strong> states (competitive in '
+            f'pockets only): {_state_list_html(_foak_beats_p90)}'
+            f'</div>'
+            f'</div>'
+            f'<div style="margin-top:0.55rem;">'
             f'<span style="display:inline-block;width:0.85rem;height:0.85rem;'
             f'background:{_YELLOW};border-radius:3px;margin-right:0.35rem;'
             f'vertical-align:middle;"></span>'
-            f'<strong>NOAK-only competitive ({len(_noak_only)}):</strong> '
-            f'{_noak_only_html}'
+            f'<strong>NOAK competitive</strong>'
+            f'<div style="margin-left:1.2rem;margin-top:0.2rem;">'
+            f'More cost-competitive than <em>every</em> utility in '
+            f'<strong>{len(_noak_beats_p10)}</strong> states: '
+            f'{_state_list_html(_noak_beats_p10)}'
             f'</div>'
-            f'<div style="margin-top:0.55rem;font-size:0.85rem;color:#64748b;">'
-            f'Source: U.S. EIA, <em>State Electricity Profiles</em>, 2023 annual '
-            f'average retail price to ultimate customers industrial sector. '
-            f'<a href="https://www.eia.gov/electricity/state/" target="_blank" '
-            f'style="color:#1B4F8C;">eia.gov/electricity/state</a>'
+            f'<div style="margin-left:1.2rem;margin-top:0.2rem;">'
+            f'More cost-competitive than the <em>median</em> utility in '
+            f'<strong>{len(_noak_beats_median)}</strong> states: '
+            f'{_state_list_html(_noak_beats_median)}'
+            f'</div>'
+            f'<div style="margin-left:1.2rem;margin-top:0.2rem;">'
+            f'More cost-competitive than <em>at least the priciest</em> utilities in '
+            f'<strong>{len(_noak_beats_p90)}</strong> states (competitive in '
+            f'pockets only): {_state_list_html(_noak_beats_p90)}'
+            f'</div>'
             f'</div>'
             f'</div>',
             unsafe_allow_html=True,
