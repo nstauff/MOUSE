@@ -175,7 +175,7 @@ import streamlit as st
 # requiring a deep re-indent of the entire script body. The custom
 # SQLite-backed visit logger below (`_log_visit_once_per_session`) is
 # kept; it's lightweight and gives us the analytics we actually use.
-from contextlib import nullcontext as _nullcontext, redirect_stdout as _redirect_stdout
+from contextlib import nullcontext as _nullcontext
 
 class _NoOpAnalytics:
     @staticmethod
@@ -185,7 +185,7 @@ class _NoOpAnalytics:
 streamlit_analytics = _NoOpAnalytics()
 from st_cookies_manager import EncryptedCookieManager
 
-from reactor_config import build_params, SubcriticalError, ShortLifetimeError, ESCALATION_YEAR
+from reactor_config import SubcriticalError, ShortLifetimeError, ESCALATION_YEAR
 from webapp.fuel_lifetime_estimator import (
     get_ltmr_keff_curve,
     get_ltmr_peaking_factor,
@@ -201,8 +201,13 @@ from webapp.hpmr_fuel_lifetime_estimator import (
     get_hpmr_peaking_factor,
     get_hpmr_leakage,
 )
-from cost.cost_estimation import bottom_up_cost_estimate, transform_dataframe
-from cost.cost_drivers import cost_drivers_estimate, is_double_digit_excluding_multiples_of_10, is_three_digit_excluding_multiples_of_10, get_detailed_driver_rows
+from webapp.estimate_service import (
+    EstimateInputs,
+    LcoeAtNoakInputs,
+    run_estimate,
+    run_lcoe_at_noak_unit,
+)
+from cost.cost_drivers import is_double_digit_excluding_multiples_of_10, is_three_digit_excluding_multiples_of_10, get_detailed_driver_rows
 
 # ---------------------------------------------------------------------------
 # Performance patches: cache Excel reads that would otherwise repeat on every run.
@@ -655,47 +660,36 @@ def _run_estimate(reactor_type, power_mwt, enrichment, interest_rate, discount_r
                   n_rings_per_assembly=None, active_height=None,
                   n_assembly_rings=None, n_core_rings=None,
                   tax_credit_units=None):
-    overrides = {
-        'Interest Rate': interest_rate,
-        'Discount Rate': discount_rate,
-        'Construction Duration': construction_duration,
-        'Debt To Equity Ratio': debt_to_equity,
-        'Escalation Year': ESCALATION_YEAR,
-        'Operation Mode': operation_mode,
-        'Emergency Shutdowns Per Year': emergency_shutdowns,
-        'Startup Duration after Emergency Shutdown': startup_duration,
-        'Startup Duration after Refueling': startup_duration_refueling,
-        'Levelization Period': plant_lifetime,
-    }
-    if tax_credit_type == 'PTC':
-        overrides['PTC credit value'] = tax_credit_value
-        overrides['PTC credit period'] = 10
-        overrides['Tax Rate'] = 0.21
-    elif tax_credit_type == 'ITC':
-        overrides['ITC credit level'] = tax_credit_value
-    if tax_credit_type in ('PTC', 'ITC') and tax_credit_units is not None:
-        overrides['Number of Units Claiming ITC/PTC'] = int(tax_credit_units)
-
-    p = build_params(reactor_type, power_mwt, enrichment, overrides,
-                     n_rings_per_assembly=n_rings_per_assembly,
-                     active_height=active_height,
-                     n_assembly_rings=n_assembly_rings,
-                     n_core_rings=n_core_rings)
-    # Silence the cost engine's per-account print spam ("For the cost of
-    # the Account ..."). Those lines flood Streamlit Cloud's log panel
-    # and make actual diagnostics like [mem] hard to find.
-    with _redirect_stdout(io.StringIO()):
-        raw_df = bottom_up_cost_estimate('cost/Cost_Database.xlsx', p)
-        enriched_df, detailed_sorted_df = cost_drivers_estimate(raw_df, p)
-    return transform_dataframe(enriched_df), enriched_df, detailed_sorted_df, p
+    result = run_estimate(EstimateInputs(
+        reactor_type=reactor_type,
+        power_mwt=power_mwt,
+        enrichment=enrichment,
+        interest_rate=interest_rate,
+        discount_rate=discount_rate,
+        construction_duration=construction_duration,
+        debt_to_equity=debt_to_equity,
+        operation_mode=operation_mode,
+        emergency_shutdowns=emergency_shutdowns,
+        startup_duration=startup_duration,
+        startup_duration_refueling=startup_duration_refueling,
+        tax_credit_type=tax_credit_type,
+        tax_credit_value=tax_credit_value,
+        plant_lifetime=plant_lifetime,
+        n_rings_per_assembly=n_rings_per_assembly,
+        active_height=active_height,
+        n_assembly_rings=n_assembly_rings,
+        n_core_rings=n_core_rings,
+        tax_credit_units=tax_credit_units,
+    ))
+    return (result.display_df, result.enriched_df,
+            result.detailed_sorted_df, result.params)
 
 
 # Single-point cost-engine call for the Costs-in-Perspective plot.
 # Used to add an intermediate anchor (e.g. NOAK Unit Number = 10)
-# between the headline FOAK (N=1) and NOAK (N=user_setting). Same
-# extraction path as _run_estimate so the value matches the headline
-# format exactly: bottom_up_cost_estimate -> cost_drivers_estimate ->
-# transform_dataframe -> _get_mean_std.
+# between the headline FOAK (N=1) and NOAK (N=user_setting). Delegates
+# to estimate_service so the app keeps one cost-engine execution path;
+# the service still skips full enrichment for this anchor to save work.
 @st.cache_data(show_spinner=False, max_entries=2)
 def _lcoe_at_noak_unit(reactor_type, power_mwt, enrichment, interest_rate, discount_rate,
                        construction_duration, debt_to_equity, operation_mode,
@@ -711,74 +705,29 @@ def _lcoe_at_noak_unit(reactor_type, power_mwt, enrichment, interest_rate, disco
     columns for all rows useful for diagnosing which account drives
     a wild LCOE value.
     """
-    overrides = {
-        'Interest Rate': interest_rate,
-        'Discount Rate': discount_rate,
-        'Construction Duration': construction_duration,
-        'Debt To Equity Ratio': debt_to_equity,
-        'Escalation Year': ESCALATION_YEAR,
-        'Operation Mode': operation_mode,
-        'Emergency Shutdowns Per Year': emergency_shutdowns,
-        'Startup Duration after Emergency Shutdown': startup_duration,
-        'Startup Duration after Refueling': startup_duration_refueling,
-        'Levelization Period': plant_lifetime,
-        'NOAK Unit Number': int(noak_unit_number),
-    }
-    if tax_credit_type == 'PTC':
-        overrides['PTC credit value'] = tax_credit_value
-        overrides['PTC credit period'] = 10
-        overrides['Tax Rate'] = 0.21
-        lcoe_account = 'LCOE with PTC'
-    elif tax_credit_type == 'ITC':
-        overrides['ITC credit level'] = tax_credit_value
-        lcoe_account = 'LCOE (ITC-adjusted)'
-    else:
-        lcoe_account = 'LCOE'
-    if tax_credit_type in ('PTC', 'ITC') and tax_credit_units is not None:
-        overrides['Number of Units Claiming ITC/PTC'] = int(tax_credit_units)
-    p = build_params(reactor_type, power_mwt, enrichment, overrides,
-                     n_rings_per_assembly=n_rings_per_assembly,
-                     active_height=active_height,
-                     n_assembly_rings=n_assembly_rings,
-                     n_core_rings=n_core_rings)
-    with _redirect_stdout(io.StringIO()):
-        raw_df = bottom_up_cost_estimate('cost/Cost_Database.xlsx', p)
-    # Read mean / std directly from the cost engine's raw output.
-    # cost_drivers_estimate enriches with per-account LCOE columns we
-    # don't use here, and transform_dataframe only int-truncates floats —
-    # both are skipped to save one full enrichment pass per anchor.
-    m, s = _get_mean_std(raw_df, lcoe_account, 'NOAK')
-
-    # Build a tidy per-account diagnostic frame. Pulls 'Account',
-    # 'Account Title', and any column starting with 'FOAK Estimated
-    # Cost (' / 'NOAK Estimated Cost ('.
-    _foak_cols = [c for c in raw_df.columns if c.startswith('FOAK Estimated Cost (')]
-    _noak_cols = [c for c in raw_df.columns if c.startswith('NOAK Estimated Cost (')]
-    _keep = [c for c in (['Account', 'Account Title']
-                         + _foak_cols + _noak_cols) if c in raw_df.columns]
-    diag_df = raw_df[_keep].copy() if _keep else None
-
-    # Also pull a snapshot of the key params actually used for this
-    # cost-engine call. Reveals whether Construction Duration,
-    # Power MWe, Capacity Factor etc. are what we expect.
-    diag_params = {
-        'NOAK Unit Number': p.get('NOAK Unit Number'),
-        'Power MWt': p.get('Power MWt'),
-        'Power MWe': p.get('Power MWe'),
-        'Thermal Efficiency': p.get('Thermal Efficiency'),
-        'Capacity Factor': p.get('Capacity Factor'),
-        'Construction Duration': p.get('Construction Duration'),
-        'Interest Rate': p.get('Interest Rate'),
-        'Discount Rate': p.get('Discount Rate'),
-        'Debt To Equity Ratio': p.get('Debt To Equity Ratio'),
-        'Levelization Period': p.get('Levelization Period'),
-        'Annual Electricity Production': p.get('Annual Electricity Production'),
-    }
-
-    return (float(m) if m == m else float('nan'),
-            float(s) if s == s else 0.0,
-            diag_df,
-            diag_params)
+    result = run_lcoe_at_noak_unit(LcoeAtNoakInputs(
+        reactor_type=reactor_type,
+        power_mwt=power_mwt,
+        enrichment=enrichment,
+        interest_rate=interest_rate,
+        discount_rate=discount_rate,
+        construction_duration=construction_duration,
+        debt_to_equity=debt_to_equity,
+        operation_mode=operation_mode,
+        emergency_shutdowns=emergency_shutdowns,
+        startup_duration=startup_duration,
+        startup_duration_refueling=startup_duration_refueling,
+        tax_credit_type=tax_credit_type,
+        tax_credit_value=tax_credit_value,
+        plant_lifetime=plant_lifetime,
+        n_rings_per_assembly=n_rings_per_assembly,
+        active_height=active_height,
+        n_assembly_rings=n_assembly_rings,
+        n_core_rings=n_core_rings,
+        tax_credit_units=tax_credit_units,
+        noak_unit_number=noak_unit_number,
+    ))
+    return result.mean, result.std, result.diag_df, result.diag_params
 
 
 # ---------------------------------------------------------------------------
@@ -5764,4 +5713,3 @@ with streamlit_analytics.track():
         """,
         unsafe_allow_html=True,
     )
-
