@@ -2387,7 +2387,7 @@ with streamlit_analytics.track():
             )
 
         st.divider()
-        run_button = st.button('⚡ Run Cost Estimate', type='primary', width='stretch')
+        run_button = st.button('⚡ Run Analysis', type='primary', width='stretch')
         if run_button:
             # Run a generational GC pass before kicking off a new
             # cost-engine run. Frees DataFrames from the previous Run
@@ -2494,11 +2494,14 @@ with streamlit_analytics.track():
                    Microreactor Optimization Using Simulation and Economics
                  </div>
                  <p style="font-size:1rem;margin:0 0 1.1rem;max-width:780px;color:#3c4257;line-height:1.55;">
-                   MOUSE bridges microreactor design and economics by integrating core physics
-                   simulations (OpenMC), simplified balance-of-plant calculations, and bottom-up
-                   cost estimation for both <strong style="color:#0a2540;">First-of-a-Kind (FOAK)</strong> and
-                   <strong style="color:#0a2540;">Nth-of-a-Kind (NOAK)</strong> deployments. Cost correlations derive from
-                   the MARVEL project and supplementary literature; all costs in <strong style="color:#0a2540;">{ESCALATION_YEAR} USD</strong>.
+                   MOUSE bridges microreactor design and economic analysis for early-stage reactor scoping.
+                   It connects design choices to estimates of reactor performance, heat removal needs,
+                   supporting plant equipment, fuel use, and overall cost in one workflow. The app helps
+                   users compare design options, understand what is driving cost, see how uncertainty affects
+                   the results, evaluate the effect of clean-energy tax credits, and assess where a reactor
+                   concept may be competitive in different markets and locations. It is meant to help users
+                   see whether a concept looks technically workable, economically attractive, or in need of
+                   further design refinement.
                  </p>
                  <div style="display:flex;gap:1rem;flex-wrap:wrap;">
                    <div style="background:white;border:1px solid #bfdbfe;border-radius:8px;padding:0.85rem 1.1rem;">
@@ -2573,7 +2576,7 @@ with streamlit_analytics.track():
                            padding:1.1rem 1.25rem;margin-top:1rem;margin-bottom:1rem;
                            font-size:1.15rem;font-weight:600;color:#1B4F8C;">
                  👈 How to use: configure your reactor in the sidebar on the left,
-                 then click <strong>⚡ Run Cost Estimate</strong> at the bottom of the sidebar.
+                 then click <strong>⚡ Run Analysis</strong> at the bottom of the sidebar.
                </div>''',
             unsafe_allow_html=True,
         )
@@ -2625,7 +2628,7 @@ with streamlit_analytics.track():
             'border-left:4px solid #1B4F8C;border-radius:8px;'
             'padding:1.1rem 1.25rem;margin-top:1rem;margin-bottom:1rem;'
             'font-size:1.15rem;font-weight:600;color:#1B4F8C;">'
-            '👈 Inputs changed. Click <strong>⚡ Run Cost Estimate</strong> '
+            '👈 Inputs changed. Click <strong>⚡ Run Analysis</strong> '
             'in the sidebar to update results.'
             '</div>',
             unsafe_allow_html=True,
