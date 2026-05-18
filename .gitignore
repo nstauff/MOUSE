@@ -11,3 +11,4 @@ output*.xlsx
 webapp/.venv/
 webapp/.streamlit/secrets.toml
 webapp/analytics.db
+webapp/.last_reboot
