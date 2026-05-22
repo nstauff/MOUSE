@@ -27,13 +27,16 @@ def _crf(rate, period):
     # Returns the Capital Recovery Factor (CRF) based on the discount rate and period.
     # CRF converts a present value into a series of equal annual payments.
     # Formula: CRF = rate * (1 + rate)^period / ((1 + rate)^period - 1)
+    # Special case: when rate == 0, CRF = 1/period (straight-line amortization, no interest)
+    period = np.asarray(period, dtype=float)
+    rate   = np.asarray(rate,   dtype=float)
+    if rate.ndim == 0 and rate == 0:
+        # scalar zero rate: straight-line amortization
+        factor = np.where(period == 0, 0.0, 1.0 / period)
+        return float(factor) if factor.ndim == 0 else factor
     numer = rate * (1 + rate)**period
     denum = (1 + rate)**period - 1
-    factor = numer/denum 
-    
-    ## If components are not set for replacement (i.e. period == 0) return 0
-    if np.array(factor).size > 1:
-        factor[factor == np.inf] = 0
+    factor = np.where(denum == 0, 0.0, numer / denum)
     return factor
 
 
@@ -66,7 +69,7 @@ def calculate_accounts_31_32_75_82_cost(df, params):
                                          df.loc[df['Account'] == 221.31,  estimated_cost_col].values.sum(),
                                          df.loc[df['Account'] == 221.2,   estimated_cost_col].values.sum(),
                                          df.loc[df['Account'].isin([222.1, 222.2, 222.3, 222.61]), estimated_cost_col].values.sum()])
-            annualized_replacement_cost = (A20_capital_cost*_crf(params['Interest Rate'], A20_replacement_period))
+            annualized_replacement_cost = (A20_capital_cost*_crf(params['Discount Rate'], A20_replacement_period))
             A20_other_cost = df.loc[df['Account'] == 20, estimated_cost_col].values[0] - A20_capital_cost.sum()
             annualized_other_cost = A20_other_cost * params['Maintenance to Direct Cost Ratio']
             df.loc[df['Account'] == 751, estimated_cost_col] = annualized_replacement_cost[0]
@@ -80,7 +83,7 @@ def calculate_accounts_31_32_75_82_cost(df, params):
             df.loc[df['Account'] == 75, estimated_cost_col] = df.loc[df['Account'] == 20, estimated_cost_col].values[0] * params['Maintenance to Direct Cost Ratio']
 
         lump_fuel_cost = df.loc[df['Account'] == 25, estimated_cost_col].values[0]
-        annualized_fuel_cost = lump_fuel_cost*_crf(params['Interest Rate'], refueling_period_yr)
+        annualized_fuel_cost = lump_fuel_cost*_crf(params['Discount Rate'], refueling_period_yr)
         df.loc[df['Account'] == 82, estimated_cost_col] = annualized_fuel_cost
 
     return df
@@ -168,10 +171,10 @@ def calculate_high_level_capital_costs(df, params):
     power_kWe = 1000 * params['Power MWe']
     accounts_to_sum = [10, 20, 30, 40, 50]
 
-    df = df._append({'Account': 'OCC','Account Title' : 'Overnight Capital Cost'}, ignore_index=True)
-    df = df._append({'Account': 'OCC per kW','Account Title' : 'Overnight Capital Cost per kW' }, ignore_index=True)
-    df = df._append({'Account': 'OCC excl. fuel','Account Title' : 'Overnight Capital Cost Excluding Fuel'}, ignore_index=True)
-    df = df._append({'Account': 'OCC excl. fuel per kW','Account Title' : 'Overnight Capital Cost Excluding Fuel per kW'}, ignore_index=True)
+    df = pd.concat([df, pd.DataFrame([{'Account': 'OCC','Account Title' : 'Overnight Capital Cost'}])], ignore_index=True)
+    df = pd.concat([df, pd.DataFrame([{'Account': 'OCC per kW','Account Title' : 'Overnight Capital Cost per kW' }])], ignore_index=True)
+    df = pd.concat([df, pd.DataFrame([{'Account': 'OCC excl. fuel','Account Title' : 'Overnight Capital Cost Excluding Fuel'}])], ignore_index=True)
+    df = pd.concat([df, pd.DataFrame([{'Account': 'OCC excl. fuel per kW','Account Title' : 'Overnight Capital Cost Excluding Fuel per kW'}])], ignore_index=True)
 
     cost_column_F = get_estimated_cost_column(df, 'F')
     cost_column_N = get_estimated_cost_column(df, 'N')
@@ -194,7 +197,7 @@ def calculate_high_level_capital_costs_central_facility(df, params):
     power_kWe = 1000 * params['Power MWe'] * params['Maximum Number of Operating Reactors']
     accounts_to_sum = [10, 20, 30, 40, 50]
 
-    df = df._append({'Account': 'OCC', 'Account Title': 'Overnight Capital Cost'}, ignore_index=True)
+    df = pd.concat([df, pd.DataFrame([{'Account': 'OCC', 'Account Title': 'Overnight Capital Cost'}])], ignore_index=True)
 
     cost_column_F = get_estimated_cost_column(df, 'F')
     cost_column_N = get_estimated_cost_column(df, 'N')
@@ -211,8 +214,8 @@ def calculate_TCI_central(df, params):
     """Calculate Total Capital Investment for central facility."""
     power_kWe = 1000 * params['Power MWe'] * params['Maximum Number of Operating Reactors']
 
-    df = df._append({'Account': 'TCI', 'Account Title': 'Total Capital Investment'}, ignore_index=True)
-    df = df._append({'Account': 'TCI per kW', 'Account Title': 'Total Capital Investment per kW'}, ignore_index=True)
+    df = pd.concat([df, pd.DataFrame([{'Account': 'TCI', 'Account Title': 'Total Capital Investment'}])], ignore_index=True)
+    df = pd.concat([df, pd.DataFrame([{'Account': 'TCI per kW', 'Account Title': 'Total Capital Investment per kW'}])], ignore_index=True)
 
     accounts_to_sum = ['OCC', 60]
     cost_column_F = get_estimated_cost_column(df, 'F')
@@ -268,20 +271,29 @@ def calculate_TCI(df, params):
     # -----------------------------------------------------------------------------------------
     power_kWe = 1000 * params['Power MWe']
 
-    df = df._append({'Account': 'TCI','Account Title' : 'Total Capital Investment'}, ignore_index=True)
-    df = df._append({'Account': 'TCI per kW','Account Title' : 'Total Capital Investment per kW'}, ignore_index=True)
+    df = pd.concat([df, pd.DataFrame([{'Account': 'TCI','Account Title' : 'Total Capital Investment'}])], ignore_index=True)
+    df = pd.concat([df, pd.DataFrame([{'Account': 'TCI per kW','Account Title' : 'Total Capital Investment per kW'}])], ignore_index=True)
 
     if 'ITC credit level' in params.keys():
         # Add ITC-adjusted output rows to the dataframe
-        df = df._append({'Account': 'OCC (ITC-adjusted)',        'Account Title': 'Overnight Capital Cost Adjusted for the Investment Tax Credit'}, ignore_index=True)
-        df = df._append({'Account': 'OCC (ITC-adjusted) per kW', 'Account Title': 'Overnight Capital Cost Adjusted for the Investment Tax Credit per kW'}, ignore_index=True)
-        df = df._append({'Account': 'TCI (ITC-adjusted)',        'Account Title': 'Total Capital Investment Adjusted for the Investment Tax Credit'}, ignore_index=True)
-        df = df._append({'Account': 'TCI (ITC-adjusted) per kW', 'Account Title': 'Total Capital Investment Adjusted for the Investment Tax Credit per kW'}, ignore_index=True)
+        df = pd.concat([df, pd.DataFrame([{'Account': 'OCC (ITC-adjusted)',        'Account Title': 'Overnight Capital Cost Adjusted for the Investment Tax Credit'}])], ignore_index=True)
+        df = pd.concat([df, pd.DataFrame([{'Account': 'OCC (ITC-adjusted) per kW', 'Account Title': 'Overnight Capital Cost Adjusted for the Investment Tax Credit per kW'}])], ignore_index=True)
+        df = pd.concat([df, pd.DataFrame([{'Account': 'TCI (ITC-adjusted)',        'Account Title': 'Total Capital Investment Adjusted for the Investment Tax Credit'}])], ignore_index=True)
+        df = pd.concat([df, pd.DataFrame([{'Account': 'TCI (ITC-adjusted) per kW', 'Account Title': 'Total Capital Investment Adjusted for the Investment Tax Credit per kW'}])], ignore_index=True)
         # note: ITC_cost_reduction_factor is computed inside the loop below for each cost column (FOAK and NOAK)
 
     accounts_to_sum = ['OCC', 60]
     cost_column_F = get_estimated_cost_column(df, 'F')
     cost_column_N = get_estimated_cost_column(df, 'N')
+
+    # Per-column eligibility for ITC. FOAK column = unit 1; NOAK column = unit
+    # 'NOAK Unit Number'. A unit qualifies only if its position is <= the cutoff
+    # ('Number of Units Claiming ITC/PTC'). Default cutoff is effectively
+    # infinite so omitting the param preserves the pre-existing behavior.
+    n_credit = params.get('Number of Units Claiming ITC/PTC', 10**9)
+    noak_unit = params.get('NOAK Unit Number', 10)
+    eligible_by_column = {cost_column_F: 1 <= n_credit,
+                          cost_column_N: noak_unit <= n_credit}
 
     for cost_column in [cost_column_F, cost_column_N]:
         # --- Baseline TCI (no ITC) ---
@@ -290,17 +302,24 @@ def calculate_TCI(df, params):
         df.loc[df['Account'] == 'TCI per kW', cost_column] = tci_cost / power_kWe
 
         if 'ITC credit level' in params.keys():
-            # --- ITC-adjusted TCI ---
-            # Step 1: Get the reduction factor for the given ITC level
-            ITC_cost_reduction_factor = ITC_reduction_factor(params['ITC credit level'])
-            # Step 2: Apply the reduction factor to OCC to get the ITC-adjusted OCC
-            # OCC_after_ITC is the reduced OCC value (not the savings amount)
-            OCC_after_ITC = df.loc[df['Account'] == 'OCC', cost_column].values[0] * ITC_cost_reduction_factor
+            if eligible_by_column[cost_column]:
+                # --- ITC-adjusted TCI ---
+                # Step 1: Get the reduction factor for the given ITC level
+                ITC_cost_reduction_factor = ITC_reduction_factor(params['ITC credit level'])
+                # Step 2: Apply the reduction factor to OCC to get the ITC-adjusted OCC
+                # OCC_after_ITC is the reduced OCC value (not the savings amount)
+                OCC_after_ITC = df.loc[df['Account'] == 'OCC', cost_column].values[0] * ITC_cost_reduction_factor
+                # Step 3: Add financing costs (Account 60) to get TCI adjusted for ITC
+                # Note: Account 60 is not reduced by the ITC
+                tci_cost_with_itc = df.loc[df['Account'] == 60, cost_column].values[0] + OCC_after_ITC
+            else:
+                # This unit is past the IRA sunset cutoff — fall back to the
+                # un-subsidized OCC/TCI so the ITC-adjusted columns show the
+                # un-subsidized cost rather than blank/NaN.
+                OCC_after_ITC = df.loc[df['Account'] == 'OCC', cost_column].values[0]
+                tci_cost_with_itc = tci_cost
             df.loc[df['Account'] == 'OCC (ITC-adjusted)', cost_column] = OCC_after_ITC
             df.loc[df['Account'] == 'OCC (ITC-adjusted) per kW', cost_column] = OCC_after_ITC / power_kWe
-            # Step 3: Add financing costs (Account 60) to get TCI adjusted for ITC
-            # Note: Account 60 is not reduced by the ITC
-            tci_cost_with_itc = df.loc[df['Account'] == 60, cost_column].values[0] + OCC_after_ITC
             df.loc[df['Account'] == 'TCI (ITC-adjusted)', cost_column] = tci_cost_with_itc
             df.loc[df['Account'] == 'TCI (ITC-adjusted) per kW', cost_column] = tci_cost_with_itc / power_kWe
 
@@ -322,28 +341,39 @@ def energy_cost_levelized(params, df):
     HEAT_OCC_FACTOR         = 0.795  # OCC for heat = OCC_electric × 0.795
     HEAT_ANNUAL_COST_FACTOR = 0.966  # Annual O&M+fuel cost for heat = baseline × 0.966
 
-    df = df._append({'Account': 'AC',         'Account Title': 'Annualized Cost'}, ignore_index=True)
-    df = df._append({'Account': 'AC per MWh', 'Account Title': 'Annualized Cost per MWh'}, ignore_index=True)
-    df = df._append({'Account': 'LCOE',       'Account Title': 'Levelized Cost Of Energy ($/MWh)'}, ignore_index=True)
+    df = pd.concat([df, pd.DataFrame([{'Account': 'AC',         'Account Title': 'Annualized Cost'}])], ignore_index=True)
+    df = pd.concat([df, pd.DataFrame([{'Account': 'AC per MWh', 'Account Title': 'Annualized Cost per MWh'}])], ignore_index=True)
+    df = pd.concat([df, pd.DataFrame([{'Account': 'LCOE',       'Account Title': 'Levelized Cost Of Energy ($/MWh)'}])], ignore_index=True)
 
     if 'PTC credit value' in params.keys():
-        df = df._append({'Account': 'LCOE with PTC', 'Account Title': 'Levelized Cost Of Energy with PTC ($/MWh)'}, ignore_index=True)
+        df = pd.concat([df, pd.DataFrame([{'Account': 'LCOE with PTC', 'Account Title': 'Levelized Cost Of Energy with PTC ($/MWh)'}])], ignore_index=True)
 
     if 'ITC credit level' in params.keys():
         assert 'PTC credit value' not in params.keys(), '--error: Only PTC or ITC or None must be selected not both.'
-        df = df._append({'Account': 'LCOE (ITC-adjusted)', 'Account Title': 'Levelized Cost Of Energy Adjusted for the Investment Tax Credit ($/MWh)'}, ignore_index=True)
+        df = pd.concat([df, pd.DataFrame([{'Account': 'LCOE (ITC-adjusted)', 'Account Title': 'Levelized Cost Of Energy Adjusted for the Investment Tax Credit ($/MWh)'}])], ignore_index=True)
 
-    df = df._append({'Account': 'LCOH',       'Account Title': 'Levelized Cost Of Heat ($/MWth)'}, ignore_index=True)
+    df = pd.concat([df, pd.DataFrame([{'Account': 'LCOH',       'Account Title': 'Levelized Cost Of Heat ($/MWth)'}])], ignore_index=True)
 
     params.setdefault('Tax Rate', 0.21)
 
     plant_lifetime_years = params['Levelization Period']
-    discount_rate        = params['Interest Rate']
+    discount_rate        = params['Discount Rate']
     power_MWe            = params['Power MWe']
     capacity_factor      = params['Capacity Factor']
     thermal_efficiency   = params['Thermal Efficiency']
     estimated_cost_col_F = get_estimated_cost_column(df, 'F')
     estimated_cost_col_N = get_estimated_cost_column(df, 'N')
+
+    # Per-column eligibility for ITC/PTC under the IRA sunset cutoff.
+    # FOAK column = unit 1; NOAK column = unit 'NOAK Unit Number'. A unit
+    # qualifies only if its position <= 'Number of Units Claiming ITC/PTC'.
+    # Default cutoff is effectively infinite so omitting the param preserves
+    # the pre-existing behavior. When ineligible, the credit-adjusted accounts
+    # fall back to the un-subsidized LCOE.
+    n_credit = params.get('Number of Units Claiming ITC/PTC', 10**9)
+    noak_unit = params.get('NOAK Unit Number', 10)
+    eligible_by_column = {estimated_cost_col_F: 1 <= n_credit,
+                          estimated_cost_col_N: noak_unit <= n_credit}
 
     for estimated_cost_col in [estimated_cost_col_F, estimated_cost_col_N]:
 
@@ -441,30 +471,36 @@ def energy_cost_levelized(params, df):
         df.loc[df['Account'] == 'LCOH', estimated_cost_col] = lcoh
         # -----------------------------------------------------------------------------------------
         if 'PTC credit value' in params.keys():
-            sum_elec = 0
-            sum_ptc  = 0
-            assert 'PTC credit period' in params.keys(), 'error: If a PTC credit value is provided, a corresponding PTC credit period must be given as well.'
-            try:
-                bonus_multiplier = 1.0 + params['domestic_content_bonus'] + params['energy_community_bonus']
-            except:
-                print('--- warning: Assume no extra percentage on the credit')
-                bonus_multiplier = 1.0
+            if eligible_by_column[estimated_cost_col]:
+                sum_elec = 0
+                sum_ptc  = 0
+                assert 'PTC credit period' in params.keys(), 'error: If a PTC credit value is provided, a corresponding PTC credit period must be given as well.'
+                try:
+                    bonus_multiplier = 1.0 + params['domestic_content_bonus'] + params['energy_community_bonus']
+                except:
+                    print('--- warning: Assume no extra percentage on the credit')
+                    bonus_multiplier = 1.0
 
-            for i in range(1 + plant_lifetime_years):
-                if i == 0:
-                    elec_gen = 0
-                    ptc_gen  = 0
-                else:
-                    elec_gen = power_MWe * capacity_factor * 365 * 24
-                    if i > params['PTC credit period']:
-                        ptc_gen = 0
+                for i in range(1 + plant_lifetime_years):
+                    if i == 0:
+                        elec_gen = 0
+                        ptc_gen  = 0
                     else:
-                        ptc_gen = elec_gen * (params['PTC credit value'] * bonus_multiplier) / (1 - params['Tax Rate'])
-                sum_ptc  += ptc_gen  / ((1 + discount_rate)**i)
-                sum_elec += elec_gen / ((1 + discount_rate)**i)
+                        elec_gen = power_MWe * capacity_factor * 365 * 24
+                        if i > params['PTC credit period']:
+                            ptc_gen = 0
+                        else:
+                            ptc_gen = elec_gen * (params['PTC credit value'] * bonus_multiplier) / (1 - params['Tax Rate'])
+                    sum_ptc  += ptc_gen  / ((1 + discount_rate)**i)
+                    sum_elec += elec_gen / ((1 + discount_rate)**i)
 
-            estimated_ptc = sum_ptc / sum_elec
-            df.loc[df['Account'] == 'LCOE with PTC', estimated_cost_col] = lcoe - estimated_ptc
+                estimated_ptc = sum_ptc / sum_elec
+                df.loc[df['Account'] == 'LCOE with PTC', estimated_cost_col] = lcoe - estimated_ptc
+            else:
+                # This unit is past the IRA sunset cutoff — fall back to the
+                # un-subsidized LCOE so the 'LCOE with PTC' cell shows the
+                # un-subsidized cost rather than blank/NaN.
+                df.loc[df['Account'] == 'LCOE with PTC', estimated_cost_col] = lcoe
 
         # -----------------------------------------------------------------------------------------
         # ITC adjustment — unchanged

@@ -7,3 +7,8 @@ output*.xlsx
 *.txt
 *.sh
 *.png
+.DS_Store
+webapp/.venv/
+webapp/.streamlit/secrets.toml
+webapp/analytics.db
+webapp/.last_reboot

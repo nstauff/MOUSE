@@ -33,8 +33,8 @@ def reactor_operation(params):
     Capacity_factor  = 1 - ((num_of_refuel_days_per_year +num_startup_days_after_refuel_per_year + num_startup_days_after_shutdown_per_year )/365)
     params['Capacity Factor'] = Capacity_factor 
     params['Annual Electricity Production'] = Capacity_factor * params['Power MWe'] * 365 * 24 # MWe.hour
-    if params['Operation Mode'] == "Autonomous":
+    if params['Operation Mode'] == "Remotely Monitored":
         params['FTEs Per Onsite Operator Per Year'] =   FTEs_per_operator_per_year_for_startup_after_refueling + FTEs_per_operator_per_year_for_startup_after_emergency_shutdown
-    elif params['Operation Mode'] == "Non-Autonomous":
+    elif params['Operation Mode'] == "On-Site Staffed":
         params['FTEs Per Onsite Operator Per Year'] =  params['FTEs Per Onsite Operator (24/7)']
 

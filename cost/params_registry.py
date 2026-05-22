@@ -94,6 +94,11 @@ PARAMS_REGISTRY = {
         'description': 'Weight fraction of uranium metal in TRIGA fuel (remainder is ZrH matrix)',
         'source': 'User Input', 'hidden': False, 'array_mode': None},
 
+    'er_wo': {
+        'group': 'Materials', 'units': 'weight fraction',
+        'description': 'Weight fraction of erbium burnable poison in TRIGA fuel (0 means no erbium)',
+        'source': 'User Input', 'hidden': False, 'array_mode': None},
+
     'UO2 atom fraction': {
         'group': 'Materials', 'units': 'fraction',
         'description': 'Atom fraction of UO2 in the UCO mixed fuel (remainder is UC)',
@@ -119,10 +124,10 @@ PARAMS_REGISTRY = {
         'description': 'Neutron moderator material type (e.g. ZrH, Graphite, monolith_graphite)',
         'source': 'User Input', 'hidden': False, 'array_mode': None},
 
-    'Moderator Booster': {
+    'Moderator Booster Materials': {
         'group': 'Materials', 'units': '',
-        'description': 'Moderator booster material type used in GCMR assemblies (e.g. ZrH)',
-        'source': 'User Input', 'hidden': False, 'array_mode': None},
+        'description': 'List of moderator booster material names, from innermost to outermost region (e.g. [\'ZrH\'] or [\'ZrH\', \'Graphite\'])',
+        'source': 'User Input', 'hidden': False, 'array_mode': 'list'},
 
     'Matrix Material': {
         'group': 'Materials', 'units': '',
@@ -247,10 +252,10 @@ PARAMS_REGISTRY = {
         'description': 'Radius of the coolant channels in the GCMR assembly',
         'source': 'User Input', 'hidden': False, 'array_mode': None},
 
-    'Moderator Booster Radius': {
+    'Moderator Booster Radii': {
         'group': 'Geometry', 'units': 'cm',
-        'description': 'Radius of the moderator booster pins in the GCMR assembly',
-        'source': 'User Input', 'hidden': False, 'array_mode': None},
+        'description': 'List of cumulative outer radii for moderator booster pin regions, innermost first (e.g. [0.55] or [0.40, 0.55])',
+        'source': 'User Input', 'hidden': False, 'array_mode': 'list'},
 
     'Lattice Pitch': {
         'group': 'Geometry', 'units': 'cm',
@@ -267,14 +272,19 @@ PARAMS_REGISTRY = {
         'description': 'Number of assembly rings along the side of the hexagonal core (GCMR)',
         'source': 'User Input', 'hidden': False, 'array_mode': None},
 
+    'Lattice Apothem': {
+        'group': 'Geometry', 'units': 'cm',
+        'description': 'Distance from the hex lattice center to the midpoint of a flat face of the outermost pin lattice.',
+        'source': 'Calculated', 'hidden': False, 'array_mode': None},
+
     'Lattice Radius': {
         'group': 'Geometry', 'units': 'cm',
-        'description': 'Radius of the hexagonal pin lattice (outer edge of outermost pin ring)',
+        'description': 'Legacy LTMR name for the hex lattice apothem: distance from the hex lattice center to the midpoint of a flat face.',
         'source': 'Calculated', 'hidden': False, 'array_mode': None},
 
     'Assembly FTF': {
         'group': 'Geometry', 'units': 'cm',
-        'description': 'Assembly flat-to-flat distance (distance between parallel faces of the hexagonal assembly)',
+        'description': 'Assembly flat-to-flat distance (distance between opposite parallel faces of the hexagonal assembly).',
         'source': 'Calculated', 'hidden': False, 'array_mode': None},
 
     'Core Radius': {
@@ -320,9 +330,19 @@ PARAMS_REGISTRY = {
     # =========================================================
     # Control Drums
     # =========================================================
+    'Number of Drums': {
+        'group': 'Control Drums', 'units': '',
+        'description': 'Number of control drums in the core (e.g. 6, 12)',
+        'source': 'User Input', 'hidden': False, 'array_mode': None},
+
+    'Drum Absorber Arc Degrees': {
+        'group': 'Control Drums', 'units': 'degrees',
+        'description': 'Angular span of the absorber arc on each control drum',
+        'source': 'User Input', 'hidden': False, 'array_mode': None},
+
     'Drum Radius': {
         'group': 'Control Drums', 'units': 'cm',
-        'description': 'Outer radius of each control drum',
+        'description': 'Outer radius of each control drum. If not specified, it is automatically set to the largest allowable value that avoids drum overlap.',
         'source': 'User Input', 'hidden': False, 'array_mode': None},
 
     'Drum Absorber Thickness': {
@@ -458,16 +478,21 @@ PARAMS_REGISTRY = {
 
     'Time Steps': {
         'group': 'Overall System', 'units': 's',
-        'description': 'Duration of each depletion time step',
-        'source': 'User Input', 'hidden': False, 'array_mode': 'as_is'},  # was 'steps'
+        'description': 'User-specified depletion step durations used by the integrator',
+        'source': 'User Input', 'hidden': False, 'array_mode': 'as_is'},
 
     # =========================================================
     # OpenMC Settings
     # =========================================================
-    'SD Margin Calc': {
+   'Shutdown Margin Calc': {
         'group': 'OpenMC Settings', 'units': '',
-        'description': 'Whether shutdown margin was calculated (True = ARI simulation was run)',
+        'description': 'Whether shutdown margin is calculated. When True, the shutdown-state keff is evaluated with the absorber facing the core (ARI) at Cold Shutdown Temperature, and shutdown margin metrics are reported from ((1 - k_s) / k_s).',
         'source': 'User Input', 'hidden': False, 'array_mode': None},
+
+    'Cold Shutdown Temperature': {
+    'group': 'OpenMC Settings', 'units': 'K',
+    'description': 'Temperature used for the shutdown-state (ARI) keff calculation during shutdown margin evaluation.',
+    'source': 'User Input', 'hidden': False, 'array_mode': None},
 
     'Isothermal Temperature Coefficients': {
         'group': 'OpenMC Settings', 'units': '',
@@ -491,6 +516,46 @@ PARAMS_REGISTRY = {
         'group': 'Physics Results', 'units': 'days',
         'description': 'Estimated fuel cycle length — time for the 3D-corrected keff to fall to 1.0',
         'source': 'Calculated', 'hidden': False, 'array_mode': None},
+
+    'Depletion Time Steps': {
+        'group': 'Physics Results',
+        'units': 'days',
+        'description': 'Calculated cumulative depletion times corresponding to the reported keff values and used as the x-axis in keff_comparison_vs_Time.png.',
+        'source': 'Calculated',
+        'hidden': False,
+        'array_mode': 'as_is'},
+
+    'BOL Axial Non-Leakage Probability': {
+        'group': 'Physics Results',
+        'units': 'fraction',
+        'description': 'Beginning-of-life axial non-leakage probability from the 2D-to-3D buckling correction model.',
+        'source': 'Calculated',
+        'hidden': False,
+        'array_mode': None},
+
+    'Estimated Axial Leakage (%)': {
+        'group': 'Physics Results',
+        'units': '%',
+        'description': 'Estimated beginning-of-life axial neutron leakage percentage from the axial buckling correction model, computed as 100 × (1 - axial non-leakage probability).',
+        'source': 'Calculated',
+        'hidden': False,
+        'array_mode': None},
+
+    'BOL Total Non-Leakage Probability': {
+        'group': 'Physics Results',
+        'units': 'fraction',
+        'description': 'Beginning-of-life total non-leakage probability from the axial-plus-radial buckling model. Returns NaN when Core Radius is not available.',
+        'source': 'Calculated',
+        'hidden': False,
+        'array_mode': None},
+
+    'Estimated Total Leakage (%)': {
+        'group': 'Physics Results',
+        'units': '%',
+        'description': 'Estimated beginning-of-life total neutron leakage percentage from the axial-plus-radial buckling model, computed as 100 × (1 - total non-leakage probability). Returns NaN when Core Radius is not available.',
+        'source': 'Calculated',
+        'hidden': False,
+        'array_mode': None},
 
     'Mass U235': {
         'group': 'Physics Results', 'units': 'g',
@@ -536,18 +601,25 @@ PARAMS_REGISTRY = {
                        'Use this value for safety analysis.',
         'source': 'Calculated', 'hidden': False, 'array_mode': None},
 
-    'SDM 2D': {
+    'Most Limiting Shutdown Margin 2D': {
+    'group': 'Physics Results', 'units': 'pcm',
+    'description': 'Most limiting shutdown margin from the 2D simulation, computed as min((1 - k_s) / k_s) over depletion steps, where k_s is the shutdown-state keff with the absorber facing the core (ARI) at Cold Shutdown Temperature.',
+    'source': 'Calculated', 'hidden': False, 'array_mode': None},
+
+    'Maximum Shutdown Margin 2D': {
         'group': 'Physics Results', 'units': 'pcm',
-        'description': 'Shutdown margin from the 2D simulation (ARO keff minus ARI keff). '
-                       'May be negative due to 2D overestimation of keff — use 3D corrected value for safety conclusions.',
+        'description': 'Maximum shutdown margin from the 2D simulation, computed as max((1 - k_s) / k_s) over depletion steps, where k_s is the shutdown-state keff with the absorber facing the core (ARI) at Cold Shutdown Temperature.',
         'source': 'Calculated', 'hidden': False, 'array_mode': None},
 
-    'SDM 3D (2D corrected)': {
+    'Most Limiting Shutdown Margin 3D (2D corrected)': {
         'group': 'Physics Results', 'units': 'pcm',
-        'description': 'Shutdown margin corrected from 2D to 3D using axial neutron leakage correction. '
-                       'Positive values confirm the reactor can be shut down with all drums inserted. '
-                       'Use this value for safety analysis.',
+        'description': 'Most limiting shutdown margin corrected from 2D to 3D using axial neutron leakage correction, computed as min((1 - k_s) / k_s) over depletion steps, where k_s is the shutdown-state corrected keff with the absorber facing the core (ARI) at Cold Shutdown Temperature.',
         'source': 'Calculated', 'hidden': False, 'array_mode': None},
+
+    'Maximum Shutdown Margin 3D (2D corrected)': {
+        'group': 'Physics Results', 'units': 'pcm',
+        'description': 'Maximum shutdown margin corrected from 2D to 3D using axial neutron leakage correction, computed as max((1 - k_s) / k_s) over depletion steps, where k_s is the shutdown-state corrected keff with the absorber facing the core (ARI) at Cold Shutdown Temperature.',
+        'source': 'Calculated', 'hidden': False, 'array_mode': None},    
 
     'Max Peaking Factor': {
         'group': 'Physics Results', 'units': 'unitless',
@@ -559,9 +631,9 @@ PARAMS_REGISTRY = {
         'description': 'Depletion step number at which the maximum peaking factor occurs',
         'source': 'Calculated', 'hidden': False, 'array_mode': None},
 
-    'Rod ID with Max Peaking Factor': {
+    'Region ID with Max Peaking Factor': {
         'group': 'Physics Results', 'units': 'unitless',
-        'description': 'Pin/rod ID with the highest peaking factor across all depletion steps',
+        'description': 'Region ID with the highest peaking factor across all depletion steps; for LTMR this is typically a pin/distribcell ID, while for GCMR it is a mesh-region index',
         'source': 'Calculated', 'hidden': False, 'array_mode': None},
 
     'Max Peaking Factors per Step': {
@@ -579,13 +651,13 @@ PARAMS_REGISTRY = {
 
     'keff 2D': {
         'group': 'Physics Results', 'units': '',
-        'description': 'keff at each burnup step from 2D OpenMC simulation',
-        'source': 'Calculated', 'hidden': False, 'array_mode': 'as_is'},  # was 'summary'
+        'description': 'keff at each burnup step for the operating configuration (ARO) from the 2D OpenMC simulation, evaluated at Common Temperature.',
+        'source': 'Calculated', 'hidden': False, 'array_mode': 'as_is'},
 
     'keff 3D (2D corrected)': {
         'group': 'Physics Results', 'units': '',
-        'description': 'keff at each burnup step corrected from 2D to 3D using axial leakage correction',
-        'source': 'Calculated', 'hidden': False, 'array_mode': 'as_is'},  # was 'summary'
+        'description': 'keff at each burnup step for the operating configuration (ARO), corrected from 2D to 3D using axial leakage correction and evaluated at Common Temperature.',
+        'source': 'Calculated', 'hidden': False, 'array_mode': 'as_is'},
 
     # =========================================================
     # Primary Loop & Balance of Plant
@@ -926,7 +998,7 @@ PARAMS_REGISTRY = {
     # =========================================================
     'Operation Mode': {
         'group': 'Operation', 'units': '',
-        'description': 'Reactor operation mode: Autonomous (remote) or Non-Autonomous (staffed)',
+        'description': 'Reactor operation mode: Remotely Monitored or On-Site Staffed',
         'source': 'User Input', 'hidden': False, 'array_mode': None},
 
     'Number of Operators': {
@@ -1019,11 +1091,6 @@ PARAMS_REGISTRY = {
         'description': 'Number of fuel cycles between scheduled integrated heat exchanger replacements',
         'source': 'User Input', 'hidden': False, 'array_mode': None},
 
-    'Mainenance to Direct Cost Ratio': {
-        'group': 'Operation', 'units': 'fraction',
-        'description': 'Ratio of annual non-replacement maintenance cost to total direct capital cost',
-        'source': 'User Input', 'hidden': False, 'array_mode': None},
-
     'Maintenance to Direct Cost Ratio': {
         'group': 'Operation', 'units': 'fraction',
         'description': 'Ratio of annual non-replacement maintenance cost to total direct capital cost',
@@ -1039,7 +1106,12 @@ PARAMS_REGISTRY = {
     # =========================================================
     'Interest Rate': {
         'group': 'Economic Parameters', 'units': 'fraction',
-        'description': 'Annual discount rate used for LCOE levelization (weighted average cost of capital)',
+        'description': 'Annual cost of debt used to calculate interest during construction (Account 62)',
+        'source': 'User Input', 'hidden': False, 'array_mode': None},
+
+    'Discount Rate': {
+        'group': 'Economic Parameters', 'units': 'fraction',
+        'description': 'Annual discount rate (WACC) used for LCOE levelization and cost annualization',
         'source': 'User Input', 'hidden': False, 'array_mode': None},
 
     'Construction Duration': {
@@ -1917,6 +1989,14 @@ PARAMS_REGISTRY = {
         'description': 'IRA stackable bonus for siting the plant in a designated energy community (+10% on base PTC)',
         'source': 'User Input', 'hidden': False, 'array_mode': None},
 
+    'Number of Units Claiming ITC/PTC': {
+        'group': 'Tax Credits', 'units': '',
+        'description': 'Number of units in the order book that may claim ITC or PTC before the IRA sunset. '
+                       'A unit is eligible only if its position in the deployment sequence is <= this cutoff. '
+                       'FOAK is unit 1; the NOAK column represents unit "NOAK Unit Number". '
+                       'When a unit is past the cutoff, ITC/PTC-adjusted outputs fall back to the un-subsidized values.',
+        'source': 'User Input', 'hidden': False, 'array_mode': None},
+
     # =========================================================
     # Debug / Intermediate Values
     # =========================================================
@@ -1933,19 +2013,28 @@ PARAMS_REGISTRY = {
 
     'keff 2D ARI': {
         'group': 'Debug / Intermediate Values', 'units': '',
-        'description': 'keff at each burnup step with all control drums inserted (ARI) from 2D simulation — '
-                       'used to calculate shutdown margin',
+        'description': 'keff at each burnup step for the shutdown configuration with all control drums inserted (ARI) from the 2D simulation, evaluated at Cold Shutdown Temperature for shutdown margin calculation.',
         'source': 'Calculated', 'hidden': False, 'array_mode': 'summary'},
 
     'keff 3D (2D corrected) ARI': {
         'group': 'Debug / Intermediate Values', 'units': '',
-        'description': 'keff with all rods inserted corrected to 3D — used to calculate shutdown margin',
+        'description': 'keff at each burnup step for the shutdown configuration with all control drums inserted (ARI), corrected from 2D to 3D and evaluated at Cold Shutdown Temperature for shutdown margin calculation.',
         'source': 'Calculated', 'hidden': False, 'array_mode': 'summary'},
 
     'number of drums': {
         'group': 'Debug / Intermediate Values', 'units': '',
         'description': 'Total number of control drum positions in the core lattice (GCMR internal variable)',
         'source': 'Calculated', 'hidden': False, 'array_mode': None},
+
+    'keff 2D ARO': {
+        'group': 'Debug / Intermediate Values', 'units': '',
+        'description': 'keff at each burnup step for the operating configuration with all control drums withdrawn (ARO) from the 2D simulation, evaluated at Common Temperature.',
+        'source': 'Calculated', 'hidden': False, 'array_mode': 'summary'},
+
+    'keff 3D (2D corrected) ARO': {
+        'group': 'Debug / Intermediate Values', 'units': '',
+        'description': 'keff at each burnup step for the operating configuration with all control drums withdrawn (ARO), corrected from 2D to 3D and evaluated at Common Temperature.',
+        'source': 'Calculated', 'hidden': False, 'array_mode': 'summary'},
 
     'Constant': {
         'group': 'Debug / Intermediate Values', 'units': '',

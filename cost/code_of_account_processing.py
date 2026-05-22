@@ -7,20 +7,30 @@ def remove_irrelevant_account(df, params):
     has_sec_optional = 'Sec Optional Variable' in df.columns  # ← add this check
 
     for index, row in df.iterrows():
+        def _optional_matches(param_val, expected_val):
+            """Return True if param_val equals expected_val, or if param_val is a list that contains expected_val."""
+            if isinstance(param_val, list):
+                return expected_val in param_val
+            return param_val == expected_val
+
         # Check for 'Optional Variable'
         if not pd.isna(row['Optional Variable']):
-            if row['Optional Variable'] in params and params[row['Optional Variable']] == row['Optional Value']:
+            if row['Optional Variable'] in params and _optional_matches(params[row['Optional Variable']], row['Optional Value']):
                 print("\n")
                 print(f"For the cost of the Account {row['Account']}: {row['Account Name']}, the {row['Optional Variable']} is selected to be {row['Optional Value']}")
+                # Append the selected optional value to Account Title for clarity in the output
+                df.at[index, 'Account Title'] = str(row['Account Title']) + ' - ' + str(row['Optional Value'])
             else:
                 indices_to_drop.append(index)
                 continue
 
         # Check for 'Sec Optional Variable' only if column exists
         if has_sec_optional and not pd.isna(row['Sec Optional Variable']):
-            if row['Sec Optional Variable'] in params and params[row['Sec Optional Variable']] == row['Sec Optional Value']:
+            if row['Sec Optional Variable'] in params and _optional_matches(params[row['Sec Optional Variable']], row['Sec Optional Value']):
                 print("\n")
                 print(f"For the cost of the Account {row['Account']}: {row['Account Name']}, the {row['Sec Optional Variable']} is selected to be {row['Sec Optional Value']}")
+                # Also append the sec optional value
+                df.at[index, 'Account Title'] = str(df.at[index, 'Account Title']) + ' - ' + str(row['Sec Optional Value'])
             else:
                 indices_to_drop.append(index)
                 continue
@@ -35,27 +45,31 @@ def find_children_accounts(df):
     # Find the column name that starts with "Estimated Cost"
     estimated_cost_column = [col for col in df.columns if col.startswith("FOAK Estimated Cost")][0]
 
-    # Initialize a list for children accounts
-    children_accounts = [None] * len(df)
-    
+    # Pull columns once into numpy arrays. df.iloc[i][col] in a nested loop
+    # is dominated by per-call overhead — numpy indexing on a flat array
+    # is 10–50× faster for the same logic.
+    levels = df['Level'].to_numpy()
+    is_nan_cost = pd.isna(df[estimated_cost_column].to_numpy())
+    index_strs = [str(idx) for idx in df.index]
+    n = len(df)
+
+    children_accounts = [None] * n
+
     for target_level in range(4, -1, -1):
         source_level = target_level + 1
-        # Iterate over the dataframe
-        for i in range(len(df)):
-            if df.iloc[i]['Level'] == target_level and pd.isna(df.iloc[i][estimated_cost_column]):
+        for i in range(n):
+            if levels[i] == target_level and is_nan_cost[i]:
                 children = []
-                for j in range(i + 1, len(df)):
-                    if df.iloc[j]['Level'] == source_level:
-                        children.append(str(df.iloc[j]['Account']))  # Convert to string
-                    elif df.iloc[j]['Level'] < source_level:
+                for j in range(i + 1, n):
+                    lvl_j = levels[j]
+                    if lvl_j == source_level:
+                        children.append(index_strs[j])
+                    elif lvl_j < source_level:
                         break
-                # Convert the list to a comma-separated string
-                children_str = ','.join(children) if children else None
-                children_accounts[i] = children_str
+                children_accounts[i] = ','.join(children) if children else None
 
-    # Assign the list to the DataFrame
     df['Children Accounts'] = children_accounts
-    return df    
+    return df
 
 
 def get_estimated_cost_column(df, option):
@@ -96,7 +110,7 @@ def create_cost_dictionary(df, params, tracked_params_list):
 
     # Physics safety metrics — tracked from params directly (not from the cost dataframe)
     # These are always included if present in params; set to nan if not calculated
-    # (e.g. when SD Margin Calc or Isothermal Temperature Coefficients are False)
+    # (e.g. when Shutdown Margin Calc or Isothermal Temperature Coefficients are False)
     physics_metrics = ['Temp Coeff 3D (2D corrected)', 'SDM 3D (2D corrected)']
     for metric in physics_metrics:
         if metric in params.keys():

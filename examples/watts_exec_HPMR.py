@@ -40,7 +40,7 @@ update_params({
 # **************************************************************************************************************************
 #                                                Sec. 1: Materials
 # **************************************************************************************************************************
-# These params are based on this report: https://inldigitallibrary.inl.gov/sites/sti/sti/Sort_99962.pdf
+# These parameters are based on: https://inldigitallibrary.inl.gov/sites/sti/sti/Sort_99962.pdf
 update_params({
     'reactor type': "HPMR",
     'TRISO Fueled': "Yes",
@@ -86,6 +86,7 @@ number_of_heatpipes_hmpr(params)
 # ************************************************************************************************************************** 
 
 update_params({
+    'Drum Count': 12,   # allowed: 6, 12, 18, 24
     'Drum Radius': 0.4 * params['Radial Reflector Thickness'], 
     'Drum Absorber Thickness': 1,  # cm
     'Drum Height': params['Active Height']
@@ -117,7 +118,7 @@ params['Heat Flux'] = calculate_heat_flux(params)
 # A positive SDM means the reactor can be safely shut down with all drums inserted.
 # Recommended: True for final design verification; can be set to False to save
 # computation time during early design exploration.
-params['SD Margin Calc'] = False  # True or False
+params['Shutdown Margin Calc'] = False  # True or False
 
 # --- Isothermal Temperature Coefficient ---
 # When True, two additional OpenMC simulations are run: one at 'Common Temperature'
@@ -125,7 +126,7 @@ params['SD Margin Calc'] = False  # True or False
 # coefficient is then calculated in units of pcm/K.
 # A negative coefficient indicates the reactor is self-stabilizing (desired behavior).
 # Recommended: True for safety analysis; can be set to False to save computation time.
-params['Isothermal Temperature Coefficients'] = True  # True or False
+# params['Isothermal Temperature Coefficients'] = True  # True or False
 
 # --- Temperature Perturbation ---
 # The temperature step (in Kelvin) used for the isothermal temperature coefficient calculation.
@@ -135,7 +136,7 @@ params['Isothermal Temperature Coefficients'] = True  # True or False
 # avoiding nonlinear effects. 
 # Units: Kelvin
 # This parameter is REQUIRED only when 'Isothermal Temperature Coefficients' is True.
-params['Temperature Perturbation'] = 100  # K
+# params['Temperature Perturbation'] = 100  # K
 
 heat_flux_monitor = monitor_heat_flux(params)
 run_openmc(build_openmc_model_HPMR, heat_flux_monitor, params)
@@ -179,19 +180,20 @@ params['In Vessel Shield Outer Radius'] = params['Core Radius'] + params['In Ves
 # ************************************************************************************************************************** 
 update_params({
     'Vessel Radius': params['Core Radius'] + params['In Vessel Shield Thickness'],
-    'Vessel Thickness': 1,  # cm
-    'Vessel Lower Plenum Height': 42.848 - 40,  # cm
-    'Vessel Upper Plenum Height': 47.152,       # cm
+    'Vessel Thickness': 2,  # cm — ASME Sec III Div 5 high-T creep minimum at >650°C; vessel at atmospheric (heat pipes individually sealed); refs: INL HPMR Design A, eVinci, Oklo (was 1, below Div 5 minimum)
+    'Vessel Lower Plenum Height': 20,  # cm — heat-pipe header / lower core support; refs: INL HPMR Design A, MARVEL (was 2.848, unit-conv bug)
+    'Vessel Upper Plenum Height': 47.152,       # cm — heat-pipe condenser interface to secondary HX
     'Vessel Upper Gas Gap': 0,
     'Vessel Bottom Depth': 32.129,
     'Vessel Material': 'stainless_steel',
-    'Gap Between Vessel And Guard Vessel': 0,  
+    # Guard vessel intentionally removed: each heat pipe is individually sealed (Na in SS316), no bulk primary coolant inventory requiring secondary containment
+    'Gap Between Vessel And Guard Vessel': 0,
     'Guard Vessel Thickness': 0,  # cm
-    'Guard Vessel Material': 'low_alloy_steel', 
+    'Guard Vessel Material': 'low_alloy_steel',
     'Gap Between Guard Vessel And Cooling Vessel': 5,  # cm
     'Cooling Vessel Thickness': 0.5,  # cm
     'Cooling Vessel Material': 'stainless_steel',
-    'Gap Between Cooling Vessel And Intake Vessel': 4,  # cm
+    'Gap Between Cooling Vessel And Intake Vessel': 5,  # cm — Hejzlar & Buongiorno 2007 NED RVACS minimum (was 4)
     'Intake Vessel Thickness': 0.5,  # cm
     'Intake Vessel Material': 'stainless_steel'
 })
@@ -203,7 +205,7 @@ calculate_shielding_masses(params)
 #                                           Sec. 9 : Operation
 # **************************************************************************************************************************
 update_params({
-    'Operation Mode': "Autonomous",
+    'Operation Mode': "Remotely Monitored",
     'Number of Operators': 2,
     'Levelization Period': 60,  # years
     'Refueling Period': 7,
@@ -214,7 +216,7 @@ update_params({
     'Security Staff Per Shift': 1
 })
 
-params['Onsite Coolant Inventory'] = 1 * 24.417 * 8.2402 # kg
+params['Onsite Coolant Inventory'] = 0  # the helium gap is extremely thin and can be neglected
 params['Replacement Coolant Inventory'] = 0
 # params['Annual Coolant Supply Frequency'] = 1 if params['Primary Loop Purification'] else 6
 
@@ -224,7 +226,7 @@ params['A75: Vessel Replacement Period (cycles)']        = np.floor(10/total_ref
 params['A75: Core Barrel Replacement Period (cycles)']   = np.floor(10/total_refueling_period_yr)
 params['A75: Reflector Replacement Period (cycles)']     = np.floor(10/total_refueling_period_yr)
 params['A75: Drum Replacement Period (cycles)']          = np.floor(10/total_refueling_period_yr)
-params['Mainenance to Direct Cost Ratio']                = 0.015
+params['Maintenance to Direct Cost Ratio']                = 0.015
 params['A78: CAPEX to Decommissioning Cost Ratio'] = 0.15
 
 # **************************************************************************************************************************
@@ -232,7 +234,7 @@ params['A78: CAPEX to Decommissioning Cost Ratio'] = 0.15
 # **************************************************************************************************************************
 update_params({
     'Land Area': 18,  # acres
-    'Escalation Year': 2024,
+    'Escalation Year': 2025,
     'Excavation Volume': 412.605,  # m^3
     'Reactor Building Slab Roof Volume': (9750*6502.4*1500)/1e9,  # m^3
     'Reactor Building Basement Volume': (9750*6502.4*1500)/1e9,  # m^3
@@ -267,6 +269,7 @@ update_params({
     'Radwaste Building Basement Volume': 0,  # m^3
     'Radwaste Building Exterior Walls Volume': 0,  # m^3,
     'Interest Rate': 0.07,
+    'Discount Rate': 0.07,
     'Construction Duration': 12,  # months
     'Debt To Equity Ratio': 1,
     'Annual Return': 0.0475,
@@ -277,13 +280,18 @@ update_params({
 # This example does not apply any ITC or PTC tax credits.
 # To apply ITC, add: params['ITC credit level'] = 0.30  (see watts_exec_LTMR.py for full details)
 # To apply PTC, add: params['PTC credit value'] = 15.0  (see watts_exec_GCMR.py for full details)
+# When ITC/PTC is enabled, optionally cap how many units may claim the credit
+# under the IRA sunset:
+#     params['Number of Units Claiming ITC/PTC'] = 10
+# (FOAK = unit 1; NOAK column = unit 'NOAK Unit Number'. Units past the cutoff
+# fall back to the un-subsidized values.)
 # Note: ITC and PTC are mutually exclusive — only one can be selected per project.
 
 # **************************************************************************************************************************
 #                                           Sec. 11: Post Processing
 # **************************************************************************************************************************
-params['Number of Samples'] = 100 # Accounting for cost uncertainties
+params['Number of Samples'] = 1  # number of samples for cost uncertainty analysis
 # Estimate costs using the cost database file and save the output to an Excel file
-estimate = detailed_bottom_up_cost_estimate('cost/Cost_Database.xlsx', params, "examples/output_HPMR.xlsx")
-elapsed_time = (time.time() - time_start) / 60  # Calculate execution time
+estimate = detailed_bottom_up_cost_estimate('cost/Cost_Database.xlsx')
+elapsed_time = (time.time() - time_start) / 60  # calculate execution time
 print('Execution time:', np.round(elapsed_time, 1), 'minutes')

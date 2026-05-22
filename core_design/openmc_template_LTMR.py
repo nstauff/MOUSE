@@ -3,8 +3,14 @@
 import openmc
 import numpy as np
 from core_design.openmc_materials_database import collect_materials_data
-from core_design.utils import create_universe_plot, circle_area, create_cells
-
+from core_design.utils import (
+    create_universe_plot,
+    circle_area,
+    create_cells,
+    calculate_hex_edge_length,
+    calculate_hex_apothem,
+)
+import copy
 
 
 # **************************************************************************************************************************
@@ -12,35 +18,38 @@ from core_design.utils import create_universe_plot, circle_area, create_cells
 # **************************************************************************************************************************
 
 """
-Helper functions are smaller, reusable functions ar defined to perform specific tasks,
-and then used later to simplify and organize the code
+Helper functions are smaller, reusable functions that are defined to perform specific tasks,
+and then used later to simplify and organize the code.
 """
+
 
 def create_pin_regions(params, pin_type):
     """
     Creating the pin regions
     @ In, params, dict, The parameters that are used to "fill in" input files with placeholders.
     @ In, pin_type, str, The type of pin ('moderator' or 'fuel').
-    @ out, regions, dict, regions of the specified pin
+    @ out, regions, dict, Regions of the specified pin.
     """
 
     if pin_type == 'moderator':
         # Extract the radii values for different regions of the moderator pin from the input parameters
-        pin_radii = {'moderator': params['Moderator Pin Radii'][0],
-                     'cladding': params['Moderator Pin Radii'][1]
+        pin_radii = {
+            'moderator': params['Moderator Pin Radii'][0],
+            'cladding': params['Moderator Pin Radii'][1]
         }
         region_keys = ['moderator', 'cladding', 'coolant']
 
     elif pin_type == 'fuel':
         # Extract the radii values for different regions of the fuel pin from the input parameters
-        pin_radii = {'insert': params['Fuel Pin Radii'][0],
-                     'gap1': params['Fuel Pin Radii'][1],
-                     'fuel_meat': params['Fuel Pin Radii'][2],
-                     'gap2': params['Fuel Pin Radii'][3],
-                     'cladding': params['Fuel Pin Radii'][4]
+        pin_radii = {
+            'insert': params['Fuel Pin Radii'][0],
+            'gap1': params['Fuel Pin Radii'][1],
+            'fuel_meat': params['Fuel Pin Radii'][2],
+            'gap2': params['Fuel Pin Radii'][3],
+            'cladding': params['Fuel Pin Radii'][4]
         }
         region_keys = ['insert', 'gap1', 'fuel_meat', 'gap2', 'cladding', 'coolant']
-    
+
     else:
         raise ValueError("Invalid pin type. Must be 'moderator' or 'fuel'.")
 
@@ -54,198 +63,361 @@ def create_pin_regions(params, pin_type):
         if i == 0:
             regions[key] = -shells[i]
         else:
-            regions[key] = +shells[i-1] & -shells[i]
+            regions[key] = +shells[i - 1] & -shells[i]
     regions[region_keys[-1]] = +shells[-1]
 
     return regions
 
 
+def _get_valid_drum_counts():
+    return [6, 12, 18, 24, 30, 36]
 
-def create_drums_universe(params, control_drum_absorber_material, control_drum_reflector_material):
-    """
-    Creating the universe of control drums
-    @ In, params, dict, The parameters that are used to "fill in" input files with placeholders.
-    @ In, control_drum_absorber_material, openmc.material.Material, The control drum material (absorber)
-    @ In, control_drum_reflector_material, openmc.material.Material, The control drum material (reflector)
-    @ out,list, list of universes for control drums
-    """
 
-    
+def _get_drum_layout_quantities(params, drum_radius):
+    number_of_drums = params['Number of Drums']
+    valid_drum_counts = _get_valid_drum_counts()
+    if number_of_drums not in valid_drum_counts:
+        raise ValueError(f"Number of Drums must be one of {valid_drum_counts}, got {number_of_drums}")
+
+    drums_per_side = number_of_drums // 6
+    hex_edge_length = calculate_hex_edge_length(params)
+    apothem = calculate_hex_apothem(params)
+
+    drum_tube_radius = drum_radius + drum_radius / 90.0
+    side_length = hex_edge_length
+
+    return drums_per_side, hex_edge_length, apothem, drum_tube_radius, side_length
+
+
+def _drum_positions_for_radius(params, drum_radius):
+    drums_per_side, _, apothem, drum_tube_radius, side_length = _get_drum_layout_quantities(params, drum_radius)
+
+    face_angles = [k * np.pi / 3 for k in range(6)]
+    positions = []
+
+    for face_angle in face_angles:
+        along_x = -np.sin(face_angle)
+        along_y = np.cos(face_angle)
+
+        radial_distance = apothem + drum_tube_radius
+        face_center_x = radial_distance * np.cos(face_angle)
+        face_center_y = radial_distance * np.sin(face_angle)
+
+        for i in range(drums_per_side):
+            offset = side_length * (i - (drums_per_side - 1) / 2.0) / drums_per_side
+            x = face_center_x + offset * along_x
+            y = face_center_y + offset * along_y
+            positions.append((x, y, np.degrees(face_angle)))
+
+    return positions, drum_tube_radius, side_length
+
+
+def _drum_radius_is_feasible(params, drum_radius):
+    positions, drum_tube_radius, side_length = _drum_positions_for_radius(params, drum_radius)
+    drums_per_side = params['Number of Drums'] // 6
+
+    # Same-face spacing check
+    same_face_spacing = side_length / drums_per_side
+    if 2.0 * drum_tube_radius > same_face_spacing:
+        return False
+
+    # Full pairwise overlap check
+    min_center_dist = 2.0 * drum_tube_radius
+    for i in range(len(positions)):
+        x1, y1, _ = positions[i]
+        for j in range(i + 1, len(positions)):
+            x2, y2, _ = positions[j]
+            dist = np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+            if dist < min_center_dist:
+                return False
+
+    return True
+
+
+def calculate_max_drum_radius(params, tol=1e-6, max_iter=100):
+    """
+    Compute the maximum feasible drum radius (cm) that avoids overlap for the
+    current lattice/drum configuration.
+    """
+    number_of_drums = params['Number of Drums']
+    valid_drum_counts = _get_valid_drum_counts()
+    if number_of_drums not in valid_drum_counts:
+        raise ValueError(f"Number of Drums must be one of {valid_drum_counts}, got {number_of_drums}")
+
+    drums_per_side = number_of_drums // 6
+    hex_edge_length = calculate_hex_edge_length(params)
+    side_length = hex_edge_length
+
+    # Same-face spacing gives a safe upper bound for the physical drum radius
+    upper_bound = (side_length / (2.0 * drums_per_side)) * 90.0 / 91.0
+    lower_bound = 0.0
+
+    for _ in range(max_iter):
+        mid = 0.5 * (lower_bound + upper_bound)
+        if _drum_radius_is_feasible(params, mid):
+            lower_bound = mid
+        else:
+            upper_bound = mid
+
+        if upper_bound - lower_bound < tol:
+            break
+
+    return lower_bound
+
+
+def resolve_drum_radius(params):
+    """
+    If Drum Radius is not provided, set it to the maximum feasible value (cm).
+    The resolved numeric value overwrites params['Drum Radius'] so all
+    downstream calculations use a number.
+    """
+    if 'Drum Radius' not in params:
+        params['Drum Radius'] = calculate_max_drum_radius(params)
+
+    drum_radius = params['Drum Radius']
+    if not isinstance(drum_radius, (int, float, np.floating)):
+        raise ValueError(
+            f"Drum Radius must be numeric if provided, got {drum_radius!r}"
+        )
+
+    params['Drum Radius'] = float(drum_radius)
+    return params['Drum Radius']
+
+
+def create_drums_universe(params, control_drum_absorber_material, control_drum_reflector_material, drum_positions):
+    number_of_drums = params['Number of Drums']
+    valid_drum_counts = _get_valid_drum_counts()
+    if number_of_drums not in valid_drum_counts:
+        raise ValueError(f"Number of Drums must be one of {valid_drum_counts}, got {number_of_drums}")
+
     absorber_thickness = params['Drum Absorber Thickness']
-    drum_radius = params['Drum Radius'] 
+    drum_radius = resolve_drum_radius(params)
+    absorber_arc = np.deg2rad(params['Drum Absorber Arc Degrees'])
 
-    # Define the arc angle for the absorber and reference angle for rotation
-    absorber_arc = np.pi/3
-    REFERENCE_ANGLE = 0
-    rotation_angle = 180 
-    if params['SD Margin Calc']:
-        rotation_angle = 0
-    else:
-        rotation_angle = 180
-    # Create cylindrical surfaces for the inner and outer shells of the control drum
-    cd_inner_shell = openmc.ZCylinder(r= drum_radius - absorber_thickness)
-    cd_outer_shell = openmc.ZCylinder(r= drum_radius)
+    # Shutdown Margin Calc = True means build drums in shutdown (ARI) orientation.
+    # Shutdown Margin Calc = False means build drums in operating (ARO) orientation.
+    drum_state = 'shutdown' if params['Shutdown Margin Calc'] else 'operation'
+    rotation_angle = 0 if drum_state == 'shutdown' else 180
 
-    # Define planes to cut the absorber arc segment
-    cutting_plane_1 = openmc.Plane(a=1, b=absorber_arc/2)
-    cutting_plane_2 = openmc.Plane(a=1, b=-absorber_arc/2)
+    cd_inner_shell = openmc.ZCylinder(r=drum_radius - absorber_thickness)
+    cd_outer_shell = openmc.ZCylinder(r=drum_radius)
+    cutting_plane_1 = openmc.Plane(a=np.sin(absorber_arc / 2), b=np.cos(absorber_arc / 2))
+    cutting_plane_2 = openmc.Plane(a=np.sin(absorber_arc / 2), b=-np.cos(absorber_arc / 2))
 
-
-    # Define the regions for the absorber and reflector
     drum_absorber_region = +cd_inner_shell & -cd_outer_shell & -cutting_plane_1 & -cutting_plane_2
     drum_reflector_region = -cd_outer_shell & ~drum_absorber_region
     drum_outside_region = +cd_outer_shell
 
-    # Create cells for the absorber, reflector, and exterior
-    drum_absorber = openmc.Cell(name='drum_absorber', fill=control_drum_absorber_material, region=drum_absorber_region)
-    drum_reflector = openmc.Cell(name='drum_reflector', fill=control_drum_reflector_material, region=drum_reflector_region)
+    drum_absorber = openmc.Cell(
+        name='drum_absorber',
+        fill=control_drum_absorber_material,
+        region=drum_absorber_region
+    )
+    drum_reflector = openmc.Cell(
+        name='drum_reflector',
+        fill=control_drum_reflector_material,
+        region=drum_reflector_region
+    )
     drum_exterior = openmc.Cell(name='drum_outside', region=drum_outside_region)
-
-    # Create the reference universe containing the drum cells
     drum_reference = openmc.Universe(cells=(drum_reflector, drum_absorber, drum_exterior))
-    
-    # List to store drum cells with different rotations
+
     drum_cells = []
-    for r in range(0, 360, 60):
-        # Create a new cell for each drum with a specific rotation
-        dc = openmc.Cell(name=f'drum{r}', fill=drum_reference)
-        dc.rotation = [0, 0, REFERENCE_ANGLE + r + rotation_angle]
+    for i, (_, _, face_angle_deg) in enumerate(drum_positions):
+        dc = openmc.Cell(name=f'drum_{i}', fill=drum_reference)
+        dc.rotation = [0, 0, face_angle_deg + rotation_angle]
         drum_cells.append(dc)
 
-    # Create universes for each drum cell
     drums = [openmc.Universe(cells=(dc,)) for dc in drum_cells]
-    
     return drums
-
-
 
 
 def create_assembly_universe(params, fuel_pin_universe, moderator_pin_universe, pin_pitch, reflector_material, outer_coolant_universe):
     """
     Creating the universe of the fuel assembly
     @ In, params, dict, The parameters that are used to "fill in" input files with placeholders.
-    @ In, fuel_pin_universe, openmc.universe.Universe, 
-    @ In, moderator_pin_universe, openmc.universe.Universe, 
-    @ In, pin_pitch, float, the center-to-center distance between adjacent fuel/moderator pins 
+    @ In, fuel_pin_universe, openmc.universe.Universe
+    @ In, moderator_pin_universe, openmc.universe.Universe
+    @ In, pin_pitch, float, the center-to-center distance between adjacent fuel/moderator pins
     @ In, reflector_material, openmc.material.Material, the material of the outer radial reflector
-    @ In, outer_coolant_universe, openmc.universe.Universe, the openmc universe of the coolant in the assembly
+    @ In, outer_coolant_universe, openmc.universe.Universe, the OpenMC universe of the coolant in the assembly
     @ out, assembly_universe, openmc.universe.Universe, the fuel assembly universe
-
-
-    'openmc.material.Material'> <class 'openmc.universe.Universe'> <class 'openmc.universe.Universe'>
     """
-    
-    # Create a hexagonal lattice for the fuel assembly
+
     assembly = openmc.HexLattice()
-
-    # Set the center of the hexagonal lattice to the origin (0, 0)
     assembly.center = (0., 0.)
-    
-    # Set the pitch of the lattice cells (distance between centers of adjacent pins)
     assembly.pitch = (pin_pitch,)
-    
-    # Define the outer universe, which is likely the coolant region surrounding the fuel assembly
     assembly.outer = outer_coolant_universe
-    
-    # Get the rings configuration from the parameters
-    rings = params['Pins Arrangement']
 
-    # Only keep the last 'Number of Rings per Assembly' number of rings as specified in the parameters
+    rings = copy.deepcopy(params['Pins Arrangement'])
     rings = rings[-params['Number of Rings per Assembly']:]
-    
-    # Loop through each ring and replace 'FUEL' and 'MODERATOR' strings with corresponding universes
+
     for i in range(len(rings)):
         for j in range(len(rings[i])):
             if rings[i][j] == 'FUEL':
                 rings[i][j] = fuel_pin_universe
             elif rings[i][j] == 'MODERATOR':
                 rings[i][j] = moderator_pin_universe
-    
 
-    # Assign the resulting ring configuration to the lattice universes
     assembly.universes = rings
-    
-    # Define the boundary of the assembly using a hexagonal prism
+
+    hex_edge_length = calculate_hex_edge_length(params)
     assembly_boundary = openmc.model.hexagonal_prism(
-        edge_length=pin_pitch * (params['Number of Rings per Assembly'] - 1) + pin_pitch * 0.6, 
-        corner_radius=(params['Fuel Pin Radii'])[-1] + params["Pin Gap Distance"]
+        edge_length=hex_edge_length,
+        corner_radius=params['Fuel Pin Radii'][-1] + params["Pin Gap Distance"]
     )
 
-    # Create a cell for the fuel assembly within the defined boundary
     fuel_assembly_cell = openmc.Cell(fill=assembly, region=assembly_boundary)
-    
-    # Create a cell for the reflector material surrounding the assembly
     reflector_cell = openmc.Cell(fill=reflector_material, region=~assembly_boundary)
 
-    # Combine the fuel assembly cell and reflector cell into a universe
     assembly_universe = openmc.Universe(cells=[fuel_assembly_cell, reflector_cell])
-    
 
-    # Return the created assembly universe
     return assembly_universe
 
 
-def create_control_drums_positions(number_of_drums):
+def create_control_drums_positions(params):
     """
-    Creating the positions of the control drums around the reactor
-    @ In, number_of_drums, int, number of drums around the reactor
-    @ out, positions, list, list of control drum positions
+    Place N/6 drums along each of the 6 flat faces of the hexagonal lattice,
+    touching each face from outside, evenly spaced along the face length.
     """
-        
-    # Placement of drums happen by tracing a line through the core apothems
-    # then 2 drums are place after each apothem by deviating from this line
-    # by a deviation angle
-    sector = np.pi/3
-    deviation = (np.pi/14 )
-    positions = []
-    for s in range(number_of_drums):
-        positions.append(s*sector-deviation)
-        positions.append(s*sector+deviation)
+    number_of_drums = params['Number of Drums']
+    valid_drum_counts = _get_valid_drum_counts()
+    if number_of_drums not in valid_drum_counts:
+        raise ValueError(
+            f"Number of Drums must be one of {valid_drum_counts}, got {number_of_drums}"
+        )
 
-    return positions 
+    drums_per_side = number_of_drums // 6
+
+    hex_edge_length = calculate_hex_edge_length(params)
+    apothem = calculate_hex_apothem(params)
+
+    drum_radius = resolve_drum_radius(params)
+    drum_tube_radius = drum_radius + drum_radius / 90.0
+    side_length = hex_edge_length
+
+    # Same-face neighbor spacing check
+    same_face_spacing = side_length / drums_per_side
+    if 2.0 * drum_tube_radius > same_face_spacing:
+        max_drum_radius = (same_face_spacing / 2.0) * 90.0 / 91.0
+        raise ValueError(
+            f"Drums on the same hex face will overlap. "
+            f"For Number of Drums = {number_of_drums}, the maximum Drum Radius is about "
+            f"{max_drum_radius:.3f} cm, but got {drum_radius:.3f} cm."
+        )
+
+    face_angles = [k * np.pi / 3 for k in range(6)]
+
+    positions = []
+    for face_angle in face_angles:
+        along_x = -np.sin(face_angle)
+        along_y = np.cos(face_angle)
+
+        # Drum centers are placed just outside each hex face
+        radial_distance = apothem + drum_tube_radius
+        face_center_x = radial_distance * np.cos(face_angle)
+        face_center_y = radial_distance * np.sin(face_angle)
+
+        for i in range(drums_per_side):
+            offset = side_length * (i - (drums_per_side - 1) / 2.0) / drums_per_side
+            x = face_center_x + offset * along_x
+            y = face_center_y + offset * along_y
+            positions.append((x, y, np.degrees(face_angle)))
+
+    # Full pairwise overlap check at the placement stage
+    min_center_dist = 2.0 * drum_tube_radius
+    for i in range(len(positions)):
+        x1, y1, _ = positions[i]
+        for j in range(i + 1, len(positions)):
+            x2, y2, _ = positions[j]
+            dist = np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+            if dist < min_center_dist:
+                overlap = min_center_dist - dist
+                raise ValueError(
+                    f"Drum placement overlap detected between drums {i} and {j}. "
+                    f"Overlap = {overlap:.3f} cm. "
+                    f"Try reducing Drum Radius or reducing Number of Drums."
+                )
+
+    return positions
+
+
+def update_ltmr_reflector_geometry_from_drums(params):
+    """
+    For LTMR, derive:
+    - Core Radius
+    - Radial Reflector Thickness
+    - Axial Reflector Thickness
+    - Drum Height
+
+    from the actual drum layout implied by Number of Drums and Drum Radius.
+    """
+    drum_radius = resolve_drum_radius(params)
+    drum_tube_radius = drum_radius + drum_radius / 90.0
+
+    drum_positions = create_control_drums_positions(params)
+
+    max_outer_radius = max(
+        np.sqrt(x ** 2 + y ** 2) + drum_tube_radius
+        for x, y, _ in drum_positions
+    )
+
+    hex_apothem = calculate_hex_apothem(params)
+
+    params['Core Radius'] = max_outer_radius
+    params['Radial Reflector Thickness'] = params['Core Radius'] - hex_apothem
+    params['Axial Reflector Thickness'] = params['Radial Reflector Thickness']
+    params['Drum Height'] = params['Active Height'] + 2 * params['Axial Reflector Thickness']
+
+    return drum_positions
+
 
 def create_core_geometry(params, drums, drums_positions, assembly_universe):
-
     """
-    Creating the geometry for the entire core
-    @ In, params, dict, The parameters that are used to "fill in" input files with placeholders.
-    @ In, drums, list, universes of the drums
-    @ In, drums_positions, list of control drum positions
-    @ In, assembly_universe, openmc.universe.Universet, fuel assembly universe
-    @ out, core_geometry, openmc.geometry.Geometry, the geometry of the entire core
+    Build the full 2D radial core geometry with reflector-embedded control drums.
+    Includes overlap checks and places each drum at its prescribed position.
     """
-
-    params['Drum Tube Radius'] = params['Drum Radius'] + params['Drum Radius'] / 90 # cm
-
-    # The distance between the center of the control drum and the center of the hexagonal lattice
-    cd_distance = 0.86602540378 * params['Lattice Radius'] + params['Drum Tube Radius']
+    drum_radius = resolve_drum_radius(params)
+    params['Drum Tube Radius'] = drum_radius + drum_radius / 90.0
     drum_tube_radius = params['Drum Tube Radius']
-    drum_universes = []
-    for d in drums:
-        drum_universes.append(d)
-        drum_universes.append(d)
+
+    # Outer vacuum boundary
+    outer_surface = openmc.ZCylinder(r=params['Core Radius'], boundary_type='vacuum')
+
+    # Pairwise overlap check
+    for i in range(len(drums_positions)):
+        x1, y1, _ = drums_positions[i]
+        for j in range(i + 1, len(drums_positions)):
+            x2, y2, _ = drums_positions[j]
+            dist = np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+            if dist < 2.0 * drum_tube_radius:
+                overlap = 2.0 * drum_tube_radius - dist
+                raise ValueError(
+                    f"Drums {i} and {j} overlap by {overlap:.3f} cm! "
+                    f"Reduce Drum Radius or reduce Number of Drums."
+                )
 
     drum_shells = []
     drum_cells = []
 
-    for p, du in zip(drums_positions, drum_universes):
-        x, y = np.cos(p)*cd_distance, np.sin(p)*cd_distance
+    for (x, y, _), du in zip(drums_positions, drums):
         drum_shell = openmc.ZCylinder(x0=x, y0=y, r=drum_tube_radius)
         drum_shells.append(drum_shell)
-        drum_cell = openmc.Cell(fill=du, region=-drum_shell)
-        drum_cell.translation = (x, y, 0)  # translates the center of the drum universe to match the cylinder position
-        drum_cells.append(drum_cell)    
-    
+
+        # Limit each drum cell to the outer vacuum boundary too
+        drum_cell = openmc.Cell(fill=du, region=-drum_shell & -outer_surface)
+        drum_cell.translation = (x, y, 0)
+        drum_cells.append(drum_cell)
+
     drums_outside = +drum_shells[0]
     for d in drum_shells[1:]:
         drums_outside = drums_outside & +d
 
-    outer_surface = openmc.ZCylinder(r=params['Core Radius'] , boundary_type='vacuum')
+    core_cell = openmc.Cell(fill=assembly_universe, region=-outer_surface & drums_outside)
 
-    core_cell = openmc.Cell(fill= assembly_universe, region=-outer_surface & drums_outside)
     core = openmc.Universe(cells=[core_cell] + drum_cells)
-    core_geometry = openmc.Geometry(core) 
-    return core_geometry , core
+    core_geometry = openmc.Geometry(core)
+
+    return core_geometry, core
 
 
 # **************************************************************************************************************************
@@ -253,185 +425,210 @@ def create_core_geometry(params, drums, drums_positions, assembly_universe):
 # **************************************************************************************************************************
 
 """
-An OpenMC function that accepts an instance of "parameters" 
-and generates the necessary XMl files
+An OpenMC function that accepts an instance of "parameters"
+and generates the necessary XML files.
 """
+
 
 def build_openmc_model_LTMR(params):
     """
     OpenMC Model
-    @ In, params, watts.parameters.Parameters, The parameters that are used to "fill in" 
-    input files with placeholders. params mostly behaves like a Python dictionary with a few extra capabilities
+    @ In, params, watts.parameters.Parameters, The parameters that are used to "fill in"
+    input files with placeholders. params mostly behaves like a Python dictionary with a few extra capabilities.
     """
 
-    params.setdefault('SD Margin Calc', False)
+    params.setdefault('Shutdown Margin Calc', False)
     params.setdefault('Isothermal Temperature Coefficients', False)
+
+    # Ensure Drum Radius is always numeric before any downstream drum geometry use
+    resolve_drum_radius(params)
+
     # **************************************************************************************************************************
     #                                                Sec. 1.1 : MATERIALS
     # **************************************************************************************************************************
-   
-    # reading all the materials properties
+
+    # Read all material properties
     materials_database = collect_materials_data(params)
 
-    # reading the materials properties for the fuel, coolant, refelctor, control drum (the drum includes two materials: absoerber and reflector)   
+    # Read material properties for the fuel, coolant, reflector, and control drums
+    # (each drum contains two materials: absorber and reflector)
     fuel = materials_database[params['Fuel']]
     coolant = materials_database[params['Coolant']]
     reflector = materials_database[params['Radial Reflector']]
     control_drum_absorber = materials_database[params['Control Drum Absorber']]
     control_drum_reflector = materials_database[params['Control Drum Reflector']]
-    
 
     # **************************************************************************************************************************
-    #                                                Sec. 1.2 : GEOMETRY: Fuel Pins, Moderator Pins, Coolant
+    #                                                Sec. 1.2 : Pin Cell Universes and Coolant
     # **************************************************************************************************************************
-    
-    # Creating Fuel Pins regions
+
+    # Create fuel pin regions
     fuel_pin_regions = create_pin_regions(params, 'fuel')
-    
-    # Creating fuel pin materials
+
+    # Create fuel pin materials
     fuel_materials = []
     for mat in params['Fuel Pin Materials']:
-        if mat == None:
+        if mat is None:
             fuel_materials.append(None)
-        else: 
+        else:
             material_1 = materials_database[mat]
             fuel_materials.append(material_1)
     fuel_materials.append(coolant)
 
-     # Giving the user error message if the number of materials is not the same as the number of regions
-    assert len(fuel_pin_regions) == len(fuel_materials), "The number of regions, {len(fuel_pin_regions)} should be\
-        the same as the number of introduced materials, {len(fuel_materials)}"
-    
-    # creating the fuel pin universe
+    # Give the user an error message if the number of materials is not the same as the number of regions
+    if len(fuel_pin_regions) != len(fuel_materials):
+        raise ValueError(
+            f"The number of fuel pin regions ({len(fuel_pin_regions)}) must match "
+            f"the number of introduced materials ({len(fuel_materials)})."
+        )
+
+    # Create the fuel pin universe
     fuel_cells = create_cells(fuel_pin_regions, fuel_materials)
-    # The fuel region cell (to be used in distribcell tally)
+
+    # Fuel region cell (used in distribcell tally)
     fuel_cell = fuel_cells['fuel_meat']
     fuel_pin_universe = openmc.Universe(cells=fuel_cells.values())
 
     if params['plotting'] == "Y":
-        # plotting
-        create_universe_plot(materials_database, fuel_pin_universe, 
-                        plot_width = 2.2 * params['Fuel Pin Radii'][-1],
-                        num_pixels = 500, 
-                        font_size = 32,
-                        title = "Fuel Pin Universe", 
-                        fig_size = 8, 
-                        output_file_name = "fuel_pin_universe.png")
+        create_universe_plot(
+            materials_database,
+            fuel_pin_universe,
+            plot_width=2.2 * params['Fuel Pin Radii'][-1],
+            num_pixels=500,
+            font_size=32,
+            title="Fuel Pin Universe",
+            fig_size=8,
+            output_file_name="fuel_pin_universe.png"
+        )
 
-    
-    # Creating Moderator Pin regions
+    # Create moderator pin regions
     moderator_pin_regions = create_pin_regions(params, 'moderator')
-    
-    # Creating moderator pin materials
+
+    # Create moderator pin materials
     moderator_materials = []
     for mat in params['Moderator Pin Materials']:
-        if mat == None:
+        if mat is None:
             moderator_materials.append(None)
-        else: 
+        else:
             material_1 = materials_database[mat]
             moderator_materials.append(material_1)
     moderator_materials.append(coolant)
-    
-    # Giving the user error message if the number of materials is not the same as the number of regions
-    assert len(moderator_pin_regions) == len(moderator_materials), "The number of regions, {len(moderator_pin_regions)} should be\
-        the same as the number of introduced materials, {len(moderator_materials)}"
 
-    # creating them moerator pin universe
+    # Give the user an error message if the number of materials is not the same as the number of regions
+    if len(moderator_pin_regions) != len(moderator_materials):
+        raise ValueError(
+            f"The number of moderator pin regions ({len(moderator_pin_regions)}) must match "
+            f"the number of introduced materials ({len(moderator_materials)})."
+        )
+
+    # Create the moderator pin universe
     moderator_cells = create_cells(moderator_pin_regions, moderator_materials)
     moderator_pin_universe = openmc.Universe(cells=moderator_cells.values())
 
     if params['plotting'] == "Y":
-        # plotting
-        create_universe_plot(materials_database, moderator_pin_universe, 
-                        plot_width = 2.2 * params['Moderator Pin Radii'][-1],
-                        num_pixels = 500, 
-                        font_size = 32,
-                        title = "Moderator Pin Universe", 
-                        fig_size = 8, 
-                        output_file_name = "moderator_pin_universe.png")
-    
-    
-    # Coolant Universe
+        create_universe_plot(
+            materials_database,
+            moderator_pin_universe,
+            plot_width=2.2 * params['Moderator Pin Radii'][-1],
+            num_pixels=500,
+            font_size=32,
+            title="Moderator Pin Universe",
+            fig_size=8,
+            output_file_name="moderator_pin_universe.png"
+        )
+
+    # Coolant universe
     coolant_cell = openmc.Cell(fill=coolant)
     coolant_universe = openmc.Universe(cells=(coolant_cell,))
-   
-    # **************************************************************************************************************************
-    #                                                Sec. 1.3 : CONTROL DRUMS
-    # **************************************************************************************************************************
-    
-    drums = create_drums_universe(params, control_drum_absorber, control_drum_reflector )
-    
-    # **************************************************************************************************************************
-    #                                                Sec. 1.4 : Fuel Assembly
-    # **************************************************************************************************************************
-    
-    # The center-to-center distance between adjacent fuel/moderator pins
-    pin_pitch = 2 * (params['Fuel Pin Radii'][-1] ) + params["Pin Gap Distance"]
 
-    assembly_universe = create_assembly_universe(params,
-                                                 fuel_pin_universe,
-                                                 moderator_pin_universe,
-                                                 pin_pitch,
-                                                 reflector,
-                                                 coolant_universe)
+    # **************************************************************************************************************************
+    #                                                Sec. 1.3 : Fuel Assembly Universe
+    # **************************************************************************************************************************
 
+    # Center-to-center distance between adjacent fuel/moderator pins
+    pin_pitch = 2 * params['Fuel Pin Radii'][-1] + params["Pin Gap Distance"]
 
-    # # **************************************************************************************************************************
-    # #                                                Sec. 1.5 : VOLUME INFO for Depletion
-    # # **************************************************************************************************************************
-    #find where the fuel is in the fuel pin
+    assembly_universe = create_assembly_universe(
+        params,
+        fuel_pin_universe,
+        moderator_pin_universe,
+        pin_pitch,
+        reflector,
+        coolant_universe
+    )
+
+    # **************************************************************************************************************************
+    #                                                Sec. 1.4 : Material Volumes and Materials XML
+    # **************************************************************************************************************************
+    # Find the fuel region index within the fuel pin
     fuel_index = params['Fuel Pin Materials'].index(params['Fuel'])
 
-    fissile_area = circle_area(params['Fuel Pin Radii'][fuel_index] )\
+    fissile_area = (
+        circle_area(params['Fuel Pin Radii'][fuel_index])
         - circle_area(params['Fuel Pin Radii'][fuel_index - 1])
-    fuel.volume = fissile_area *params['Active Height'] * params['Fuel Pin Count']
-   
-    all_materials = fuel_materials +\
-        moderator_materials + [coolant, reflector, control_drum_absorber, control_drum_reflector]
-    
-    # removing "None" materials
+    )
+    fuel.volume = fissile_area * params['Active Height'] * params['Fuel Pin Count']
+
+    all_materials = (
+        fuel_materials
+        + moderator_materials
+        + [coolant, reflector, control_drum_absorber, control_drum_reflector]
+    )
+
+    # Remove None materials while preserving their deterministic order
     all_materials_cleaned_list = [item for item in all_materials if item is not None]
-    materials = openmc.Materials(list(set(all_materials_cleaned_list)))
-   
+    materials = openmc.Materials(list(dict.fromkeys(all_materials_cleaned_list)))
+
     openmc.Materials.cross_sections = params['cross_sections_xml_location']
     materials.export_to_xml()
-    
 
-    # # **************************************************************************************************************************
-    # #                                                Sec. 1.6 : CORE DRUM REPLACEMENT
-    # # **************************************************************************************************************************
+    # **************************************************************************************************************************
+    #                                                Sec. 1.5 : Control Drum Placement and Core Geometry
+    # **************************************************************************************************************************
 
-    control_drum_positions = create_control_drums_positions(number_of_drums = len(drums))
+    control_drum_positions = update_ltmr_reflector_geometry_from_drums(params)
+    drums = create_drums_universe(
+        params,
+        control_drum_absorber,
+        control_drum_reflector,
+        control_drum_positions
+    )
 
-    core_geometry, core = create_core_geometry(params,
-                                         drums,
-                                         drums_positions = control_drum_positions,
-                                         assembly_universe  = assembly_universe )
-
+    core_geometry, core = create_core_geometry(
+        params,
+        drums,
+        drums_positions=control_drum_positions,
+        assembly_universe=assembly_universe
+    )
 
     core_geometry.export_to_xml()
-    
+
     if params['plotting'] == "Y":
-        create_universe_plot(materials_database, core_geometry, 
-                        plot_width = 2.01 * params['Core Radius'],
-                        num_pixels = 2000, 
-                        font_size = 32,
-                        title = "Reactor Core", 
-                        fig_size = 8, 
-                        output_file_name = "core.png")
-    
-    # # **************************************************************************************************************************
-    # #                                                Sec. 1.7 : TALLIES
-    # # **************************************************************************************************************************
+        drum_state_label = "shutdown" if params['Shutdown Margin Calc'] else "operation"
+        create_universe_plot(
+            materials_database,
+            core_geometry,
+            plot_width=2.01 * params['Core Radius'],
+            num_pixels=2000,
+            font_size=32,
+            title="Reactor Core",
+            fig_size=8,
+            output_file_name=f"core_{drum_state_label}.png"
+        )
+
+    # **************************************************************************************************************************
+    #                                                Sec. 1.6 : TALLIES
+    # **************************************************************************************************************************
 
     tallies_file = openmc.Tallies()
 
-    group_edges = np.array([1e-5, 6.7e-2, 3.2e-1, 1, 4, 9.88, 4.81e1, 4.54e2, 4.9e4, 1.83e5, 8.21e5, 4e7])# 11 energy groups from HPMR report table no.5 in ev
+    # 11 energy groups from HPMR report table 5 in eV
+    group_edges = np.array([1e-5, 6.7e-2, 3.2e-1, 1, 4, 9.88, 4.81e1, 4.54e2, 4.9e4, 1.83e5, 8.21e5, 4e7])
     groups = openmc.mgxs.EnergyGroups(group_edges)
 
     mgxs_lib = openmc.mgxs.Library(core_geometry)
     mgxs_lib.energy_groups = groups
-    mgxs_lib.legendre_order     = 1
+    mgxs_lib.legendre_order = 1
     mgxs_lib.mgxs_types = ['absorption', 'diffusion-coefficient', 'transport', 'scatter matrix', 'total', 'scatter']
     mgxs_lib.domain_type = 'universe'
     mgxs_lib.domains = [core]
@@ -446,25 +643,29 @@ def build_openmc_model_LTMR(params):
     tallies_file.append(pin_power)
     tallies_file.export_to_xml()
 
-    # # **************************************************************************************************************************
-    # #                                                Sec. 1.8 : SIMULATION
-    # # **************************************************************************************************************************
- 
+    # **************************************************************************************************************************
+    #                                                Sec. 1.7 : OpenMC Settings
+    # **************************************************************************************************************************
+
     point = openmc.stats.Point((0, 0, 0))
     source = openmc.Source(space=point)
     settings = openmc.Settings()
     settings.source = source
     settings.batches = 100
     settings.inactive = 50
+
     if 'Particles' in params.keys():
-        settings.particles = int(params['Particles'])#1000
+        settings.particles = int(params['Particles'])
     else:
-        settings.particles = 1000 
+        settings.particles = 1000
+
     if params['Isothermal Temperature Coefficients']:
-        settings.temperature = {'default': params['Common Temperature'],
-                                 'method': 'interpolation',
-                                 'tolerance': 50.0}
+        settings.temperature = {
+            'default': params['Common Temperature'],
+            'method': 'interpolation',
+            'tolerance': 50.0
+        }
     else:
-        settings.temperature = {'method': 'interpolation'}  # added missing else branch
-    
+        settings.temperature = {'method': 'interpolation'}
+
     settings.export_to_xml()

@@ -43,14 +43,14 @@ update_params({
 update_params({
     'reactor type': "GCMR",  # LTMR or GCMR
     'TRISO Fueled': "Yes",
-    'Fuel': 'UN',
+    'Fuel': 'UCO',
     'Enrichment': 0.1975,  # The enrichment is a fraction. It has to be between 0 and 1
     'UO2 atom fraction': 0.7,  # Mixing UO2 and UC by atom fraction
     'Radial Reflector': 'Graphite',
     'Axial Reflector': 'Graphite',
-    'Matrix Material': 'Graphite', # matrix material is a background material within the compact fuel element between the TRISO particles
-    'Moderator': 'Graphite', # The moderator is outside this compact fuel region 
-    'Moderator Booster': 'ZrH',
+    'Matrix Material': 'Graphite',  # matrix material is the background material within the compact fuel element between TRISO particles
+    'Moderator': 'Graphite',  # the moderator is outside the compact fuel region
+    'Moderator Booster Materials': ['ZrH'],
     'Coolant': 'Helium',
     'Common Temperature': 850,  # Kelvins
     'Control Drum Absorber': 'B4C_enriched',  # The absorber material in the control drums
@@ -63,11 +63,11 @@ update_params({
 # **************************************************************************************************************************  
 for params['Packing Fraction'] in np.linspace(0.25, 0.35, 2):
     update_params({
-        'Fuel Pin Materials': ['UN', 'buffer_graphite', 'PyC', 'SiC', 'PyC'],
-        'Fuel Pin Radii': [0.025, 0.035, 0.039, 0.0425, 0.047],  # cm
+        'Fuel Pin Materials': ['UCO', 'buffer_graphite', 'PyC', 'SiC', 'PyC'],
+        'Fuel Pin Radii': [0.0250, 0.0350, 0.0390, 0.0425, 0.0465],  # cm # https://art.inl.gov/NRC%20Training%202019/04_TRISO_Fuel.pdf
         'Compact Fuel Radius': 0.6225,  # cm
         'Coolant Channel Radius': 0.35,  # cm
-        'Moderator Booster Radius': 0.55, # cm
+        'Moderator Booster Radii': [0.55],  # cm
         'Lattice Pitch': 2.25,
         'Assembly Rings': 6,
         'Core Rings': 5,
@@ -111,8 +111,8 @@ for params['Packing Fraction'] in np.linspace(0.25, 0.35, 2):
     # --- Shutdown Margin (SDM) ---
     # Set to True to run an additional ARI simulation and calculate the shutdown margin (pcm).
     # Currently disabled to save computation time. Enable for final design verification.
-    # See watts_exec_LTMR.py for an example with SD Margin Calc = True.
-    params['SD Margin Calc'] = False  # True or False
+    # See watts_exec_LTMR.py for an example with Shutdown Margin Calc = True.
+    params['Shutdown Margin Calc'] = False  # True or False
 
     # --- Isothermal Temperature Coefficient ---
     # Set to True to calculate the temperature reactivity coefficient (pcm/K).
@@ -142,7 +142,7 @@ for params['Packing Fraction'] in np.linspace(0.25, 0.35, 2):
         'Primary Loop per loop load fraction': 0.5,
         'Primary Loop Inlet Temperature': 300 + 273.15, # K
         'Primary Loop Outlet Temperature': 550 + 273.15, # K
-        'Secondary Loop Inlet Temperature': 290 + 273.15, # K
+        'Secondary Loop Inlet Temperature': 270 + 273.15, # K — cold-end PCHE pinch 30°C with 300°C primary inlet (was 290 -> 10°C pinch, below realistic PCHE design)
         'Secondary Loop Outlet Temperature': 500 + 273.15, # K,
         'Primary Loop Pressure Drop': 50e3, # Pa
     })
@@ -180,19 +180,20 @@ for params['Packing Fraction'] in np.linspace(0.25, 0.35, 2):
     # ************************************************************************************************************************** 
     update_params({
         'Vessel Radius': params['Core Radius'] + params['In Vessel Shield Thickness'],
-        'Vessel Thickness': 1,  # cm
-        'Vessel Lower Plenum Height': 42.848 - 40,  # cm
-        'Vessel Upper Plenum Height': 47.152,       # cm
+        'Vessel Thickness': 3,  # cm — ASME Sec III Div 1 thin-shell with 4 MPa He, R=60-100 cm, S=138 MPa SA-508 at 350°C, +3 mm corrosion (was 1, below ASME pressure-driven minimum)
+        'Vessel Lower Plenum Height': 30,  # cm — GA MHTGR / HTR-PM-class flow distributor (was 2.848, unit-conv bug)
+        'Vessel Upper Plenum Height': 47.152,       # cm — outlet plenum for hot-leg gas exit
         'Vessel Upper Gas Gap': 0,
         'Vessel Bottom Depth': 32.129,
         'Vessel Material': 'stainless_steel',
-        'Gap Between Vessel And Guard Vessel': 0,  
+        # Guard vessel intentionally removed: He is inert, no chemical-leak hazard requiring secondary containment
+        'Gap Between Vessel And Guard Vessel': 0,
         'Guard Vessel Thickness': 0,  # cm
         'Guard Vessel Material': 'low_alloy_steel',
         'Gap Between Guard Vessel And Cooling Vessel': 5,  # cm
         'Cooling Vessel Thickness': 0.5,  # cm
         'Cooling Vessel Material': 'stainless_steel',
-        'Gap Between Cooling Vessel And Intake Vessel': 4,  # cm
+        'Gap Between Cooling Vessel And Intake Vessel': 5,  # cm — Hejzlar & Buongiorno 2007 NED RVACS minimum (was 4)
         'Intake Vessel Thickness': 0.5,  # cm
         'Intake Vessel Material': 'stainless_steel'
     })
@@ -204,7 +205,7 @@ for params['Packing Fraction'] in np.linspace(0.25, 0.35, 2):
     #                                           Sec. 9 : Operation
     # **************************************************************************************************************************
     update_params({
-        'Operation Mode': "Autonomous",
+        'Operation Mode': "Remotely Monitored",
         'Number of Operators': 2,
         'Levelization Period': 60,  # years
         'Refueling Period': 7,
@@ -215,8 +216,13 @@ for params['Packing Fraction'] in np.linspace(0.25, 0.35, 2):
         'Security Staff Per Shift': 1
     })
 
-    params['Onsite Coolant Inventory'] = 10 * 24.417 * 8.2402 # kg
-    params['Replacement Coolant Inventory'] = params['Onsite Coolant Inventory'] / 4
+    # Based on https://digital.library.unt.edu/ark:/67531/metadc893980/m2/1/high_res_d/919556.pdf (tables 17 and 18):
+    # Estimated helium mass per MWt is 3.3 kg/MWt.
+    params['Onsite Coolant Inventory'] = 3.3 * params['Power MWt']  # kg
+    # According to https://www.nationalacademies.org/read/12844/chapter/6#69, the helium loss rate is 10% per year,
+    # so 1/10 of the initial inventory is replenished annually.
+    # Without purification, helium needs to be replaced more frequently.
+    params['Replacement Coolant Inventory'] = params['Onsite Coolant Inventory'] / 10
     params['Annual Coolant Supply Frequency'] = 1 if params['Primary Loop Purification'] else 6
 
     total_refueling_period = params['Fuel Lifetime'] + params['Refueling Period'] + params['Startup Duration after Refueling']
@@ -225,7 +231,7 @@ for params['Packing Fraction'] in np.linspace(0.25, 0.35, 2):
     params['A75: Core Barrel Replacement Period (cycles)'] = np.floor(10/total_refueling_period_yr)
     params['A75: Reflector Replacement Period (cycles)']   = np.floor(10/total_refueling_period_yr)
     params['A75: Drum Replacement Period (cycles)']        = np.floor(10/total_refueling_period_yr)
-    params['Mainenance to Direct Cost Ratio']              = 0.015
+    params['Maintenance to Direct Cost Ratio']              = 0.015
     params['A78: CAPEX to Decommissioning Cost Ratio'] = 0.15
 
     # **************************************************************************************************************************
@@ -233,7 +239,7 @@ for params['Packing Fraction'] in np.linspace(0.25, 0.35, 2):
     # **************************************************************************************************************************
     update_params({
         'Land Area': 18,  # acres
-        'Escalation Year': 2024,
+        'Escalation Year': 2025,
         'Excavation Volume': 412.605,  # m^3
         'Reactor Building Slab Roof Volume': (9750*6502.4*1500)/1e9,  # m^3
         'Reactor Building Basement Volume': (9750*6502.4*1500)/1e9,  # m^3
@@ -268,6 +274,7 @@ for params['Packing Fraction'] in np.linspace(0.25, 0.35, 2):
         'Radwaste Building Basement Volume': 0,  # m^3
         'Radwaste Building Exterior Walls Volume': 0,  # m^3,
         'Interest Rate': 0.07,
+    'Discount Rate': 0.07,
         'Construction Duration': 12,  # months
         'Debt To Equity Ratio': 1,
         'Annual Return': 0.0475,
@@ -298,7 +305,7 @@ for params['Packing Fraction'] in np.linspace(0.25, 0.35, 2):
                            "Total Number of TRISO Particles", "Core Radius", "Heat Flux", "Fuel Lifetime",
                            "Mass U235", "Mass U238", "Uranium Mass", "Max Peaking Factor"]
 
-    parametric_studies('cost/Cost_Database.xlsx', params, tracked_params_list, 'examples/output_parametric_CGMR_packing_fraction.csv')
+    parametric_studies('cost/Cost_Database.xlsx', tracked_params_list)
 
     elapsed_time = (time.time() - time_start) / 60
     print('Execution time:', np.round(elapsed_time, 2), 'minutes')

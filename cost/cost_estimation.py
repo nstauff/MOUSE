@@ -19,30 +19,37 @@ from cost.cost_drivers import cost_drivers_estimate
 
 def calculate_high_level_accounts_cost(df, target_level, option, FOAK_or_NOAK):
     cost_column = get_estimated_cost_column(df, FOAK_or_NOAK)
-    # print(f"Updating costs of the level {target_level} accounts for the {cost_column}")
 
     if option == "base":
         valid_prefixes = ('1', '2')
     elif option == "other":
         valid_prefixes = ('3', '4', '5')
-    elif option == "finance": 
-        valid_prefixes = ('6')  
-    elif option == "annual": 
-        valid_prefixes = ('7', '8')      
+    elif option == "finance":
+        valid_prefixes = ('6')
+    elif option == "annual":
+        valid_prefixes = ('7', '8')
     else:
         raise ValueError("Invalid option. Choose 'base' or 'other' or 'finance' or 'annual'.")
 
-    for index, row in df.iterrows():
-        if str(row["Account"]).startswith(valid_prefixes):
-            if row["Level"] == target_level and pd.isna(row[cost_column]):
-                children_accounts = row["Children Accounts"]
-                if not pd.isna(children_accounts):
-                    children_accounts_list = children_accounts.split(",")
-                    total_sum = 0
-                    for account in children_accounts_list:
-                        account_value = float(account)
-                        total_sum += df[df["Account"] == account_value][cost_column].values[0]
-                    df.at[index, cost_column] = total_sum
+    # Replace per-row iterrows with a vectorized eligibility mask. Only
+    # the rows that actually need updating (typically a handful) enter
+    # the Python loop — and even there the children sum uses pandas
+    # vectorized .sum() instead of a per-child Python add.
+    accounts_str = df['Account'].astype(str)
+    mask = (
+        accounts_str.str.startswith(valid_prefixes)
+        & (df['Level'] == target_level)
+        & df[cost_column].isna()
+        & df['Children Accounts'].notna()
+    )
+
+    if not mask.any():
+        return df
+
+    children_col = df['Children Accounts']
+    for index in df.index[mask]:
+        children_idxs = [int(x) for x in children_col.at[index].split(',')]
+        df.at[index, cost_column] = df.loc[children_idxs, cost_column].sum()
 
     return df
 
@@ -62,18 +69,35 @@ def update_high_level_costs(scaled_cost, option, sample):
     else:
         raise ValueError("Invalid option. Choose 'base' or 'other' or 'finance' or 'annual'.")
 
+    # Hoist column-name lookups out of the inner row loop — they were
+    # being called 4× per row × ~100 rows × 5 levels = ~2000 redundant
+    # column-name searches per update_high_level_costs call.
+    foak_col = get_estimated_cost_column(df_with_children_accounts, 'F')
+    noak_col = get_estimated_cost_column(df_with_children_accounts, 'N')
+
     for level in range(4, -1, -1):
         df_updated = calculate_high_level_accounts_cost(df_with_children_accounts, level, option, 'F')
         df_updated_2 = calculate_high_level_accounts_cost(df_updated, level, option, 'N')
-        
-        for index, row in df_updated_2.iterrows():
-            if str(row["Account"]).startswith(valid_prefixes):
-                if row['Level'] == level and pd.isna(row[get_estimated_cost_column(df_updated_2, 'F')]) and pd.isna(row['Children Accounts']):
-                    df_updated_2.at[index, get_estimated_cost_column(df_updated_2, 'F')] = 0
-                    no_subaccounts_list.append(row['Account'])
-                if row['Level'] == level and pd.isna(row[get_estimated_cost_column(df_updated_2, 'N')]) and pd.isna(row['Children Accounts']):
-                    df_updated_2.at[index, get_estimated_cost_column(df_updated_2, 'N')] = 0
-                    no_subaccounts_list.append(row['Account'])
+
+        # Vectorized replacement for the per-row iterrows loop. Build masks
+        # for FOAK and NOAK separately, then use bulk df.loc[mask, col] = 0
+        # writes. Both masks read the same pre-mutation state so order is
+        # irrelevant.
+        accounts_str = df_updated_2['Account'].astype(str)
+        common_mask = (
+            accounts_str.str.startswith(valid_prefixes)
+            & (df_updated_2['Level'] == level)
+            & df_updated_2['Children Accounts'].isna()
+        )
+        foak_mask = common_mask & df_updated_2[foak_col].isna()
+        noak_mask = common_mask & df_updated_2[noak_col].isna()
+
+        if foak_mask.any():
+            df_updated_2.loc[foak_mask, foak_col] = 0
+            no_subaccounts_list.extend(df_updated_2.loc[foak_mask, 'Account'].tolist())
+        if noak_mask.any():
+            df_updated_2.loc[noak_mask, noak_col] = 0
+            no_subaccounts_list.extend(df_updated_2.loc[noak_mask, 'Account'].tolist())
     
     if sample == 0:
         if no_subaccounts_list:
@@ -240,15 +264,14 @@ def learning_rate_multiplier(learning_rate, number_of_units):
 
 
 def FOAK_to_NOAK(df, params):
-    # Additional Cost Scaling Based on Assumed Learning Rate
-    # Learning Rate and Cost multiplier is based on 
-    # DOI: 10.1080/00295450.2023.2206779
-    # Cost Multiplier is capped after the 100th Unit for any component
+    # Additional cost scaling based on an assumed learning rate.
+    # Learning rate and cost multiplier are based on
+    # DOI: 10.1080/00295450.2023.2206779.
+    # Cost multiplier is capped at the 100th unit for any component.
     if 'NOAK Unit Number' not in params.keys():
-        # Assume the default value if no `NOAK Unit Number` is specified.
+        # Use the default value if 'NOAK Unit Number' is not specified.
         params['NOAK Unit Number'] = 10
-        # Custom Check to see if input specifies which Nth-of-a-Kind
-        # Default is ~10th with 20(2*10)-units assumed for Onsite Learning
+        # Defaults to approximately the 10th unit, with 20 (2×10) units assumed for onsite learning.
     params['Assumed Number Of Units For Onsite Learning'] = params['NOAK Unit Number'] * 2
     
     for multiplier_type in ['No Learning', 
@@ -295,7 +318,7 @@ def reorder_dataframe(df):
 
 def bottom_up_cost_estimate(cost_database_filename, params):
     # Validate tax credit params early — before any simulation or cost calculation runs.
-    # This catches the case where a user accidentally defines both ITC and PTC,
+    # This catches cases where a user accidentally defines both ITC and PTC,
     # which are mutually exclusive under the IRA.
     validate_tax_credit_params(params)
 
@@ -317,7 +340,7 @@ def bottom_up_cost_estimate(cost_database_filename, params):
         cost_with_decommissioning = calculate_decommissioning_cost(updated_cost_with_indirect_cost, params)
         updated_accounts_10_40 = update_high_level_costs(cost_with_decommissioning, 'other', i)
         high_Level_capital_cost = calculate_high_level_capital_costs(updated_accounts_10_40, params)
-        
+
         updated_accounts_10_60 = update_high_level_costs(high_Level_capital_cost, 'finance', i)
         TCI = calculate_TCI(updated_accounts_10_60, params)
         updated_accounts_70_80 = update_high_level_costs(TCI, 'annual', i)
@@ -325,9 +348,9 @@ def bottom_up_cost_estimate(cost_database_filename, params):
         FOAK_column = get_estimated_cost_column(Final_COA, 'F')
         NOAK_column = get_estimated_cost_column(Final_COA, 'N')
         Final_COA = Final_COA[['Account', 'Account Title', FOAK_column, NOAK_column]]
-        
+
         COA_list.append(Final_COA)
-    
+
     concatenated_df = pd.concat(COA_list)
     numeric_columns = concatenated_df.select_dtypes(include='number').columns
     mean_df = concatenated_df[numeric_columns].groupby(concatenated_df.index).mean()
@@ -404,24 +427,51 @@ def bottom_up_cost_estimate_central(cost_database_filename, params):
     return reordered_df
 
 
-def parametric_studies(cost_database_filename, params, tracked_params_list, output_csv_filename):
-    detatiled_cost_table = bottom_up_cost_estimate(cost_database_filename, params)
-    tracked_costs = create_cost_dictionary(detatiled_cost_table, params, tracked_params_list)
-    
+def parametric_studies(cost_database_filename, tracked_params_list):
+    import inspect
+
+    # Grab params and the calling script's path from the caller's frame automatically
+    caller_frame = inspect.stack()[1][0]
+    params = caller_frame.f_locals.get('params')
+    if params is None:
+        raise RuntimeError(
+            "parametric_studies could not find 'params' in the calling scope. "
+            "Make sure a variable named 'params' exists in the script that calls this function."
+        )
+    caller_file = caller_frame.f_globals.get('__file__', 'output')
+    output_csv_filename = os.path.splitext(os.path.abspath(caller_file))[0] + '_output.csv'
+
+    detailed_cost_table = bottom_up_cost_estimate(cost_database_filename, params)
+    tracked_costs = create_cost_dictionary(detailed_cost_table, params, tracked_params_list)
+
     file_exists = os.path.isfile(output_csv_filename)
-    
+
     with open(output_csv_filename, 'a', newline='') as csvfile:
         fieldnames = tracked_costs.keys()
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        
+
         if not file_exists or os.stat(output_csv_filename).st_size == 0:
             writer.writeheader()
-        
+
         writer.writerow(tracked_costs)
         print(f"Results are being saved on {output_csv_filename}")
 
 
-def detailed_bottom_up_cost_estimate(cost_database_filename, params, output_filename):
+def detailed_bottom_up_cost_estimate(cost_database_filename):
+    import inspect
+    import os
+
+    # Grab params and the calling script's path from the caller's frame automatically
+    caller_frame = inspect.stack()[1][0]
+    params = caller_frame.f_locals.get('params')
+    if params is None:
+        raise RuntimeError(
+            "detailed_bottom_up_cost_estimate could not find 'params' in the calling scope. "
+            "Make sure a variable named 'params' exists in the script that calls this function."
+        )
+    caller_file = caller_frame.f_globals.get('__file__', 'output')
+    output_filename = os.path.splitext(os.path.abspath(caller_file))[0] + '_output.xlsx'
+
     detailed_cost_table = bottom_up_cost_estimate(cost_database_filename, params)
     detailed_central_cost_table = bottom_up_cost_estimate_central(cost_database_filename, params)
     pretty_df = transform_dataframe(detailed_cost_table)
@@ -443,7 +493,7 @@ def detailed_bottom_up_cost_estimate(cost_database_filename, params, output_file
     # Always compute per-account LCOE contributions so they appear in Excel.
     # The PNG plot is only generated if params['plotting'] == "Y" —
     # that gate lives inside cost_drivers_estimate.
-    lcoe_enriched_table = cost_drivers_estimate(detailed_cost_table, params)
+    lcoe_enriched_table, _ = cost_drivers_estimate(detailed_cost_table, params)
 
     if lcoe_enriched_table is not None:
         pretty_lcoe_df = transform_dataframe(lcoe_enriched_table)

@@ -43,14 +43,14 @@ update_params({
 update_params({
     'reactor type': "GCMR",  # LTMR or GCMR
     'TRISO Fueled': "Yes",
-    'Fuel': 'UN',
+    'Fuel': 'UCO',
     'Enrichment': 0.1975,  # The enrichment is a fraction. It has to be between 0 and 1
     'UO2 atom fraction': 0.7,  # Mixing UO2 and UC by atom fraction
     'Radial Reflector': 'Graphite',
     'Axial Reflector': 'Graphite',
-    'Matrix Material': 'Graphite', # matrix material is a background material within the compact fuel element between the TRISO particles
-    'Moderator': 'Graphite', # The moderator is outside this compact fuel region 
-    'Moderator Booster': 'ZrH',
+    'Matrix Material': 'Graphite',  # matrix material is the background material within the compact fuel element between TRISO particles
+    'Moderator': 'Graphite',  # the moderator is outside the compact fuel region
+    'Moderator Booster Materials': ['ZrH'],
     'Coolant': 'Helium',
     'Common Temperature': 850,  # Kelvins
     'Control Drum Absorber': 'B4C_enriched',  # The absorber material in the control drums
@@ -64,31 +64,34 @@ update_params({
 
 update_params({
     # fuel pin details
-    'Fuel Pin Materials': ['UN', 'buffer_graphite', 'PyC', 'SiC', 'PyC'],
-    'Fuel Pin Radii': [0.025, 0.035, 0.039, 0.0425, 0.047],  # cm
+    'Fuel Pin Materials': ['UCO', 'buffer_graphite', 'PyC', 'SiC', 'PyC'],
+    'Fuel Pin Radii': [0.0250, 0.0350, 0.0390, 0.0425, 0.0465],  # cm # https://art.inl.gov/NRC%20Training%202019/04_TRISO_Fuel.pdf
     'Compact Fuel Radius': 0.6225,  # cm # The radius of the area that is occupied by the TRISO particles (fuel compact/ fuel element)
     'Packing Fraction': 0.3,
     
     # Coolant channel and booster dimensions
     'Coolant Channel Radius': 0.35,  # cm
-    'Moderator Booster Radius': 0.55, # cm
+    'Moderator Booster Radii': [0.55],  # cm
     'Lattice Pitch': 2.25,
     'Assembly Rings': 6,
     'Core Rings': 5,
 })
 params['Assembly FTF'] = params['Lattice Pitch']*(params['Assembly Rings']-1)*np.sqrt(3)
-params['Radial Reflector Thickness'] = 27.393 # cm # radial reflector
-params['Axial Reflector Thickness'] = params['Radial Reflector Thickness'] # cm
-params['Core Radius'] = params['Assembly FTF']*params['Core Rings'] +  params['Radial Reflector Thickness']
+# if unspecified, radial reflector thickness defaults to just cover the drums,
+# and axial reflector thickness defaults to match the radial one
+# params['Radial Reflector Thickness'] = 27.393 # cm # radial reflector
+# params['Axial Reflector Thickness'] = params['Radial Reflector Thickness'] # cm
+# params['Core Radius'] = params['Assembly FTF']*params['Core Rings'] +  params['Radial Reflector Thickness']
 params['Active Height'] = 250
 
 # **************************************************************************************************************************
 #                                           Sec. 3: Control Drums
 # ************************************************************************************************************************** 
 update_params({
-    'Drum Radius': 9, # cm   
+    #'Drum Radius': 9, # cm  # if unavailable, maximize the drum radius while preventing overlaps  
     'Drum Absorber Thickness': 1, # cm
-    'Drum Height': params['Active Height'] + 2*params['Axial Reflector Thickness'],
+   # if unspecified, drum height defaults to active height + 2 * axial reflector thickness
+    #'Drum Height': params['Active Height'] + 2*params['Axial Reflector Thickness'],
     })
 calculate_drums_volumes_and_masses(params)
 calculate_reflector_mass_GCMR(params)          
@@ -100,7 +103,7 @@ calculate_moderator_mass_GCMR(params)
 update_params({
     'Power MWt': 15,  # MWt
     'Thermal Efficiency': 0.4,
-    'Heat Flux Criteria': 0.9,  # MW/m^2 (This one needs to be reviewed)
+    'Heat Flux Criteria': 0.9,  # MW/m^2 (needs review)
     'Burnup Steps': [0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 15.0, 20.0,
                      30.0, 40.0, 50.0, 60.0, 80.0, 100.0, 120.0]  # MWd_per_Kg
     })
@@ -119,7 +122,7 @@ params['Heat Flux'] = calculate_heat_flux_TRISO(params) # MW/m^2
 # A positive SDM means the reactor can be safely shut down with all drums inserted.
 # Recommended: True for final design verification; can be set to False to save
 # computation time during early design exploration.
-params['SD Margin Calc'] = False  # True or False
+# params['Shutdown Margin Calc'] = False  # True or False
 
 # --- Isothermal Temperature Coefficient ---
 # When True, two additional OpenMC simulations are run: one at 'Common Temperature'
@@ -151,13 +154,13 @@ params.update({
     'Secondary HX Mass': 0,
     'Compressor Pressure Ratio': 4,
     'Compressor Isentropic Efficiency': 0.8,
-    'Primary Loop Count': 2, # Number of Primary Coolant Loops present in plant
-    'Primary Loop per loop load fraction': 0.5, # assuming that each Primary Loop Handles the total load evenly (1/2)
+    'Primary Loop Count': 2,  # number of primary coolant loops in the plant
+    'Primary Loop per loop load fraction': 0.5,  # each loop handles an equal share of the total load
     'Primary Loop Inlet Temperature': 300 + 273.15, # K
     'Primary Loop Outlet Temperature': 550 + 273.15, # K
-    'Secondary Loop Inlet Temperature': 290 + 273.15, # K
+    'Secondary Loop Inlet Temperature': 270 + 273.15, # K — cold-end PCHE pinch 30°C with 300°C primary inlet (was 290 -> 10°C pinch, below realistic PCHE design)
     'Secondary Loop Outlet Temperature': 500 + 273.15, # K,
-    'Primary Loop Pressure Drop': 50e3, # Pa. Assumption based on Enrique's estimate
+    'Primary Loop Pressure Drop': 50e3,  # Pa — estimated assumption
 })
 params['Primary HX Mass'] = calculate_heat_exchanger_mass(params)  # Kg
 # calculate coolant mass flow rate
@@ -166,8 +169,8 @@ compressor_power(params)
 
 # Update BoP Parameters
 params.update({
-    'BoP Count': 2, # Number of BoP present in plant
-    'BoP per loop load fraction': 0.5, # based on assuming that each BoP Handles the total load evenly (1/2)
+    'BoP Count': 2,  # number of BoP systems in the plant
+    'BoP per loop load fraction': 0.5,  # each BoP handles an equal share of the total load
     })
 params['BoP Power kWe'] = 1000 * params['Power MWe'] * params['BoP per loop load fraction']
 
@@ -196,19 +199,20 @@ params['In Vessel Shield Outer Radius'] = params['Core Radius'] + params['In Ves
 # ************************************************************************************************************************** 
 update_params({
     'Vessel Radius': params['Core Radius'] + params['In Vessel Shield Thickness'],
-    'Vessel Thickness': 1,  # cm
-    'Vessel Lower Plenum Height': 42.848 - 40,  # cm
-    'Vessel Upper Plenum Height': 47.152,       # cm
+    'Vessel Thickness': 3,  # cm — ASME Sec III Div 1 thin-shell with 4 MPa He, R=60-100 cm, S=138 MPa SA-508 at 350°C, +3 mm corrosion (was 1, below ASME pressure-driven minimum)
+    'Vessel Lower Plenum Height': 30,  # cm — GA MHTGR / HTR-PM-class flow distributor (was 2.848, unit-conv bug)
+    'Vessel Upper Plenum Height': 47.152,       # cm — outlet plenum for hot-leg gas exit
     'Vessel Upper Gas Gap': 0,
     'Vessel Bottom Depth': 32.129,
     'Vessel Material': 'stainless_steel',
-    'Gap Between Vessel And Guard Vessel': 0,  
+    # Guard vessel intentionally removed: He is inert, no chemical-leak hazard requiring secondary containment
+    'Gap Between Vessel And Guard Vessel': 0,
     'Guard Vessel Thickness': 0,  # cm
     'Guard Vessel Material': 'low_alloy_steel',
     'Gap Between Guard Vessel And Cooling Vessel': 5,  # cm
     'Cooling Vessel Thickness': 0.5,  # cm
     'Cooling Vessel Material': 'stainless_steel',
-    'Gap Between Cooling Vessel And Intake Vessel': 4,  # cm
+    'Gap Between Cooling Vessel And Intake Vessel': 5,  # cm — Hejzlar & Buongiorno 2007 NED RVACS minimum (was 4)
     'Intake Vessel Thickness': 0.5,  # cm
     'Intake Vessel Material': 'stainless_steel'
 })
@@ -220,7 +224,7 @@ calculate_shielding_masses(params)
 #                                           Sec. 9 : Operation
 # **************************************************************************************************************************
 update_params({
-    'Operation Mode': "Autonomous",
+    'Operation Mode': "Remotely Monitored",
     'Number of Operators': 2,
     'Levelization Period': 60,  # years
     'Refueling Period': 7,
@@ -231,8 +235,13 @@ update_params({
     'Security Staff Per Shift': 1
 })
 
-params['Onsite Coolant Inventory'] = 10 * 24.417 * 8.2402 # kg
-params['Replacement Coolant Inventory'] = params['Onsite Coolant Inventory'] / 4
+# Based on https://digital.library.unt.edu/ark:/67531/metadc893980/m2/1/high_res_d/919556.pdf (tables 17 and 18):
+# Estimated helium mass per MWt is 3.3 kg/MWt.
+params['Onsite Coolant Inventory'] = 3.3 * params['Power MWt']  # kg
+# According to https://www.nationalacademies.org/read/12844/chapter/6#69, the helium loss rate is 10% per year,
+# so 1/10 of the initial inventory is replenished annually.
+# Without purification, helium needs to be replaced more frequently.
+params['Replacement Coolant Inventory'] = params['Onsite Coolant Inventory'] / 10
 params['Annual Coolant Supply Frequency'] = 1 if params['Primary Loop Purification'] else 6
 
 total_refueling_period = params['Fuel Lifetime'] + params['Refueling Period'] + params['Startup Duration after Refueling'] # days
@@ -241,7 +250,7 @@ params['A75: Vessel Replacement Period (cycles)']        = np.floor(10/total_ref
 params['A75: Core Barrel Replacement Period (cycles)']   = np.floor(10/total_refueling_period_yr)
 params['A75: Reflector Replacement Period (cycles)']     = np.floor(10/total_refueling_period_yr)
 params['A75: Drum Replacement Period (cycles)']          = np.floor(10/total_refueling_period_yr)
-params['Mainenance to Direct Cost Ratio']                = 0.015
+params['Maintenance to Direct Cost Ratio']                = 0.015
 params['A78: CAPEX to Decommissioning Cost Ratio'] = 0.15
 
 # **************************************************************************************************************************
@@ -249,7 +258,7 @@ params['A78: CAPEX to Decommissioning Cost Ratio'] = 0.15
 # **************************************************************************************************************************
 update_params({
     'Land Area': 18,  # acres
-    'Escalation Year': 2024,
+    'Escalation Year': 2025,
     'Excavation Volume': 412.605,  # m^3
     'Reactor Building Slab Roof Volume': (9750*6502.4*1500)/1e9,  # m^3
     'Reactor Building Basement Volume': (9750*6502.4*1500)/1e9,  # m^3
@@ -284,6 +293,7 @@ update_params({
     'Radwaste Building Basement Volume': 0,  # m^3
     'Radwaste Building Exterior Walls Volume': 0,  # m^3,
     'Interest Rate': 0.07,
+    'Discount Rate': 0.07,
     'Construction Duration': 12,  # months
     'Debt To Equity Ratio': 1,
     'Annual Return': 0.0475,
@@ -301,14 +311,14 @@ update_params({
 #   - $15/MWh if prevailing wage + apprenticeship requirements ARE met (5x multiplier)
 # Assumed here: $15/MWh (prevailing wage requirements met)
 # Units: $/MWh
-params['PTC credit value'] = 15.0  # $/MWh
+# params['PTC credit value'] = 15.0  # $/MWh
 
 # Duration of the PTC credit period.
 # Under the IRA Section 45Y, the credit is available for 10 years after the facility
 # is placed in service.
 # Units: years
 # Typical value: 10 years
-params['PTC credit period'] = 10  # years
+# params['PTC credit period'] = 10  # years
 
 # --- PTC Bonus Multipliers (optional, stackable) ---
 # Under the IRA, additional bonus credits can be stacked on top of the base PTC
@@ -321,8 +331,8 @@ params['PTC credit period'] = 10  # years
 #   (areas affected by coal plant closures or fossil fuel employment decline)
 #   Typical value: 0.10 (10%)
 # To disable bonuses, set both to 0.0 or remove them entirely.
-params['domestic_content_bonus'] = 0.10   # fraction — assumes domestic content standard is met
-params['energy_community_bonus'] = 0.10   # fraction — assumes facility is in an energy community
+# params['domestic_content_bonus'] = 0.10   # fraction — assumes domestic content standard is met
+# params['energy_community_bonus'] = 0.10   # fraction — assumes facility is in an energy community
 
 # --- Corporate Tax Rate ---
 # The US federal corporate tax rate used to gross up the PTC tax credit to its
@@ -332,13 +342,23 @@ params['energy_community_bonus'] = 0.10   # fraction — assumes facility is in 
 # Municipal utilities and non-profit cooperatives may use 0.0 (tax-exempt).
 # Units: fraction (e.g. 0.21 for 21%)
 # Typical values: 0.21 (federal only), 0.27 (federal + average state)
-params['Tax Rate'] = 0.21  # fraction
+# params['Tax Rate'] = 0.21  # fraction
+
+# --- IRA Sunset: Number of Units Claiming ITC/PTC ---
+# Caps how many units in the deployment sequence may avail the credit. A unit
+# is eligible only if its position is <= this cutoff. FOAK = unit 1; the NOAK
+# column = unit 'NOAK Unit Number'. When a unit is past the cutoff, the
+# ITC/PTC-adjusted outputs fall back to the un-subsidized values, producing
+# a step in the LCOE-vs-deployment-scale curve at the sunset point.
+# Only applies when ITC or PTC is enabled above. Defaults to effectively
+# infinite when omitted (every unit claims the credit).
+# params['Number of Units Claiming ITC/PTC'] = 10
 
 # **************************************************************************************************************************
 #                                           Sec. 11: Post Processing
 # **************************************************************************************************************************
-params['Number of Samples'] = 100 # Accounting for cost uncertainties
+params['Number of Samples'] = 100  # number of samples for cost uncertainty analysis
 # Estimate costs using the cost database file and save the output to an Excel file
-estimate = detailed_bottom_up_cost_estimate('cost/Cost_Database.xlsx', params, "examples/output_GCMR_A.xlsx")
-elapsed_time = (time.time() - time_start) / 60  # Calculate execution time
+estimate = detailed_bottom_up_cost_estimate('cost/Cost_Database.xlsx')
+elapsed_time = (time.time() - time_start) / 60  # calculate execution time
 print('Execution time:', np.round(elapsed_time, 1), 'minutes')

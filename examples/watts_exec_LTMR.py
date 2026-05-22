@@ -41,14 +41,14 @@ update_params({
 # **************************************************************************************************************************
 #                                                Sec. 1: Materials
 # **************************************************************************************************************************
-
 update_params({
     'reactor type': "LTMR", # LTMR or GCMR
     'TRISO Fueled': "No",
-    'Fuel': 'TRIGA_fuel',
+    'Fuel': 'UZrH_alloy',
     'Enrichment': 0.1975,  # Fraction between 0 and 1
     "H_Zr_ratio": 1.6,  # Proportion of hydrogen to zirconium atoms
     'U_met_wo': 0.3,  # Weight ratio of Uranium to total fuel weight (less than 1)
+    'er_wo': 0,       # Erbium (burnable poison)
     'Coolant': 'NaK',
     'Radial Reflector': 'Graphite',
     'Axial Reflector': 'Graphite',
@@ -58,7 +58,6 @@ update_params({
     'Common Temperature': 600,  # Kelvins
     'HX Material': 'SS316'
 })
-
 # **************************************************************************************************************************
 #                                           Sec. 2: Geometry: Fuel Pins, Moderator Pins, Coolant, Hexagonal Lattice
 # **************************************************************************************************************************  
@@ -75,21 +74,26 @@ update_params({
     'Radial Reflector Thickness': 14,  # cm
 })
 
-params['Lattice Radius'] = calculate_lattice_radius(params)
-params['Active Height']  =   78.4  # Or it is 2 * params['Lattice Radius']
-params['Axial Reflector Thickness'] = params['Radial Reflector Thickness'] # cm
+params['Lattice Apothem'] = calculate_hex_apothem(params)
+params['Lattice Radius'] = params['Lattice Apothem']
+params['Assembly FTF'] = 2 * params['Lattice Apothem']
+params['Active Height']  = 78.4
+params['Axial Reflector Thickness'] = params['Radial Reflector Thickness']  # cm
 params['Fuel Pin Count'] = calculate_pins_in_assembly(params, "FUEL")
-params['Moderator Pin Count'] =  calculate_pins_in_assembly(params, "MODERATOR")
+params['Moderator Pin Count'] = calculate_pins_in_assembly(params, "MODERATOR")
 params['Moderator Mass'] = calculate_moderator_mass(params)
-params['Core Radius'] = params['Lattice Radius'] + params['Radial Reflector Thickness']
+params['Core Radius'] = calculate_core_radius_from_hex(params)
 
 # **************************************************************************************************************************
 #                                           Sec. 3: Control Drums
 # ************************************************************************************************************************** 
 
 update_params({
-    'Drum Radius': 9.016, # or it is 0.23 * params['Lattice Radius'],  # cm
+    'Number of Drums': 12,
+    # When the user does not specify the drum radius, the code automatically sets it to the largest allowable value that avoids drum overlap
+    #'Drum Radius': 9.016, #,  # cm
     'Drum Absorber Thickness': 1,  # cm
+    'Drum Absorber Arc Degrees': 120,
     'Drum Height': params['Active Height'] + 2*params['Axial Reflector Thickness']
 })
 
@@ -113,14 +117,12 @@ params['Heat Flux'] =  calculate_heat_flux(params)
 #                                           Sec. 5: Running OpenMC
 # **************************************************************************************************************************
 
-# --- Shutdown Margin (SDM) ---
-# When True, an additional OpenMC simulation is run with all control drums rotated
-# to the fully inserted (ARI - All Rods In) position. The SDM is then calculated
-# as the difference in reactivity (in pcm) between the ARO and ARI configurations.
-# A positive SDM means the reactor can be safely shut down with all drums inserted.
+# --- Shutdown Margin  ---
+# When True, an additional OpenMC simulation is run to evaluate shutdown margin
+# for the shutdown configuration (all control drums inserted, absorber facing the core)
+# at 'Cold Shutdown Temperature'.
 # Recommended: True for final design verification; can be set to False to save
 # computation time during early design exploration.
-params['SD Margin Calc'] = True  # True or False
 
 # --- Isothermal Temperature Coefficient ---
 # When True, two additional OpenMC simulations are run: one at 'Common Temperature'
@@ -191,19 +193,19 @@ params['In Vessel Shield Outer Radius'] =  params['Core Radius'] + params['In Ve
 
 update_params({
     'Vessel Radius': params['Core Radius'] +  params['In Vessel Shield Thickness'],
-    'Vessel Thickness': 1,  # cm
-    'Vessel Lower Plenum Height': 42.848 - 40,  # cm, based on Reflecting Barrel~RPV Liner (-Reflector Thickness, which is currently missing in CAD),  # cm
-    'Vessel Upper Plenum Height': 47.152,  # cm
-    'Vessel Upper Gas Gap': 0, 
+    'Vessel Thickness': 2,  # cm — ASME BPVC Sec III Div 5 minimum at 520°C; refs: Oklo Aurora (INL-22/68167), FFTF, EBR-II
+    'Vessel Lower Plenum Height': 50,  # cm — IAEA TECDOC-1908; inlet manifold + flow distributor + grid plate (was 2.848, unit-conv bug)
+    'Vessel Upper Plenum Height': 47.152,  # cm — includes cover-gas headspace (no separate Upper Gas Gap tracked)
+    'Vessel Upper Gas Gap': 0,
     'Vessel Bottom Depth': 32.129,
     'Vessel Material': 'stainless_steel',
-    'Gap Between Vessel And Guard Vessel': 2,  # cm
-    'Guard Vessel Thickness': 0.5,  # cm
+    'Gap Between Vessel And Guard Vessel': 5,  # cm — OECD/NEA SFR Vessel Design Guidelines 2017; ASME Sec III Div 5 NH-3000 (was 2)
+    'Guard Vessel Thickness': 1,  # cm — ASME Sec III Class 3 minimum + IAEA TECDOC-1531 (was 0.5)
     'Guard Vessel Material': 'stainless_steel',
     'Gap Between Guard Vessel And Cooling Vessel': 5,  # cm
     'Cooling Vessel Thickness': 0.5,  # cm
     'Cooling Vessel Material': 'stainless_steel',
-    'Gap Between Cooling Vessel And Intake Vessel': 3,  # cm
+    'Gap Between Cooling Vessel And Intake Vessel': 5,  # cm — Hejzlar & Buongiorno 2007 NED RVACS minimum (was 3)
     'Intake Vessel Thickness': 0.5,  # cm
     'Intake Vessel Material': 'stainless_steel'
 })
@@ -216,7 +218,7 @@ calculate_shielding_masses(params)  # calculate the masses of the shieldings
 # **************************************************************************************************************************
 
 update_params({
-    'Operation Mode': "Autonomous",
+    'Operation Mode': "Remotely Monitored",
     'Number of Operators': 2,
     'Levelization Period': 60,  # years
     'Refueling Period': 7,
@@ -226,10 +228,11 @@ update_params({
     'Reactors Monitored Per Operator': 10,
     'Security Staff Per Shift': 1
 })
-## Calculated based on 1 tanks
-## Density of NaK=855  kg/m3, Volume=8.2402 m3 (standard tank size)
-params['Onsite Coolant Inventory'] = 1 * 855 * 8.2402 # kg
-params['Replacement Coolant Inventory'] = 0 # assume that NaK does not need to be replaced.
+## Based on https://www.edf.fr/sites/default/files/mediatheque/dp_creys_2017.pdf :
+## 5,500 tonnes of sodium from the reactor vessel and secondary circuits at the Creys-Malville plant (France), which is 3,000 MWt.
+# This gives a rough estimate of 1833 kg/MWt.
+params['Onsite Coolant Inventory'] = 1833 * params['Power MWt']
+params['Replacement Coolant Inventory'] = 0  # NaK is assumed not to require replacement
 # params['Annual Coolant Supply Frequency']  # LTMR should not require frequent refilling
 
 total_refueling_period = params['Fuel Lifetime'] + params['Refueling Period'] + params['Startup Duration after Refueling'] # days
@@ -238,8 +241,8 @@ params['A75: Vessel Replacement Period (cycles)']        = np.floor(10/total_ref
 params['A75: Core Barrel Replacement Period (cycles)']   = np.floor(10/total_refueling_period_yr)
 params['A75: Reflector Replacement Period (cycles)']     = np.floor(10/total_refueling_period_yr)
 params['A75: Drum Replacement Period (cycles)']          = np.floor(10/total_refueling_period_yr)
-params['Mainenance to Direct Cost Ratio']                = 0.015
-# A78: Annualized Decommisioning Cost
+params['Maintenance to Direct Cost Ratio']                = 0.015
+# A78: Annualized Decommissioning Cost
 params['A78: CAPEX to Decommissioning Cost Ratio'] = 0.15
 
 # **************************************************************************************************************************
@@ -248,7 +251,7 @@ params['A78: CAPEX to Decommissioning Cost Ratio'] = 0.15
 
 update_params({
     'Land Area': 18,  # acres
-    'Escalation Year': 2024,
+    'Escalation Year': 2025,
 
     'Excavation Volume': 412.605,  # m^3
     'Reactor Building Slab Roof Volume': (9750*6502.4*1500)/1e9,  # m^3
@@ -299,6 +302,7 @@ update_params({
     'Radwaste Building Exterior Walls Volume': 0,  # m^3,
     
     'Interest Rate': 0.07,
+    'Discount Rate': 0.07,
     'Construction Duration': 12,  # months
     'Debt To Equity Ratio': 1,
     'Annual Return': 0.0475,  # Annual return on decommissioning costs
@@ -319,11 +323,26 @@ update_params({
 # To disable ITC, remove or comment out this parameter.
 params['ITC credit level'] = 0.30  # fraction — assumes prevailing wage requirements are met
 
+# --- IRA Sunset: Number of Units Claiming ITC/PTC ---
+# Under the IRA, ITC and PTC eligibility ends at a sunset year. Once the sunset
+# is reached, units placed in service after that point cannot claim the credit.
+# This parameter caps how many units in the deployment sequence may avail the
+# credit. A unit is eligible only if its position is <= this cutoff:
+#   - FOAK column = unit 1 (always eligible if cutoff >= 1)
+#   - NOAK column = unit 'NOAK Unit Number' (eligible only if NOAK Unit Number <= cutoff)
+# When a unit is past the cutoff, the ITC/PTC-adjusted outputs fall back to the
+# un-subsidized values, producing a step in the LCOE-vs-deployment-scale curve
+# at the sunset point.
+# Typical value: a fleet-size estimate consistent with deployments before the
+# IRA sunset (e.g. 50, 100). Set very high to keep the original behavior of
+# applying the credit to every unit.
+params['Number of Units Claiming ITC/PTC'] = 10
+
 # **************************************************************************************************************************
 #                                           Sec. 11: Post Processing
 # **************************************************************************************************************************
-params['Number of Samples'] = 100 # Accounting for cost uncertainties
+params['Number of Samples'] = 100  # number of samples for cost uncertainty analysis
 # Estimate costs using the cost database file and save the output to an Excel file
-estimate = detailed_bottom_up_cost_estimate('cost/Cost_Database.xlsx', params, "examples/output_LTMR.xlsx")
-elapsed_time = (time.time() - time_start) / 60  # Calculate execution time
+estimate = detailed_bottom_up_cost_estimate('cost/Cost_Database.xlsx')
+elapsed_time = (time.time() - time_start) / 60  # calculate execution time
 print('Execution time:', np.round(elapsed_time, 1), 'minutes')

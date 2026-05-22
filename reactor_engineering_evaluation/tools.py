@@ -22,25 +22,25 @@ def materials_densities(material):
     return material_densities[material] # in gram/cm^3
 
 def material_specific_heat(material):
-    material_cp= {
-    "Helium": 5193 ,     # J/(Kg.K)
-    "NaK" : 982.    # J/(Kg.K)
-
+    material_cp = {
+        "Helium": 5193,  # J/(kg·K)
+        "NaK": 982.      # J/(kg·K)
     }
-    return material_cp[material] # in gram/cm^3    
+    return material_cp[material]  # J/(kg·K)
 
 def cylinder_annulus_mass(outer_radius , inner_radius,height, material ):
 
     volume = 3.14* (outer_radius**2 - inner_radius**2) * height
-    mass = volume* materials_densities(material)/1000 # Kilograms
+    mass = volume* materials_densities(material)/1000  # kg
     return mass # in kg
 
 def calculate_shielding_masses(params):
     params['In Vessel Shield Mass'] = cylinder_annulus_mass(params['In Vessel Shield Outer Radius'],\
     params['In Vessel Shield Inner Radius'], params['Vessel Height'], params['In Vessel Shield Material'] )
-    params['Outer Shield Outer Radius'] = params['Out Of Vessel Shield Thickness']+ params['Vessels Total Radius']
+    params['Outer Shield Outer Radius'] = params['Out Of Vessel Shield Thickness'] + params['Vessels Total Radius']
+    params['Outer Shield Inner Radius'] = params['Outer Shield Outer Radius'] - params['Out Of Vessel Shield Thickness']
 
-    outer_shield_mass = cylinder_annulus_mass(params['Outer Shield Outer Radius'], params['Out Of Vessel Shield Thickness'],\
+    outer_shield_mass = cylinder_annulus_mass(params['Outer Shield Outer Radius'], params['Outer Shield Inner Radius'],\
     params['Vessels Total Height'], params['Out Of Vessel Shield Material']) 
     params['Out Of Vessel Shield Mass'] = params['Out Of Vessel Shield Effective Density Factor'] * outer_shield_mass
 
@@ -63,36 +63,36 @@ def mass_flow_rate(params):
     
 def compressor_power(params):
     # Estimates the required compressor power based on a simplified
-    # model using pressure drop, and compressor isentropic efficiency
+    # model using pressure drop and compressor isentropic efficiency
 
-    rho_he = 3.3297 # kg/m3. TODO: Consider importing CoolProp to estiate density based on cold leg temperature and pressure
+    rho_he = 3.3297  # kg/m3. TODO: Consider importing CoolProp to estimate density based on cold-leg temperature and pressure
     power = params['Primary Loop Pressure Drop']*params['Primary Loop Mass Flow Rate']/params['Compressor Isentropic Efficiency']/rho_he
     params['Primary Loop Compressor Power'] = power # W
     return
 
 def compressor_wheel_diameter(params):
-    # Estimates the approximate size of the compressor based on its 
-    # Specific Speed and Diameter that matches MIGHTRs Horizontal HTGR
-    # Ref for Specific Speed: 
+    # Estimates the approximate compressor size based on its specific
+    # diameter, matched to the MIGHTR horizontal HTGR design.
+    # Ref for specific diameter:
     #  https://www.dropbox.com/scl/fi/fnqdg2hyi6y4ozu9p7nyu/final-report-str-mech-ARDP-redacted-V3.pdf?rlkey=h97dii28tvf0bxtffo8q62tn5&st=zsls1bs2&dl=0
-    ref_specific_diameter = 3.6 # dimensionless
-    rho_He = 3.330 # kg/m3 for He at 4 MPa, 300 °C. TODO: use He density correlation or CoolProp to estimate density based on cold leg temperature and pressure
-    Vdot_gcmr = params['Primary Loop Mass Flow Rate'] / rho_He # m3/s. Volumetric flow rate 
+    ref_specific_diameter = 3.6  # dimensionless
+    rho_He = 3.330  # kg/m3 for He at 4 MPa, 300 °C. TODO: use a He density correlation or CoolProp to estimate density based on cold-leg temperature and pressure
+    Vdot_gcmr = params['Primary Loop Mass Flow Rate'] / rho_He  # m3/s — volumetric flow rate
     dP = params['Primary Loop Pressure Drop']
     diameter = ref_specific_diameter/1.054 / (dP/rho_He)**0.25 * np.sqrt(Vdot_gcmr) # m
     return diameter
 
 def GCMR_integrated_heat_transfer_vessel(params):
-    # Calculates the required parameters for the 
-    # GCMR's Integrated Heat Transfer Vessel that houses:
+    # Calculates the required parameters for the
+    # GCMR Integrated Heat Transfer Vessel that houses:
     #   circulator, PCHE, piping, valves, insulation
-    
-    contingency = 0.3 # Accounts for the volume/mass of valves, fittings, connections
-    PCHE_volume = (params['Primary HX Mass'] / (materials_densities(params['HX Material'])*1e3) / 0.4) # account for coolant channel assumed void fraction 60%
-    compressor_volume = (compressor_wheel_diameter(params))**3 # Assume a cube area side 1.3*wheel_diameter. TODO: get more accurate compressor sizing
 
-    vessel_inner_volume = (1+contingency)*(PCHE_volume + compressor_volume) # Assume a cube-like structure
-    vessel_outer_volume = (vessel_inner_volume**(1/3)+ 1e-2*params['Integrated Heat Transfer Vessel Thickness'])**3 # m3
+    contingency = 0.3  # accounts for the volume/mass of valves, fittings, and connections
+    PCHE_volume = (params['Primary HX Mass'] / (materials_densities(params['HX Material'])*1e3) / 0.4)  # accounts for assumed 60% coolant channel void fraction
+    compressor_volume = (compressor_wheel_diameter(params))**3  # approximated as a cube with side = wheel diameter. TODO: improve compressor sizing
+
+    vessel_inner_volume = (1+contingency)*(PCHE_volume + compressor_volume)  # assumes a cube-like structure
+    vessel_outer_volume = (vessel_inner_volume**(1/3)+ 1e-2*params['Integrated Heat Transfer Vessel Thickness'])**3  # m3
     vessel_volume = vessel_outer_volume - vessel_inner_volume
     vessel_density = materials_densities(params['Integrated Heat Transfer Vessel Material'])*1e3
     params['Integrated Heat Transfer Vessel Outer Volume'] = vessel_outer_volume
@@ -102,6 +102,6 @@ def GCMR_integrated_heat_transfer_vessel(params):
         params['Integrated Heat Transfer Vessel Outer Volume'] = 0
         params['Integrated Heat Transfer Vessel Mass'] = 0
 
-    # Rough Estimate of the mass held by the Support Structure
-    # Primary HX + Integrated Heat Transfer Vessel + Compressure + Valves/Fittings/Bolts/etc.
+    # Rough estimate of the mass supported by the support structure:
+    # Primary HX + Integrated Heat Transfer Vessel + Compressor + Valves/Fittings/Bolts/etc.
     # params['Integrated Heat Transfer System Mass'] = params['Primary HX Mass'] + (vessel_volume * vessel_density) + compressor_volume*8000

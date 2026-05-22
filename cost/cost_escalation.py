@@ -22,7 +22,7 @@ def calculate_inflation_multiplier(file_path, base_dollar_year, cost_type, escal
     df = df.dropna(subset=['Year'])
     df['Year'] = df['Year'].astype(int)
 
-    # --- DEBUG: remove after fixing ---
+    # --- DEBUG: remove after issue is resolved ---
     # print("Year column dtype:", df['Year'].dtype)
     # print("Year values:", df['Year'].values)
     # print("Looking for:", base_dollar_year, type(base_dollar_year))
@@ -74,7 +74,7 @@ def escalate_cost_database(file_name, escalation_year, params, sheet_name="Cost 
     # Read the Excel file into a Pandas DataFrame
     df = pd.read_excel(file_name, sheet_name=sheet_name)
 
-    # Helper function to resolve numeric or parameter-based values
+    # Helper function to resolve numeric or parameter-referenced values
     def resolve_value(val, params):
         if pd.isna(val):
             return np.nan
@@ -100,10 +100,10 @@ def escalate_cost_database(file_name, escalation_year, params, sheet_name="Cost 
     for col in cost_columns:
         df[col] = df[col].apply(lambda x: resolve_value(x, params))
 
-    # Initialize an empty list to store the inflation multipliers
+    # Initialize an empty list to store inflation multipliers
     inflation_multipliers = []
 
-    # Iterate through each row in the dataframe
+    # Iterate through each row in the DataFrame
     for _, row in df.iterrows():
         if not pd.isna(row['Fixed Cost ($)']) or not pd.isna(row['Unit Cost']):
             multiplier = calculate_inflation_multiplier(
