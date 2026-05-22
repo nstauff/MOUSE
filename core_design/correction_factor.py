@@ -235,7 +235,16 @@ def corrected_keff_2d(depletion_2d_results_file, total_height, core_radius=None)
         print(f"Estimated fuel cycle length: {round_cycle_length} days")
     else:
         print("k = 1.0 not reached within the given time steps.")
-        raise ValueError("Cannot compute fuel cycle length: k=1.0 was never reached.")
+        if keff_2d_corrected_values[0] < 1:
+            # Reactor never reached criticality — cycle length is 0
+            cycle_length = 0
+        elif keff_2d_corrected_values[-1] > 1:
+            # Reactor was always supercritical — lifetime exceeds simulation window
+            cycle_length = time_steps[-1]
+        else:
+            cycle_length = 0
+        round_cycle_length = round(cycle_length, 0)
+        print(f"Estimated fuel cycle length (edge case): {round_cycle_length} days")
 
     return (
         round_cycle_length,
