@@ -461,9 +461,11 @@ def detailed_bottom_up_cost_estimate(cost_database_filename, output_filename=Non
     import inspect
     import os
 
-    # Grab params and the calling script's path from the caller's frame automatically
+    # Grab params and the calling script's path from the caller's frame automatically.
+    # Check f_locals first (script-level or function-local 'params'), then f_globals
+    # (module-level 'params' accessed via global scope from within a function).
     caller_frame = inspect.stack()[1][0]
-    params = caller_frame.f_locals.get('params')
+    params = caller_frame.f_locals.get('params') or caller_frame.f_globals.get('params')
     if params is None:
         raise RuntimeError(
             "detailed_bottom_up_cost_estimate could not find 'params' in the calling scope. "
