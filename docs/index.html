@@ -1,0 +1,620 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MOUSE Microreactor Cost Estimator | Nuclear Microreactor Economics Tool</title>
+  <meta name="description" content="MOUSE is an open-source nuclear microreactor cost estimation and technoeconomic analysis tool for FOAK and NOAK costs, LCOE, reactor scoping, and microreactor design studies.">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://idaholabresearch.github.io/MOUSE/">
+
+  <meta property="og:title" content="MOUSE Microreactor Cost Estimator">
+  <meta property="og:description" content="Open-source nuclear microreactor technoeconomic analysis, cost estimation, and LCOE scoping for LTMR, GCMR, and HPMR concepts.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://idaholabresearch.github.io/MOUSE/">
+  <meta property="og:image" content="https://raw.githubusercontent.com/IdahoLabResearch/MOUSE/main/assets/mouse_diagram.png">
+  <meta name="twitter:card" content="summary_large_image">
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "MOUSE",
+    "alternateName": "Microreactor Optimization Using Simulation and Economics",
+    "applicationCategory": "EngineeringApplication",
+    "operatingSystem": "Web",
+    "url": "https://mouse-microreactors.streamlit.app",
+    "codeRepository": "https://github.com/IdahoLabResearch/MOUSE",
+    "description": "Open-source nuclear microreactor cost estimation and technoeconomic analysis tool for FOAK and NOAK costs, LCOE, and early-stage reactor scoping.",
+    "creator": {
+      "@type": "Organization",
+      "name": "Idaho National Laboratory"
+    },
+    "license": "https://github.com/IdahoLabResearch/MOUSE/blob/main/LICENSE",
+    "keywords": [
+      "microreactor",
+      "nuclear microreactor",
+      "microreactor cost estimation",
+      "technoeconomic analysis",
+      "levelized cost of energy",
+      "LCOE",
+      "FOAK",
+      "NOAK",
+      "OpenMC",
+      "WATTS"
+    ]
+  }
+  </script>
+
+  <style>
+    :root {
+      --navy: #0a2540;
+      --blue: #1b4f8c;
+      --orange: #c84b1e;
+      --ink: #10233b;
+      --slate: #475569;
+      --muted: #64748b;
+      --line: #d8e3ee;
+      --soft: #f4f8fb;
+      --white: #ffffff;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: #f7f9fb;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.6;
+    }
+
+    a {
+      color: inherit;
+    }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 0.8rem clamp(1rem, 4vw, 4rem);
+      background: rgba(247, 249, 251, 0.94);
+      border-bottom: 1px solid rgba(216, 227, 238, 0.9);
+      backdrop-filter: blur(10px);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      min-width: 0;
+      text-decoration: none;
+      font-weight: 800;
+      letter-spacing: 0;
+    }
+
+    .brand img {
+      width: 116px;
+      height: auto;
+      display: block;
+    }
+
+    .nav {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      font-size: 0.92rem;
+      font-weight: 650;
+      color: var(--slate);
+    }
+
+    .nav a {
+      text-decoration: none;
+    }
+
+    .nav a:hover {
+      color: var(--navy);
+    }
+
+    .hero {
+      position: relative;
+      min-height: min(760px, 92vh);
+      display: flex;
+      align-items: center;
+      padding: clamp(4.5rem, 9vw, 8rem) clamp(1rem, 5vw, 5rem);
+      color: var(--white);
+      overflow: hidden;
+      background:
+        linear-gradient(90deg, rgba(10, 37, 64, 0.96), rgba(10, 37, 64, 0.84) 48%, rgba(10, 37, 64, 0.48)),
+        url("https://raw.githubusercontent.com/IdahoLabResearch/MOUSE/main/assets/Ref_openmc_2d_designs/LTMR_core.png") center right / cover no-repeat;
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 72px;
+      background: linear-gradient(180deg, rgba(247, 249, 251, 0), #f7f9fb);
+    }
+
+    .hero-inner {
+      position: relative;
+      z-index: 1;
+      max-width: 760px;
+    }
+
+    .eyebrow {
+      margin: 0 0 0.9rem;
+      color: #bfdbfe;
+      font-size: 0.82rem;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      max-width: 12ch;
+      font-size: clamp(3rem, 8vw, 6.5rem);
+      line-height: 0.95;
+      letter-spacing: 0;
+    }
+
+    .subtitle {
+      max-width: 66ch;
+      margin: 1.35rem 0 0;
+      color: #eaf4fb;
+      font-size: clamp(1.05rem, 2vw, 1.35rem);
+      line-height: 1.55;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.8rem;
+      margin-top: 2rem;
+    }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 46px;
+      padding: 0.75rem 1.05rem;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      text-decoration: none;
+      font-weight: 800;
+    }
+
+    .button.primary {
+      background: var(--orange);
+      color: var(--white);
+    }
+
+    .button.secondary {
+      border-color: rgba(255, 255, 255, 0.38);
+      color: var(--white);
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .button:hover {
+      transform: translateY(-1px);
+    }
+
+    main {
+      position: relative;
+      z-index: 1;
+    }
+
+    section {
+      padding: clamp(3rem, 7vw, 5.5rem) clamp(1rem, 5vw, 5rem);
+    }
+
+    .section-inner {
+      max-width: 1120px;
+      margin: 0 auto;
+    }
+
+    .section-kicker {
+      margin: 0 0 0.5rem;
+      color: var(--blue);
+      font-size: 0.82rem;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    h2 {
+      margin: 0;
+      color: var(--navy);
+      font-size: clamp(2rem, 4vw, 3.2rem);
+      line-height: 1.05;
+      letter-spacing: 0;
+    }
+
+    .lead {
+      max-width: 70ch;
+      margin: 1rem 0 0;
+      color: var(--slate);
+      font-size: 1.08rem;
+    }
+
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 1rem;
+      margin-top: 2rem;
+    }
+
+    .feature {
+      background: var(--white);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 1.15rem;
+    }
+
+    .feature h3 {
+      margin: 0 0 0.5rem;
+      color: var(--navy);
+      font-size: 1.05rem;
+    }
+
+    .feature p {
+      margin: 0;
+      color: var(--slate);
+    }
+
+    .split {
+      display: grid;
+      grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+      gap: clamp(1.5rem, 4vw, 3rem);
+      align-items: center;
+    }
+
+    .visual {
+      margin: 0;
+      background: var(--white);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .visual img {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+
+    .visual figcaption {
+      padding: 0.8rem 1rem;
+      color: var(--muted);
+      font-size: 0.9rem;
+      border-top: 1px solid var(--line);
+    }
+
+    .list {
+      display: grid;
+      gap: 0.7rem;
+      margin: 1.5rem 0 0;
+      padding: 0;
+      list-style: none;
+      color: var(--slate);
+    }
+
+    .list li {
+      padding-left: 1rem;
+      border-left: 3px solid #bfdbfe;
+    }
+
+    .bands {
+      background: var(--soft);
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .reactor-row {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 1rem;
+      margin-top: 2rem;
+    }
+
+    .reactor {
+      background: var(--white);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .reactor img {
+      width: 100%;
+      aspect-ratio: 1.25;
+      object-fit: cover;
+      display: block;
+      background: #dbeafe;
+    }
+
+    .reactor div {
+      padding: 1rem;
+    }
+
+    .reactor h3 {
+      margin: 0 0 0.35rem;
+      color: var(--navy);
+    }
+
+    .reactor p {
+      margin: 0;
+      color: var(--slate);
+    }
+
+    .publications {
+      display: grid;
+      gap: 0.85rem;
+      margin-top: 1.6rem;
+    }
+
+    .publication {
+      display: block;
+      padding: 1rem 1.1rem;
+      background: var(--white);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      text-decoration: none;
+      color: var(--navy);
+      font-weight: 750;
+    }
+
+    .publication span {
+      display: block;
+      margin-top: 0.2rem;
+      color: var(--muted);
+      font-size: 0.92rem;
+      font-weight: 500;
+    }
+
+    .cta {
+      background: var(--navy);
+      color: var(--white);
+      text-align: center;
+    }
+
+    .cta h2 {
+      color: var(--white);
+    }
+
+    .cta p {
+      color: #dbeafe;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .cta .actions {
+      justify-content: center;
+    }
+
+    footer {
+      padding: 1.6rem clamp(1rem, 5vw, 5rem);
+      color: var(--muted);
+      background: #f7f9fb;
+      border-top: 1px solid var(--line);
+      font-size: 0.9rem;
+    }
+
+    footer .section-inner {
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+
+    footer a {
+      color: var(--blue);
+      text-decoration: none;
+      font-weight: 700;
+    }
+
+    @media (max-width: 860px) {
+      .nav {
+        display: none;
+      }
+
+      .hero {
+        min-height: 86vh;
+        background:
+          linear-gradient(180deg, rgba(10, 37, 64, 0.95), rgba(10, 37, 64, 0.76)),
+          url("https://raw.githubusercontent.com/IdahoLabResearch/MOUSE/main/assets/Ref_openmc_2d_designs/LTMR_core.png") center / cover no-repeat;
+      }
+
+      h1 {
+        max-width: 10ch;
+      }
+
+      .feature-grid,
+      .split,
+      .reactor-row {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar" aria-label="Site header">
+    <a class="brand" href="#top" aria-label="MOUSE home">
+      <img src="https://raw.githubusercontent.com/IdahoLabResearch/MOUSE/main/assets/logos/MOUSE-logo_R1_black.png" alt="MOUSE logo">
+    </a>
+    <nav class="nav" aria-label="Primary navigation">
+      <a href="#capabilities">Capabilities</a>
+      <a href="#reactors">Reactor Concepts</a>
+      <a href="#publications">Publications</a>
+      <a href="https://github.com/IdahoLabResearch/MOUSE">GitHub</a>
+    </nav>
+  </header>
+
+  <section id="top" class="hero">
+    <div class="hero-inner">
+      <p class="eyebrow">Open-source nuclear microreactor economics</p>
+      <h1>MOUSE Microreactor Cost Estimator</h1>
+      <p class="subtitle">
+        Microreactor Optimization Using Simulation and Economics (MOUSE) connects
+        early-stage reactor design choices to bottom-up cost estimates, first-of-a-kind
+        and nth-of-a-kind costs, levelized cost of energy, and market context.
+      </p>
+      <div class="actions">
+        <a class="button primary" href="https://mouse-microreactors.streamlit.app">Launch the Streamlit App</a>
+        <a class="button secondary" href="https://github.com/IdahoLabResearch/MOUSE">View the GitHub Repository</a>
+      </div>
+    </div>
+  </section>
+
+  <main>
+    <section id="capabilities">
+      <div class="section-inner">
+        <p class="section-kicker">What MOUSE Does</p>
+        <h2>Microreactor technoeconomic analysis for early-stage scoping.</h2>
+        <p class="lead">
+          MOUSE is designed for transparent microreactor cost estimation and comparative
+          reactor scoping. It supports nuclear microreactor design studies where users
+          need to understand capital costs, annualized costs, fuel costs, and levelized
+          cost of energy before detailed engineering is available.
+        </p>
+
+        <div class="feature-grid">
+          <article class="feature">
+            <h3>Bottom-up cost estimation</h3>
+            <p>Estimate preconstruction, direct, indirect, training, financial, operating, maintenance, replacement, decommissioning, and fuel costs.</p>
+          </article>
+          <article class="feature">
+            <h3>FOAK and NOAK comparisons</h3>
+            <p>Compare first-of-a-kind and nth-of-a-kind deployment economics, including capital costs and levelized cost of energy.</p>
+          </article>
+          <article class="feature">
+            <h3>Interactive reactor scoping</h3>
+            <p>Use the hosted Streamlit app to explore how power, enrichment, geometry, operations, tax credits, and financing assumptions affect results.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="bands">
+      <div class="section-inner split">
+        <div>
+          <p class="section-kicker">Workflow</p>
+          <h2>From reactor inputs to cost and market context.</h2>
+          <p class="lead">
+            The tool combines simplified reactor design, balance-of-plant calculations,
+            cost-account estimation, uncertainty ranges, and market benchmarks in one
+            workflow. It is intended for research, screening, and comparative analysis,
+            not investment or procurement decisions.
+          </p>
+          <ul class="list">
+            <li>Estimate overnight capital cost, total capital investment, annualized cost, and LCOE.</li>
+            <li>Inspect full Code of Accounts cost breakdowns and cost-driver rankings.</li>
+            <li>Compare estimated microreactor electricity cost against selected market benchmarks.</li>
+          </ul>
+        </div>
+        <figure class="visual">
+          <img src="https://raw.githubusercontent.com/IdahoLabResearch/MOUSE/main/assets/mouse_diagram.png" alt="MOUSE workflow diagram connecting microreactor design, cost estimation, and economics">
+          <figcaption>MOUSE links reactor design inputs, engineering calculations, and economics into an integrated microreactor scoping workflow.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section id="reactors">
+      <div class="section-inner">
+        <p class="section-kicker">Reactor Concepts</p>
+        <h2>Reference models for three microreactor concepts.</h2>
+        <p class="lead">
+          The repository includes reference models for liquid-metal, gas-cooled, and
+          heat-pipe microreactor concepts. These are pre-conceptual designs intended
+          for transparent technoeconomic assessment.
+        </p>
+
+        <div class="reactor-row">
+          <article class="reactor">
+            <img src="https://raw.githubusercontent.com/IdahoLabResearch/MOUSE/main/assets/Ref_openmc_2d_designs/LTMR_core.png" alt="Liquid-metal thermal microreactor core model">
+            <div>
+              <h3>LTMR</h3>
+              <p>Liquid-metal thermal microreactor reference concept.</p>
+            </div>
+          </article>
+          <article class="reactor">
+            <img src="https://raw.githubusercontent.com/IdahoLabResearch/MOUSE/main/assets/Ref_openmc_2d_designs/GCMR_Core.png" alt="Gas-cooled TRISO-fueled microreactor core model">
+            <div>
+              <h3>GCMR</h3>
+              <p>Gas-cooled TRISO-fueled microreactor reference concept.</p>
+            </div>
+          </article>
+          <article class="reactor">
+            <img src="https://raw.githubusercontent.com/IdahoLabResearch/MOUSE/main/assets/Ref_openmc_2d_designs/HPMR_core.png" alt="Heat-pipe microreactor core model">
+            <div>
+              <h3>HPMR</h3>
+              <p>Heat-pipe microreactor reference concept.</p>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="publications" class="bands">
+      <div class="section-inner">
+        <p class="section-kicker">Research Basis</p>
+        <h2>Reports and papers behind the MOUSE cost framework.</h2>
+        <p class="lead">
+          MOUSE builds on open-source reactor modeling, bottom-up nuclear cost estimation,
+          and published microreactor technoeconomic analysis.
+        </p>
+
+        <div class="publications">
+          <a class="publication" href="https://www.osti.gov/biblio/2447366">
+            Technoeconomic Evaluation of Microreactor Using Detailed Bottom-up Estimate
+            <span>Hanna et al., INL Technical Report, 2024</span>
+          </a>
+          <a class="publication" href="https://www.osti.gov/biblio/2588465">
+            A Bottom-Up Cost Estimation Tool for Nuclear Microreactors
+            <span>Hanna et al., INL S&amp;T Accomplishment Report, 2025</span>
+          </a>
+          <a class="publication" href="https://www.sciencedirect.com/science/article/pii/S0029549325003875">
+            Open-Source Microreactor Design Models for Technoeconomic Assessments
+            <span>Al-Dawood, Hanna et al., Nuclear Engineering and Design, 2025</span>
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <section class="cta">
+      <div class="section-inner">
+        <h2>Explore microreactor costs interactively.</h2>
+        <p class="lead">
+          Launch the hosted app to compare reactor inputs, uncertainty ranges, FOAK and
+          NOAK costs, LCOE, fuel cycle metrics, and cost drivers.
+        </p>
+        <div class="actions">
+          <a class="button primary" href="https://mouse-microreactors.streamlit.app">Launch MOUSE</a>
+          <a class="button secondary" href="https://github.com/IdahoLabResearch/MOUSE/blob/main/README.md">Read the README</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="section-inner">
+      <span>&copy; 2026 Battelle Energy Alliance, LLC. Released under the MIT License.</span>
+      <span><a href="https://github.com/IdahoLabResearch/MOUSE">GitHub</a> · <a href="https://mouse-microreactors.streamlit.app">Streamlit App</a></span>
+    </div>
+  </footer>
+</body>
+</html>
