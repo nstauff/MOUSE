@@ -1034,13 +1034,13 @@ def _fmt_table_val(x):
     if a >= 1e7:
         return f'{sign}{round(a / 1e6):.0f}M'
     elif a >= 1e6:
-        return f'{sign}{round(a / 1e6, 1)}M'
+        return f'{sign}{round(a / 1e6):.0f}M'
     elif a >= 1e5:
         return f'{sign}{round(a / 1e4) * 10:.0f}K'
     elif a >= 1e4:
         return f'{sign}{round(a / 1e3):.0f}K'
     elif a >= 1e3:
-        return f'{sign}{round(a / 1e3, 1)}K'
+        return f'{sign}{round(a / 1e3):.0f}K'
     else:
         return f'{sign}{int(round(a))}'
 
@@ -4932,7 +4932,14 @@ with streamlit_analytics.track():
     st.markdown(
         f'<p style="color:#64748b;font-size:0.85rem;margin-bottom:1rem;">'
         f'Full cost breakdown by Code of Accounts. Highlighted rows are parent accounts. '
-        f'Cost ranges (e.g. <em>36M - 42M</em>) show mean ± 1σ from the uncertainty analysis; '
+        f'First-of-a-kind (FOAK) columns represent the first deployed unit; '
+        f'nth-of-a-kind (NOAK) columns represent the mature deployment unit selected in the inputs. '
+        f'The cost columns include both capitalized costs and annualized operating, maintenance, '
+        f'replacement, decommissioning, and fuel costs. '
+        f'The levelized cost of energy (LCOE) columns estimate how much each account contributes '
+        f'to the total electricity cost. '
+        f'Values are shown as <strong>mean</strong> '
+        f'<span style="color:#64748b;">[mean &minus; 1&sigma; to mean + 1&sigma;]</span>; '
         f'a single value means no uncertainty was computed for that account. '
         f'All dollar values in {ESCALATION_YEAR} USD.</p>',
         unsafe_allow_html=True,
@@ -4946,20 +4953,34 @@ with streamlit_analytics.track():
     _noak_std = next((c for c in display_df.columns if 'NOAK Estimated Cost std' in c), None)
     _have_lcoe = 'FOAK LCOE' in enriched_df.columns
 
+    def _fmt_table_money(x):
+        v = _fmt_table_val(x)
+        return v if v == '-' else f'${v}'
+
+    def _value_cell(main, low=None, high=None):
+        if main == '-':
+            return '<span class="mouse-table-empty">-</span>'
+        if low is None or high is None or low == high:
+            return f'<span class="mouse-value-main">{main}</span>'
+        return (
+            f'<span class="mouse-value-main">{main}</span>'
+            f'<span class="mouse-value-range">[{low} - {high}]</span>'
+        )
+
     def _pm(mean_val, std_val):
-        m = _fmt_table_val(mean_val)
+        m = _fmt_table_money(mean_val)
         if m == '-':
-            return '-'
+            return _value_cell('-')
         try:
             mn = float(mean_val)
             sd = float(std_val)
         except (TypeError, ValueError):
-            return m
+            return _value_cell(m)
         if sd == 0 or np.isnan(sd):
-            return m
-        lo = _fmt_table_val(max(0, mn - sd))
-        hi = _fmt_table_val(mn + sd)
-        return f'{lo} - {hi}' if lo != hi else lo
+            return _value_cell(m)
+        lo = _fmt_table_money(max(0, mn - sd))
+        hi = _fmt_table_money(mn + sd)
+        return _value_cell(m, lo, hi)
 
     def _fmt_lcoe_tab(v):
         try:
@@ -4969,25 +4990,23 @@ with streamlit_analytics.track():
         if np.isnan(v) or v <= 0:
             return '-'
         if v < 1:
-            return '< 1'
-        if v < 10:
-            return f'{v:.1f}'
-        return str(int(round(v)))
+            return '&lt; $1'
+        return f'${int(round(v))}'
 
     def _pm_lcoe(mean_val, std_val):
         m = _fmt_lcoe_tab(mean_val)
         if m == '-':
-            return '-'
+            return _value_cell('-')
         try:
             mn = float(mean_val)
             sd = float(std_val)
         except (TypeError, ValueError):
-            return m
+            return _value_cell(m)
         if np.isnan(sd) or sd <= 0:
-            return m
+            return _value_cell(m)
         lo = _fmt_lcoe_tab(max(0.0, mn - sd))
         hi = _fmt_lcoe_tab(mn + sd)
-        return lo if lo == hi else f'{lo} - {hi}'
+        return _value_cell(m, lo, hi)
 
     def _fmt_account(x):
         if isinstance(x, str):
@@ -5034,27 +5053,21 @@ with streamlit_analytics.track():
     _idx_to_pos = {idx: pos for pos, idx in enumerate(table_df.index)}
 
     _EM = '\u2003'
-    _PREFIX = {'-': '', 0: '', 1: f'{_EM}> ', 2: f'{_EM}{_EM}> ',
-               3: f'{_EM}{_EM}{_EM}. ', 4: f'{_EM}{_EM}{_EM}{_EM}. '}
+    _PREFIX = {'-': '', 0: '', 1: _EM, 2: f'{_EM}{_EM}',
+               3: f'{_EM}{_EM}{_EM}', 4: f'{_EM}{_EM}{_EM}{_EM}'}
     table_df['Account Title'] = [
         f"{_PREFIX.get(lv, _EM * 4)}{title}"
         for lv, title in zip(_acct_levels, display_df['Account Title'])
     ]
 
     _LEVEL_STYLE = {
-        '-': ('background-color:#fffbeb', 'color:#92400e', 'font-weight:600'),
+        '-': ('background-color:#fffaf0', 'color:#7c2d12', 'font-weight:600'),
          0: ('background-color:#0a2540', 'color:#ffffff', 'font-weight:600'),
-         1: ('background-color:#cfe2f3', 'color:#0a2540', 'font-weight:600'),
-         2: ('background-color:#eaf4fb', 'color:#0a2540', 'font-weight:500'),
+         1: ('background-color:#eaf4fb', 'color:#0a2540', 'font-weight:600'),
+         2: ('background-color:#f7fbfe', 'color:#0a2540', 'font-weight:500'),
          3: ('background-color:#ffffff', 'color:#3c4257', 'font-weight:400'),
          4: ('background-color:#ffffff', 'color:#3c4257', 'font-weight:400'),
     }
-
-    def _row_style(row):
-        lv = _acct_levels[_idx_to_pos[row.name]]
-        bg, fg, fw = _LEVEL_STYLE.get(lv, ('background-color:#ffffff', 'color:#3c4257', ''))
-        cell = f'{bg};{fg};{fw}'
-        return [cell] * len(row)
 
     # Hand-rolled HTML table instead of pandas Styler. Each call to
     # df.style.apply() allocates ~one functools.partial(_default_formatter)
@@ -5070,12 +5083,28 @@ with streamlit_analytics.track():
     _thead_style = (
         'background:#0a2540;color:#fff;font-weight:600;'
         'font-size:0.85rem;text-transform:uppercase;letter-spacing:0.05em;'
-        'padding:8px 10px;text-align:left;'
+        'padding:10px 12px;text-align:left;position:sticky;top:0;z-index:5;'
     )
-    _thead_html = ''.join(
-        f'<th style="{_thead_style}">{_html_lib.escape(str(c))}</th>'
-        for c in table_df.columns
-    )
+    _HEADER_LABELS = {
+        'FOAK Cost ($)': 'FOAK Cost<br>($)',
+        'NOAK Cost ($)': 'NOAK Cost<br>($)',
+        'FOAK LCOE ($/MWh)': 'FOAK LCOE<br>($/MW<sub>e</sub>h)',
+        'NOAK LCOE ($/MWh)': 'NOAK LCOE<br>($/MW<sub>e</sub>h)',
+    }
+    _thead_cells = []
+    for col in table_df.columns:
+        _sticky = ''
+        if col == 'Account':
+            _sticky = 'left:0;z-index:7;min-width:6.25rem;width:6.25rem;'
+        elif col == 'Account Title':
+            _sticky = 'left:6.25rem;z-index:7;min-width:31rem;width:31rem;'
+        elif col == 'FOAK LCOE ($/MWh)':
+            _sticky = 'border-left:2px solid #8fb3d1;'
+        _thead_cells.append(
+            f'<th style="{_thead_style}{_sticky}">'
+            f'{_HEADER_LABELS.get(col, _html_lib.escape(str(col)))}</th>'
+        )
+    _thead_html = ''.join(_thead_cells)
 
     _rows_html = []
     _cols_list = list(table_df.columns)
@@ -5085,20 +5114,52 @@ with streamlit_analytics.track():
             lv, ('background-color:#ffffff', 'color:#3c4257', 'font-weight:400')
         )
         row_style = f'{bg};{fg};{fw}'
+        row_class = f'mouse-level-{lv}' if lv != '-' else 'mouse-level-summary'
         cells = []
         for col in _cols_list:
             align = 'right' if col in _num_col_set else 'left'
-            val = _html_lib.escape(str(row[col]))
+            sticky = ''
+            extra_class = ' mouse-num-cell' if col in _num_col_set else ''
+            if col == 'Account':
+                sticky = f'position:sticky;left:0;z-index:3;{bg};'
+            elif col == 'Account Title':
+                sticky = f'position:sticky;left:6.25rem;z-index:3;{bg};'
+            elif col == 'FOAK LCOE ($/MWh)':
+                sticky = 'border-left:2px solid #c5d7e6;'
+            if col in _num_col_set:
+                val = str(row[col])
+            elif col == 'Account Title':
+                val = str(row[col])
+            else:
+                val = _html_lib.escape(str(row[col]))
             cells.append(
-                f'<td style="{row_style};text-align:{align};'
-                f'padding:2px 10px;border-bottom:1px solid #f1f5f9;">{val}</td>'
+                f'<td class="{row_class}{extra_class}" style="{row_style};{sticky}'
+                f'text-align:{align};padding:7px 12px;border-bottom:1px solid #e8eef5;">'
+                f'{val}</td>'
             )
         _rows_html.append('<tr>' + ''.join(cells) + '</tr>')
 
     _html_table = (
+        '<style>'
+        '.mouse-breakdown-wrap table{border-collapse:separate;border-spacing:0;'
+        'width:100%;font-size:0.88rem;line-height:1.25;}'
+        '.mouse-breakdown-wrap th,.mouse-breakdown-wrap td{vertical-align:middle;}'
+        '.mouse-breakdown-wrap th:nth-child(n+3),.mouse-breakdown-wrap .mouse-num-cell{text-align:right;}'
+        '.mouse-breakdown-wrap .mouse-value-main{display:block;font-weight:700;color:inherit;white-space:nowrap;}'
+        '.mouse-breakdown-wrap .mouse-value-range{display:block;margin-top:0.08rem;'
+        'font-size:0.78rem;font-weight:500;color:#64748b;white-space:nowrap;}'
+        '.mouse-breakdown-wrap .mouse-level-0 .mouse-value-range{color:#dbeafe;}'
+        '.mouse-breakdown-wrap .mouse-level-summary .mouse-value-range{color:#b45309;}'
+        '.mouse-breakdown-wrap .mouse-table-empty{color:#94a3b8;}'
+        '.mouse-breakdown-wrap .mouse-level-0 td{border-top:2px solid #0a2540;}'
+        '.mouse-breakdown-wrap .mouse-level-1 td{border-top:1px solid #bfdbfe;}'
+        '.mouse-breakdown-wrap .mouse-level-3 td,.mouse-breakdown-wrap .mouse-level-4 td{'
+        'font-size:0.84rem;}'
+        '</style>'
         '<div style="max-height:580px;overflow-y:auto;'
-        'border:1px solid #e2e8f0;border-radius:6px;margin-bottom:0.5rem;">'
-        '<table style="width:100%;border-collapse:collapse;font-size:0.9rem;">'
+        'border:1px solid #d8e3ee;border-radius:8px;margin-bottom:0.5rem;'
+        'box-shadow:0 1px 2px rgba(15,23,42,0.06);" class="mouse-breakdown-wrap">'
+        '<table>'
         f'<thead><tr>{_thead_html}</tr></thead>'
         f'<tbody>{"".join(_rows_html)}</tbody>'
         '</table></div>'
