@@ -2494,14 +2494,14 @@ with streamlit_analytics.track():
                    Microreactor Optimization Using Simulation and Economics
                  </div>
                  <p style="font-size:1rem;margin:0 0 1.1rem;max-width:780px;color:#3c4257;line-height:1.55;">
-                   MOUSE bridges microreactor design and economic analysis for early-stage reactor scoping.
-                   It connects design choices to estimates of reactor performance, heat removal needs,
-                   supporting plant equipment, fuel use, and overall cost in one workflow. The app helps
-                   users compare design options, understand what is driving cost, see how uncertainty affects
-                   the results, evaluate the effect of clean-energy tax credits, and assess where a reactor
-                   concept may be competitive in different markets and locations. It is meant to help users
-                   see whether a concept looks technically workable, economically attractive, or in need of
-                   further design refinement.
+                   MOUSE is a first-of-its-kind framework that connects nuclear microreactor design choices
+                   to bottom-up technoeconomic outcomes, helping engineers, investors, and policy makers see
+                   how geometry, fuel, enrichment, and operating assumptions drive capital cost and LCOE before
+                   major decisions are locked in. The web app requires no simulation environment or code setup:
+                   it serves precomputed OpenMC-based parametric studies through fast nearest-neighbor interpolation,
+                   updating estimates within seconds as users adjust LTMR, GCMR, and HPMR inputs. Its five sections cover
+                   design and cost summaries, transportability, scoping metrics, cost decomposition, and market
+                   competitiveness.
                  </p>
                  <div style="display:flex;gap:1rem;flex-wrap:wrap;">
                    <div style="background:white;border:1px solid #bfdbfe;border-radius:8px;padding:0.85rem 1.1rem;">
