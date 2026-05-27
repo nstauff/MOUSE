@@ -10,11 +10,12 @@
 
 ## Web App
 
-A hosted Streamlit version of MOUSE is available here:
+Use the hosted MOUSE Streamlit app here:
 
 **[Launch the MOUSE Streamlit App](https://mouse-microreactors.streamlit.app)**
 
-Project page: **[https://idaholabresearch.github.io/MOUSE/](https://idaholabresearch.github.io/MOUSE/)**
+Project overview page:
+**[https://idaholabresearch.github.io/MOUSE/](https://idaholabresearch.github.io/MOUSE/)**
 
 The web app is an interactive scoping tool that bridges microreactor design and
 economics without requiring users to install OpenMC or WATTS locally. It connects
