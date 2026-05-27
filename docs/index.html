@@ -79,6 +79,18 @@
       color: inherit;
     }
 
+    .text-link {
+      color: var(--blue);
+      font-weight: 750;
+      text-decoration: underline;
+      text-decoration-thickness: 0.08em;
+      text-underline-offset: 0.18em;
+    }
+
+    .text-link:hover {
+      color: var(--orange);
+    }
+
     .topbar {
       position: sticky;
       top: 0;
@@ -305,6 +317,64 @@
       border-top: 1px solid var(--line);
     }
 
+    .plot-showcase {
+      margin-top: 2rem;
+      padding-top: 2rem;
+      border-top: 1px solid var(--line);
+    }
+
+    .plot-showcase h3 {
+      margin: 0;
+      color: var(--navy);
+      font-size: clamp(1.4rem, 2.6vw, 2.1rem);
+      line-height: 1.1;
+    }
+
+    .plot-showcase > p {
+      max-width: 78ch;
+      margin: 0.65rem 0 0;
+      color: var(--slate);
+    }
+
+    .plot-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1rem;
+      margin-top: 1.25rem;
+    }
+
+    .plot-card {
+      margin: 0;
+      background: var(--white);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .plot-card img {
+      display: block;
+      width: auto;
+      max-width: 100%;
+      max-height: 560px;
+      margin: 0 auto;
+      object-fit: contain;
+      background: var(--white);
+    }
+
+    .plot-card figcaption {
+      padding: 1rem;
+      border-top: 1px solid var(--line);
+      color: var(--slate);
+      font-size: 0.95rem;
+    }
+
+    .plot-card figcaption strong {
+      display: block;
+      margin-bottom: 0.35rem;
+      color: var(--navy);
+      font-size: 1.02rem;
+    }
+
     .list {
       display: grid;
       gap: 0.7rem;
@@ -317,6 +387,69 @@
     .list li {
       padding-left: 1rem;
       border-left: 3px solid #bfdbfe;
+    }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1rem;
+      margin-top: 2rem;
+    }
+
+    .panel {
+      background: var(--white);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 1.25rem;
+    }
+
+    .panel h3 {
+      margin: 0 0 0.55rem;
+      color: var(--navy);
+      font-size: 1.1rem;
+    }
+
+    .panel p {
+      margin: 0;
+      color: var(--slate);
+    }
+
+    .capability-list {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.85rem;
+      margin-top: 1.6rem;
+    }
+
+    .capability {
+      padding: 0.9rem 1rem;
+      background: var(--white);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    .capability strong {
+      display: block;
+      margin-bottom: 0.25rem;
+      color: var(--blue);
+      font-size: 0.82rem;
+      letter-spacing: 0.09em;
+      text-transform: uppercase;
+    }
+
+    .capability span {
+      display: block;
+      color: var(--ink);
+      font-weight: 700;
+      line-height: 1.35;
+    }
+
+    .capability small {
+      display: block;
+      margin-top: 0.25rem;
+      color: var(--muted);
+      font-size: 0.84rem;
+      line-height: 1.4;
     }
 
     .bands {
@@ -445,7 +578,10 @@
 
       .feature-grid,
       .split,
-      .reactor-row {
+      .reactor-row,
+      .two-col,
+      .capability-list,
+      .plot-grid {
         grid-template-columns: 1fr;
       }
     }
@@ -457,10 +593,13 @@
       <img src="https://raw.githubusercontent.com/IdahoLabResearch/MOUSE/main/assets/logos/MOUSE-logo_R1_black.png" alt="MOUSE logo">
     </a>
     <nav class="nav" aria-label="Primary navigation">
+      <a href="#motivation">Motivation</a>
       <a href="#capabilities">Capabilities</a>
+      <a href="https://github.com/IdahoLabResearch/MOUSE" target="_blank" rel="noopener">Repository</a>
+      <a href="https://mouse-microreactors.streamlit.app" target="_blank" rel="noopener">App</a>
       <a href="#reactors">Reactor Concepts</a>
       <a href="#publications">Publications</a>
-      <a href="https://github.com/IdahoLabResearch/MOUSE">GitHub</a>
+      <a href="https://github.com/IdahoLabResearch/MOUSE" target="_blank" rel="noopener">GitHub</a>
     </nav>
   </header>
 
@@ -469,67 +608,217 @@
       <p class="eyebrow">Open-source nuclear microreactor economics</p>
       <h1>MOUSE: Bridging Microreactor Design and Economics</h1>
       <p class="subtitle">
-        Microreactor Optimization Using Simulation and Economics (MOUSE) connects
-        early-stage reactor design choices to bottom-up cost estimates, first-of-a-kind
-        and nth-of-a-kind costs, levelized cost of energy, and market context.
+        MOUSE (Microreactor Optimization Using Simulation and Economics) is a
+        framework connecting early-stage microreactor design choices to
+        bottom-up technoeconomic outcomes. By coupling physics-based core
+        simulations with detailed cost estimation, it helps engineers,
+        investors, and policy makers see how geometry, fuel, enrichment, and
+        operating assumptions drive capital cost and LCOE before major decisions
+        are locked in.
       </p>
       <div class="actions">
-        <a class="button primary" href="https://mouse-microreactors.streamlit.app">Launch the Streamlit App</a>
-        <a class="button secondary" href="https://github.com/IdahoLabResearch/MOUSE">View the GitHub Repository</a>
+        <a class="button primary" href="https://mouse-microreactors.streamlit.app" target="_blank" rel="noopener">Launch the Streamlit App</a>
+        <a class="button secondary" href="https://github.com/IdahoLabResearch/MOUSE" target="_blank" rel="noopener">View the GitHub Repository</a>
       </div>
     </div>
   </section>
 
   <main>
-    <section id="capabilities">
+    <section id="motivation">
       <div class="section-inner">
-        <p class="section-kicker">What MOUSE Does</p>
-        <h2>Microreactor technoeconomic analysis for early-stage scoping.</h2>
+        <p class="section-kicker">Motivation</p>
+        <h2>Microreactors need economics in the design loop.</h2>
         <p class="lead">
-          MOUSE is designed for transparent microreactor cost estimation and comparative
-          reactor scoping. It supports nuclear microreactor design studies where users
-          need to understand capital costs, annualized costs, fuel costs, and levelized
-          cost of energy before detailed engineering is available.
+          Nuclear microreactors are being developed for transportable, rapidly
+          deployable, resilient power in remote or infrastructure-limited locations.
+          Their small size and modularity can also amplify diseconomies of scale:
+          first-of-a-kind costs may be driven by fuel fabrication, specialty
+          materials, indirect costs, and other accounts that do not shrink
+          proportionally with power.
         </p>
-
-        <div class="feature-grid">
-          <article class="feature">
-            <h3>Bottom-up cost estimation</h3>
-            <p>Estimate preconstruction, direct, indirect, training, financial, operating, maintenance, replacement, decommissioning, and fuel costs.</p>
+        <div class="two-col">
+          <article class="panel">
+            <h3>Economics cannot wait</h3>
+            <p>
+              Historically, reactor development has treated physics and
+              engineering as the primary design drivers, with economics arriving
+              later. For microreactors, that sequencing is risky because fuel
+              loading mass, enrichment, core geometry, materials, and
+              balance-of-plant complexity can be largely fixed by the end of core
+              design.
+            </p>
           </article>
-          <article class="feature">
-            <h3>FOAK and NOAK comparisons</h3>
-            <p>Compare first-of-a-kind and nth-of-a-kind deployment economics, including capital costs and levelized cost of energy.</p>
-          </article>
-          <article class="feature">
-            <h3>Interactive reactor scoping</h3>
-            <p>Use the hosted Streamlit app to explore how power, enrichment, geometry, operations, tax credits, and financing assumptions affect results.</p>
+          <article class="panel">
+            <h3>Tradeoffs made visible</h3>
+            <p>
+              MOUSE makes economics a first-class input to design by building
+              costs from first principles rather than scaling down large reactor
+              estimates. It helps teams test whether choices such as exotic fuel
+              forms, reflector changes, longer fuel lifetime, or material
+              substitutions actually improve levelized cost of electricity.
+            </p>
           </article>
         </div>
       </div>
     </section>
 
-    <section class="bands">
+    <section id="capabilities">
+      <div class="section-inner">
+        <p class="section-kicker">What MOUSE Does</p>
+        <h2>One workflow for microreactor design and economic screening.</h2>
+        <p class="lead">
+          MOUSE integrates <a class="text-link" href="https://docs.openmc.org/" target="_blank" rel="noopener">OpenMC</a>
+          Monte Carlo neutron transport, simplified balance-of-plant calculations,
+          and a bottom-up cost engine built from MARVEL project data and open
+          literature. It produces FOAK and NOAK projections for liquid-metal
+          thermal, gas-cooled, and heat-pipe microreactor concepts, connecting
+          design choices to cost, fuel cycle, neutronics, thermal, and
+          transportability outcomes.
+        </p>
+
+        <div class="feature-grid">
+          <article class="feature">
+            <h3>Technical and cost outputs</h3>
+            <p>Estimate overnight capital cost, total capital investment, LCOE, levelized cost of heat, fuel lifetime, burnup, enrichment needs, and first-order thermal hydraulic sizing.</p>
+          </article>
+          <article class="feature">
+            <h3>Reference reactor concepts</h3>
+            <p>Compare LTMR, GCMR, and HPMR designs while checking geometry, materials, fuel enrichment, financing assumptions, IRA credits, market conditions, and transport limits for truck, rail, and sea containers.</p>
+          </article>
+          <article class="feature">
+            <h3><a class="text-link" href="https://github.com/IdahoLabResearch/MOUSE" target="_blank" rel="noopener">Repository</a> and <a class="text-link" href="https://mouse-microreactors.streamlit.app" target="_blank" rel="noopener">web app</a></h3>
+            <p>Run custom <a class="text-link" href="https://docs.openmc.org/" target="_blank" rel="noopener">OpenMC</a> and <a class="text-link" href="https://watts.readthedocs.io/en/stable/" target="_blank" rel="noopener">WATTS</a> workflows in Python for parametric studies, sensitivities, and uncertainty propagation, or use the <a class="text-link" href="https://mouse-microreactors.streamlit.app" target="_blank" rel="noopener">Streamlit app</a>'s precomputed nearest-neighbor results for second-scale estimates.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="repository" class="bands">
       <div class="section-inner split">
         <div>
-          <p class="section-kicker">Workflow</p>
-          <h2>From reactor inputs to cost and market context.</h2>
+          <p class="section-kicker"><a class="text-link" href="https://github.com/IdahoLabResearch/MOUSE" target="_blank" rel="noopener">GitHub Repository</a></p>
+          <h2>Full-control analysis from reactor inputs to cost and market context.</h2>
           <p class="lead">
-            The tool combines simplified reactor design, balance-of-plant calculations,
-            cost-account estimation, uncertainty ranges, and market benchmarks in one
-            workflow. It is intended for research, screening, and comparative analysis,
-            not investment or procurement decisions.
+            The <a class="text-link" href="https://github.com/IdahoLabResearch/MOUSE" target="_blank" rel="noopener">MOUSE Python package</a>
+            is published by the Idaho National Laboratory GitHub organization for
+            users who need full control over their analysis. It exposes the complete
+            <a class="text-link" href="https://docs.openmc.org/" target="_blank" rel="noopener">OpenMC</a>
+            Monte Carlo neutron transport workflow, <a class="text-link" href="https://watts.readthedocs.io/en/stable/" target="_blank" rel="noopener">WATTS</a>-powered
+            parametric and sensitivity studies, custom geometry and materials,
+            modifiable balance-of-plant assumptions, and the full bottom-up cost
+            engine.
           </p>
           <ul class="list">
-            <li>Estimate overnight capital cost, total capital investment, annualized cost, and LCOE.</li>
-            <li>Inspect full Code of Accounts cost breakdowns and cost-driver rankings.</li>
-            <li>Compare estimated microreactor electricity cost against selected market benchmarks.</li>
+            <li>Introduce new reactor types or modify LTMR, GCMR, and HPMR reference designs.</li>
+            <li>Run uncertainty propagation and inspect raw FOAK and NOAK cost breakdowns.</li>
+            <li>Trace every capital, fuel cycle, financing, operations and maintenance, replacement, and decommissioning account.</li>
+            <li>Estimate OCC, TCI, annualized cost, LCOE, LCOH, fuel cycle metrics, transportability, and market competitiveness.</li>
+            <li>Review full Code of Accounts breakdowns, cost-driver rankings, and benchmark comparisons.</li>
           </ul>
         </div>
         <figure class="visual">
           <img src="https://raw.githubusercontent.com/IdahoLabResearch/MOUSE/main/assets/mouse_diagram.png" alt="MOUSE workflow diagram connecting microreactor design, cost estimation, and economics">
-          <figcaption>MOUSE links reactor design inputs, engineering calculations, and economics into an integrated microreactor scoping workflow.</figcaption>
+          <figcaption>MOUSE links reactor design inputs, engineering calculations, cost estimation, uncertainty, and market benchmarks into one transparent scoping workflow.</figcaption>
         </figure>
+      </div>
+
+      <div class="section-inner">
+        <div class="feature-grid">
+          <article class="feature">
+            <h3>Physics and design control</h3>
+            <p>Define custom geometries, materials, reactor types, enrichment levels, core layouts, and balance-of-plant assumptions for deeper studies than the curated web app exposes.</p>
+          </article>
+          <article class="feature">
+            <h3>Line-item economics</h3>
+            <p>Access bottom-up cost accounts for capital, fuel cycle, financing, operations and maintenance, replacements, decommissioning, FOAK learning, and NOAK deployment cases.</p>
+          </article>
+          <article class="feature">
+            <h3>Workflow analysis</h3>
+            <p>Connect reactor design, balance-of-plant sizing, uncertainty ranges, Code of Accounts results, cost-driver rankings, LCOE, LCOH, and market benchmarks in one reproducible workflow.</p>
+          </article>
+        </div>
+        <div id="design-tradeoffs" class="plot-showcase">
+          <h3>Design tradeoff examples from the repository</h3>
+          <p>
+            These studies show why coupling physics and economics matters:
+            choices that extend fuel lifetime or shrink the core can still lose
+            economically once material cost, fuel loading, and deployment
+            assumptions are included.
+          </p>
+          <div class="plot-grid">
+            <figure class="plot-card">
+              <img src="assets/mouse-packing-fraction-tradeoff.png" alt="Packing fraction sensitivity plots showing fuel lifetime, annual cost, total capital investment, and LCOE for a TRISO-fueled microreactor">
+              <figcaption>
+                <strong>Increasing TRISO packing fraction extends lifetime, but not necessarily value.</strong>
+                Higher packing fraction increases fuel lifetime by more than
+                40%, while annual cost stays nearly flat and total capital
+                investment rises slightly. The result is a small increase in
+                FOAK LCOE, revealing a tradeoff that lifetime alone would miss.
+              </figcaption>
+            </figure>
+            <figure class="plot-card">
+              <img src="assets/mouse-reflector-material-tradeoff.png" alt="Reflector material and thickness tradeoff plots comparing graphite, beryllium oxide, and beryllium for fuel lifetime, FOAK LCOE, and NOAK LCOE">
+              <figcaption>
+                <strong>Reflector choice is a coupled design-economics problem.</strong>
+                Be and BeO can improve neutron economy, reduce size, and extend
+                fuel lifetime, but graphite often wins economically because its
+                unit cost is much lower. Be-based reflectors may still matter
+                when transportability or compactness is the binding constraint.
+              </figcaption>
+            </figure>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="app">
+      <div class="section-inner">
+        <p class="section-kicker"><a class="text-link" href="https://mouse-microreactors.streamlit.app" target="_blank" rel="noopener">Streamlit App</a></p>
+        <h2>A web-based scoping tool for rapid technical and economic screening.</h2>
+        <p class="lead">
+          The <a class="text-link" href="https://mouse-microreactors.streamlit.app" target="_blank" rel="noopener">hosted app</a>
+          makes MOUSE accessible to engineers, investors, and policy makers
+          without any simulation environment or code setup. Instead of running
+          full Monte Carlo and depletion calculations at runtime, it serves
+          precomputed parametric results through fast nearest-neighbor
+          interpolation, returning updated cost estimates within seconds as
+          users adjust inputs for LTMR, GCMR, and HPMR designs. The app organizes
+          results into design and cost summaries, transportability checks,
+          scoping metrics, cost decomposition, and market and geographic
+          competitiveness views for scoping, comparison, and stakeholder
+          communication.
+        </p>
+        <div class="capability-list">
+          <article class="capability">
+            <strong>Reactor Types</strong>
+            <span>LTMR · GCMR · HPMR</span>
+            <small>Liquid metal · gas cooled · heat pipe</small>
+          </article>
+          <article class="capability">
+            <strong>Costs</strong>
+            <span>OCC · TCI · LCOE · LCOH · LCOF</span>
+            <small>Bottom-up estimation · cost drivers · IRA credits</small>
+          </article>
+          <article class="capability">
+            <strong>Neutronics &amp; Thermal Hydraulics</strong>
+            <span>Peaking factor · leakage · power density · coolant inventory</span>
+            <small>First-order scoping</small>
+          </article>
+          <article class="capability">
+            <strong>Fuel Cycle</strong>
+            <span>U-235 / U-238 mass · lifetime · discharge burnup</span>
+          </article>
+          <article class="capability">
+            <strong>Transportability</strong>
+            <span>Component dimensions · mass · truck · rail · sea</span>
+            <small>First-order scoping</small>
+          </article>
+          <article class="capability">
+            <strong>Costs in Perspective</strong>
+            <span>NOAK LCOE vs. market benchmarks</span>
+            <small>Wholesale and retail electricity price comparisons</small>
+          </article>
+        </div>
       </div>
     </section>
 
@@ -538,7 +827,7 @@
         <p class="section-kicker">Reactor Concepts</p>
         <h2>Reference models for three microreactor concepts.</h2>
         <p class="lead">
-          The repository includes reference models for liquid-metal, gas-cooled, and
+          The <a class="text-link" href="https://github.com/IdahoLabResearch/MOUSE" target="_blank" rel="noopener">repository</a> includes reference models for liquid-metal, gas-cooled, and
           heat-pipe microreactor concepts. These are pre-conceptual designs intended
           for transparent technoeconomic assessment.
         </p>
@@ -579,17 +868,21 @@
         </p>
 
         <div class="publications">
-          <a class="publication" href="https://www.osti.gov/biblio/2447366">
-            Technoeconomic Evaluation of Microreactor Using Detailed Bottom-up Estimate
-            <span>Hanna et al., INL Technical Report, 2024</span>
-          </a>
           <a class="publication" href="https://www.osti.gov/biblio/2588465">
             A Bottom-Up Cost Estimation Tool for Nuclear Microreactors
             <span>Hanna et al., INL S&amp;T Accomplishment Report, 2025</span>
           </a>
+          <a class="publication" href="https://www.tandfonline.com/doi/full/10.1080/00295450.2026.2659431">
+            Cost Breakdown and Evolution of the MARVEL Microreactor Project
+            <span>Hanna, Strain, Schwartz, and Abou-Jaoude, Nuclear Technology, 2026</span>
+          </a>
           <a class="publication" href="https://www.sciencedirect.com/science/article/pii/S0029549325003875">
             Open-Source Microreactor Design Models for Technoeconomic Assessments
             <span>Al-Dawood, Hanna et al., Nuclear Engineering and Design, 2025</span>
+          </a>
+          <a class="publication" href="https://www.osti.gov/biblio/2447366">
+            Technoeconomic Evaluation of Microreactor Using Detailed Bottom-up Estimate
+            <span>Hanna et al., INL Technical Report, 2024</span>
           </a>
         </div>
       </div>
@@ -599,12 +892,12 @@
       <div class="section-inner">
         <h2>Explore microreactor costs interactively.</h2>
         <p class="lead">
-          Launch the hosted app to compare reactor inputs, uncertainty ranges, FOAK and
+          Launch the <a class="text-link" href="https://mouse-microreactors.streamlit.app" target="_blank" rel="noopener">hosted app</a> to compare reactor inputs, uncertainty ranges, FOAK and
           NOAK costs, LCOE, fuel cycle metrics, and cost drivers.
         </p>
         <div class="actions">
-          <a class="button primary" href="https://mouse-microreactors.streamlit.app">Launch MOUSE</a>
-          <a class="button secondary" href="https://github.com/IdahoLabResearch/MOUSE/blob/main/README.md">Read the README</a>
+          <a class="button primary" href="https://mouse-microreactors.streamlit.app" target="_blank" rel="noopener">Launch MOUSE</a>
+          <a class="button secondary" href="https://github.com/IdahoLabResearch/MOUSE/blob/main/README.md" target="_blank" rel="noopener">Read the README</a>
         </div>
       </div>
     </section>
@@ -613,7 +906,7 @@
   <footer>
     <div class="section-inner">
       <span>&copy; 2026 Battelle Energy Alliance, LLC. Released under the MIT License.</span>
-      <span><a href="https://github.com/IdahoLabResearch/MOUSE">GitHub</a> · <a href="https://mouse-microreactors.streamlit.app">Streamlit App</a></span>
+      <span><a class="text-link" href="https://github.com/IdahoLabResearch/MOUSE" target="_blank" rel="noopener">GitHub</a> · <a class="text-link" href="https://mouse-microreactors.streamlit.app" target="_blank" rel="noopener">Streamlit App</a></span>
     </div>
   </footer>
 </body>

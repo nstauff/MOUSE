@@ -7,6 +7,8 @@ output*.xlsx
 *.txt
 *.sh
 *.png
+!docs/assets/mouse-packing-fraction-tradeoff.png
+!docs/assets/mouse-reflector-material-tradeoff.png
 .DS_Store
 webapp/.venv/
 webapp/.streamlit/secrets.toml

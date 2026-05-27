@@ -16,21 +16,52 @@ A hosted Streamlit version of MOUSE is available here:
 
 Project page: **[https://idaholabresearch.github.io/MOUSE/](https://idaholabresearch.github.io/MOUSE/)**
 
-The web app provides an interactive interface for early-stage microreactor scoping and cost estimation without requiring users to install OpenMC or WATTS locally.
+The web app is an interactive scoping tool that bridges microreactor design and
+economics without requiring users to install OpenMC or WATTS locally. It connects
+early-stage design choices with bottom-up first-of-a-kind (FOAK) and nth-of-a-kind
+(NOAK) economics for rapid technical and economic screening.
 
 ## Motivation
-The rising interest in nuclear microreactors has highlighted the need for comprehensive technoeconomic assessments. However, the scarcity of publicly available designs and cost data has posed significant challenges. The Microreactor Optimization Using Simulation and Economics (MOUSE) tool addresses this gap by integrating nuclear microreactor design with reactor economics.
+
+Nuclear microreactors are being developed for transportable, rapidly deployable,
+resilient power in remote or infrastructure-limited locations. However, their
+small size and modularity can exacerbate diseconomies of scale, and
+first-of-a-kind costs are often driven by expensive components, specialty
+materials, fuel fabrication, and indirect costs that do not shrink
+proportionally with power.
+
+Historically, reactor designs have often been guided by physics and engineering
+first, with economics assessed later using simplified scaling. For
+microreactors, that approach is risky because design choices can significantly
+affect component mass, fuel lifetime, balance-of-plant needs, capital cost, and
+levelized cost of energy (LCOE). MOUSE addresses this need by tightly coupling
+design calculations with bottom-up cost estimation.
 
 ## Description
 
-MOUSE leverages the [OpenMC](https://github.com/openmc-dev/openmc) Monte Carlo Particle Transport Code to perform detailed core simulations for various microreactor designs, including Liquid-Metal Thermal Microreactors (LTMR), Gas-Cooled TRISO-Fueled Microreactors (GCMR), and Heat Pipe Microreactors (HPMR). It includes simplified calculations for balance of plant and operational performance. Economically, MOUSE provides bottom-up cost estimates covering preconstruction, direct, indirect, training, financial, O&M, and fuel costs. It calculates total capital costs and the levelized cost of energy (LCOE) for both first-of-a-kind and nth-of-a-kind microreactors using data from the MARVEL project and other literature.
+MOUSE integrates nuclear microreactor design and economics. It leverages the
+[OpenMC](https://github.com/openmc-dev/openmc) Monte Carlo Particle Transport
+Code for neutronics core simulations and uses the Workflow and Template Toolkit
+for Simulation ([WATTS](https://github.com/watts-dev/watts)) for parametric
+studies. MOUSE includes simplified balance-of-plant and operational
+calculations, and its cost framework draws on data from the MARVEL project and
+other open literature.
+
+Economically, MOUSE provides comprehensive bottom-up cost estimates for
+near-term and longer-term microreactors, including capital costs, annualized
+costs, fuel costs, and LCOE. It supports analysis of technological factors,
+design changes, materials, geometry modifications, and economic parameters.
 
 ## What MOUSE Does
 
 MOUSE supports:
-- Parametric microreactor design studies
-- Bottom-up capital and operating cost estimation
-- FOAK and NOAK LCOE calculations
+- Parametric microreactor design studies using LTMR, GCMR, and HPMR reference concepts
+- Neutronics-informed core simulations and first-order thermal-hydraulic scoping
+- Balance-of-plant calculations and supporting plant equipment estimates
+- Bottom-up capital, annualized, fuel, and operating cost estimation
+- FOAK and NOAK calculations for OCC, TCI, LCOE, LCOH, and LCOF
+- Cost-driver analysis, uncertainty ranges, IRA tax credit effects, and market comparisons
+- Transportability screening for component dimensions, mass, truck, rail, and sea movement
 - LTMR, GCMR, and HPMR reference designs
 - Interactive web-based scoping through the Streamlit app
 
@@ -108,6 +139,11 @@ If you use MOUSE in technical work, please cite the relevant reports and publica
 
 **[Technoeconomic Evaluation of Microreactor Using Detailed Bottom-up Estimate (Rev. 1)](https://www.osti.gov/biblio/2447366)**
 Hanna et al., INL Technical Report, 2024. Develops the transparent bottom-up cost methodology using the MARVEL microreactor as reference — the direct precursor to MOUSE's economic framework.
+
+---
+
+**[Cost Breakdown and Evolution of the MARVEL Microreactor Project](https://www.tandfonline.com/doi/full/10.1080/00295450.2026.2659431)**
+Hanna, Strain, Schwartz, and Abou-Jaoude, Nuclear Technology, 2026. Presents a detailed MARVEL microreactor cost breakdown and cost evolution that supports public microreactor cost benchmarking and MOUSE's bottom-up economic framework.
 
 ---
 
