@@ -68,7 +68,8 @@ def collect_materials_data(params):
         UC = openmc.Material(name='UC')
         UC.set_density('g/cm3', 13.0)
         UC.add_element('U', 1.0, enrichment=100 * params['Enrichment'])
-        UC.add_element('C', 1.0)
+        UC.add_nuclide('C12' , 0.9893, 'ao')
+        UC.add_nuclide('C13' , 0.0107, 'ao')
         materials.append(UC)
         materials_database.update({'UC': UC})
     except KeyError as e:
