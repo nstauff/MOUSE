@@ -1703,6 +1703,144 @@ def _materials_section(reactor_type, params):
     )
 
 
+def _ring_count(rings_over_one_edge):
+    rings = int(rings_over_one_edge)
+    return 2 * rings * (rings - 1) + 2 * sum(range(1, rings - 1)) + 2 * rings - 1
+
+
+def _density_g_cm3(params, material_name, default=0.0):
+    rtype = params.get('reactor type', 'LTMR')
+    return float(_MATERIALS_RAW.get(rtype, {}).get(material_name, default))
+
+
+def _cylinder_mass_kg(radius_cm, height_cm, density_g_cm3, count=1):
+    return count * math.pi * radius_cm ** 2 * height_cm * density_g_cm3 / 1000.0
+
+
+def _annulus_mass_kg(r_outer_cm, r_inner_cm, height_cm, density_g_cm3, count=1):
+    area_cm2 = math.pi * (r_outer_cm ** 2 - r_inner_cm ** 2)
+    return count * area_cm2 * height_cm * density_g_cm3 / 1000.0
+
+
+def _uranium_atomic_mass(params):
+    enrichment = float(params.get('Enrichment', 0.1975))
+    return enrichment * 235.0439299 + (1.0 - enrichment) * 238.0507882
+
+
+def _uco_uranium_mass_fraction(params):
+    # UCO is represented as a UO2/UC mixture. Per uranium atom, the
+    # non-uranium atoms are 2*f oxygen atoms and (1-f) carbon atoms.
+    f_uo2 = float(params.get('UO2 atom fraction', 0.7))
+    m_u = _uranium_atomic_mass(params)
+    return m_u / (m_u + 2.0 * f_uo2 * 15.999 + (1.0 - f_uo2) * 12.011)
+
+
+def _homog_triso_uranium_mass_fraction(params):
+    # Atom densities from core_design/openmc_materials_database.py for
+    # the HPMR homogenized TRISO material.
+    e = float(params.get('Enrichment', 0.1975))
+    atom_densities = {
+        'U235': 0.00130037929 * e,
+        'U238': 0.00130037929 * (1.0 - e),
+        'O16': 2.59371545E-03,
+        'O17': 1.05004397E-06,
+        'O18': 5.99797186E-06,
+        'Si28': 2.76954169E-03,
+        'Si29': 1.40694868E-04,
+        'Si30': 9.28556098E-05,
+        'C12': 7.31619752E-02,
+        'C13': 7.58819416E-04,
+    }
+    atomic_masses = {
+        'U235': 235.0439299, 'U238': 238.0507882,
+        'O16': 15.9949146, 'O17': 16.9991318, 'O18': 17.9991596,
+        'Si28': 27.9769265, 'Si29': 28.9764947, 'Si30': 29.9737701,
+        'C12': 12.0, 'C13': 13.0033548,
+    }
+    total = sum(atom_densities[k] * atomic_masses[k] for k in atom_densities)
+    uranium = atom_densities['U235'] * atomic_masses['U235'] + atom_densities['U238'] * atomic_masses['U238']
+    return uranium / total
+
+
+def _heatpipe_steel_mass_kg(params):
+    # Heat pipe material is modeled as homogenized SS316 + sodium. For
+    # transportability, include only the steel contribution and leave the
+    # sodium working fluid out with other coolant inventories.
+    atom_densities = {
+        'Si28': 1.49701E-02, 'Si29': 7.60143E-04, 'Si30': 5.01090E-04,
+        'Cr50': 6.46763E-03, 'Cr52': 1.24724E-01, 'Cr53': 1.41423E-02, 'Cr54': 3.52029E-03,
+        'Mn55': 1.66133E-02,
+        'Fe54': 3.12186E-02, 'Fe56': 4.90061E-01, 'Fe57': 1.13180E-02, 'Fe58': 1.50617E-03,
+        'Ni58': 6.33738E-02, 'Ni60': 2.44119E-02, 'Ni61': 1.06115E-03, 'Ni62': 3.38338E-03, 'Ni64': 8.61654E-04,
+        'Mo92': 1.75699E-03, 'Mo94': 1.09514E-03, 'Mo95': 1.88484E-03, 'Mo96': 1.97478E-03,
+        'Mo97': 1.13066E-03, 'Mo98': 2.85681E-03, 'Mo100': 1.14011E-03,
+    }
+    atomic_masses = {
+        'Si28': 27.9769265, 'Si29': 28.9764947, 'Si30': 29.9737701,
+        'Cr50': 49.9460418, 'Cr52': 51.9405062, 'Cr53': 52.9406481, 'Cr54': 53.9388792,
+        'Mn55': 54.9380439,
+        'Fe54': 53.9396082, 'Fe56': 55.9349363, 'Fe57': 56.9353928, 'Fe58': 57.9332744,
+        'Ni58': 57.9353424, 'Ni60': 59.9307859, 'Ni61': 60.9310556, 'Ni62': 61.9283454, 'Ni64': 63.9279660,
+        'Mo92': 91.9068072, 'Mo94': 93.9050836, 'Mo95': 94.9058374, 'Mo96': 95.9046748,
+        'Mo97': 96.9060169, 'Mo98': 97.9054036, 'Mo100': 99.9074680,
+    }
+    amu_to_g_per_cm3 = 1.66053906660
+    steel_density = amu_to_g_per_cm3 * sum(atom_densities[k] * atomic_masses[k] for k in atom_densities)
+    return _cylinder_mass_kg(
+        float(params.get('Heat Pipe Radii', [0.0])[0]),
+        float(params.get('Active Height', 0.0)),
+        steel_density,
+        int(params.get('Number of Heatpipes', 0)),
+    )
+
+
+def _transport_fuel_masses(params, reactor_type):
+    uranium_mass_kg = float(params.get('Uranium Mass', 0.0))
+    fuel_mass_kg = uranium_mass_kg
+    matrix_already_in_moderator_kg = 0.0
+    heatpipe_steel_kg = 0.0
+
+    if reactor_type == 'LTMR':
+        u_weight_fraction = float(params.get('U_met_wo', 0.0))
+        if u_weight_fraction > 0:
+            fuel_mass_kg = uranium_mass_kg / u_weight_fraction
+        radii = params.get('Fuel Pin Radii', [])
+        materials = params.get('Fuel Pin Materials', [])
+        height = float(params.get('Active Height', 0.0))
+        count = int(params.get('Fuel Pin Count', 0))
+        if len(radii) >= 5 and len(materials) >= 5:
+            fuel_mass_kg += _cylinder_mass_kg(radii[0], height, _density_g_cm3(params, materials[0]), count)
+            fuel_mass_kg += _annulus_mass_kg(radii[4], radii[3], height, _density_g_cm3(params, materials[4]), count)
+
+    elif reactor_type == 'GCMR':
+        fuel_mass_kg = uranium_mass_kg / _uco_uranium_mass_fraction(params)
+        radii = params.get('Fuel Pin Radii', [])
+        materials = params.get('Fuel Pin Materials', [])
+        particles = int(params.get('Total Number of TRISO Particles', 0))
+        if len(radii) >= 5 and len(materials) >= 5 and particles > 0:
+            for i in range(1, 5):
+                fuel_mass_kg += _annulus_mass_kg(
+                    radii[i], radii[i - 1], 1.0,
+                    _density_g_cm3(params, materials[i]), particles,
+                )
+        compact_count = _ring_count(params.get('Assembly Rings', 1) - 1) * _ring_count(params.get('Core Rings', 1))
+        compact_volume = math.pi * float(params.get('Compact Fuel Radius', 0.0)) ** 2 * float(params.get('Active Height', 0.0))
+        matrix_already_in_moderator_kg = (
+            compact_count
+            * compact_volume
+            * (1.0 - float(params.get('Packing Fraction', 0.0)))
+            * _density_g_cm3(params, params.get('Matrix Material', 'Graphite'))
+            / 1000.0
+        )
+        fuel_mass_kg += matrix_already_in_moderator_kg
+
+    elif reactor_type == 'HPMR':
+        fuel_mass_kg = uranium_mass_kg / _homog_triso_uranium_mass_fraction(params)
+        heatpipe_steel_kg = _heatpipe_steel_mass_kg(params)
+
+    return fuel_mass_kg, matrix_already_in_moderator_kg, heatpipe_steel_kg
+
+
 def _info_card(col, title, value, subtitle='', accent='#64748b', bg='white', border='#bfdbfe'):
     sub_html = f'<div style="font-size:0.85rem;color:#64748b;margin-top:0.2rem;">{subtitle}</div>' if subtitle else ''
     col.markdown(
@@ -2233,7 +2371,7 @@ with streamlit_analytics.track():
         )
         startup_duration = st.slider(
             'Startup Duration after Emergency Shutdown (days)',
-            min_value=1, max_value=365, value=21, step=1,
+            min_value=1, max_value=180, value=21, step=1,
             help=('Days the reactor is offline after an unplanned emergency shutdown. '
                   'Varies by event; this is a rough average.'),
         )
@@ -2752,6 +2890,35 @@ with streamlit_analytics.track():
     fuel_lifetime = params.get('Fuel Lifetime', float('nan'))
     power_mwe = params.get('Power MWe', float('nan'))
     capacity_factor = params.get('Capacity Factor', float('nan'))
+
+    try:
+        _capacity_factor_value = float(capacity_factor)
+    except (TypeError, ValueError):
+        _capacity_factor_value = float('nan')
+
+    if not math.isnan(_capacity_factor_value) and _capacity_factor_value < 0.10:
+        _precompute_slot.empty()
+        _cf_percent = max(0.0, _capacity_factor_value * 100.0)
+        _cf_value_text = 'zero' if _capacity_factor_value < 0 else f'{_cf_percent:.1f}%'
+        st.error('### ⚠ Capacity Factor Too Low')
+        st.warning(
+            f'The calculated capacity factor is {_cf_value_text}, which is too low for meaningful results.'
+        )
+        st.info(
+            'No results are shown because cost and production outputs are not meaningful '
+            'with this operating profile. Reduce outage assumptions such as emergency '
+            'shutdown frequency or startup duration and run the analysis again.'
+        )
+
+        st.markdown(
+            """
+            <div style='text-align: center; font-size: 1rem; color: #64748b; padding-top: 2rem; padding-bottom: 1rem;'>
+                © 2025 Battelle Energy Alliance, LLC. MOUSE is released under the MIT License.
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.stop()
 
     _fl_str = f'{fuel_lifetime / 365:.1f} yrs' if not math.isnan(float(fuel_lifetime)) else 'N/A'
     _fl_days = f'{int(fuel_lifetime):,} days' if not math.isnan(float(fuel_lifetime)) else ''
@@ -4213,19 +4380,22 @@ with streamlit_analytics.track():
     _gap_v_g_cm = float(params.get('Gap Between Vessel And Guard Vessel', 0.0))
 
     # Reactor (core + reflectors + drums). All component masses
-    # are in kg. Note: 'Uranium Mass' is already in kg in MOUSE;
-    # cladding mass is not separately tracked (small relative to
-    # the other terms).
+    # are in kg. Use full modeled fuel mass instead of uranium
+    # heavy-metal mass alone. For GCMR, graphite matrix inside fuel
+    # compacts is already counted by the moderator-mass routine, so
+    # subtract it from the moderator term to avoid double counting.
+    _fuel_mass_kg, _fuel_matrix_overlap_kg, _heatpipe_steel_kg = _transport_fuel_masses(params, reactor_type)
     _reactor_dia_cm = 2.0 * float(params.get('Core Radius', 0.0))
     _reactor_h_cm = (float(params.get('Active Height', 0.0))
                         + 2.0 * float(params.get('Axial Reflector Thickness', 0.0)))
     _reactor_mass_kg = (
-        float(params.get('Uranium Mass', 0.0))
-        + float(params.get('Moderator Mass', 0.0))
+        _fuel_mass_kg
+        + max(0.0, float(params.get('Moderator Mass', 0.0)) - _fuel_matrix_overlap_kg)
         + float(params.get('Moderator Booster Mass', 0.0))
         + float(params.get('Radial Reflector Mass', 0.0))
         + float(params.get('Axial Reflector Mass', 0.0))
         + float(params.get('Control Drums Mass', 0.0))
+        + _heatpipe_steel_kg
     )
 
     # Reactor vessel (the pressure boundary)
@@ -4285,10 +4455,14 @@ with streamlit_analytics.track():
         'HPMR': 'monolith graphite',
     }.get(reactor_type, 'moderator')
     _reactor_desc = (
-        f'Includes: U235 + U238, moderator ({_moderator_for_type}), '
-        'radial + axial reflector, control drums.'
-        + (' HPMR heat pipe steel cladding and Na working fluid '
-           'not yet modeled.' if reactor_type == 'HPMR' else '')
+        f'Includes: modeled fuel mass, moderator ({_moderator_for_type}), '
+        'radial + axial reflector, and control drums.'
+        + (' Fuel mass includes UZrH fuel meat plus modeled Zr and SS304 fuel-pin metal regions.'
+           if reactor_type == 'LTMR' else '')
+        + (' Fuel mass includes UCO kernels, TRISO coating layers, and graphite fuel-compact matrix.'
+           if reactor_type == 'GCMR' else '')
+        + (' Fuel mass includes homogenized TRISO fuel; heat-pipe steel is included, Na working fluid is excluded.'
+           if reactor_type == 'HPMR' else '')
     )
     _rv_desc_extra = (
         ' <span style="color:#1B4F8C;">For GCMR this maps to '
@@ -4393,8 +4567,8 @@ with streamlit_analytics.track():
     # ── Notes panel ──
     # Only items NOT already covered by the per-row descriptions in
     # the table above: global exclusions (shielding, coolant, support
-    # gear), reactor-specific caveats (GCMR labeling, HPMR not-yet-
-    # modeled parts), and the "Guard vessel N/A" note for reactor
+    # gear), reactor-specific caveats (GCMR labeling, HPMR heat-pipe
+    # treatment), and the "Guard vessel N/A" note for reactor
     # types without a bulk primary coolant.
     _gcmr_note = (
         '<li><strong>GCMR labeling:</strong> what is shown as '
@@ -4405,9 +4579,9 @@ with streamlit_analytics.track():
         if reactor_type == 'GCMR' else ''
     )
     _hpmr_note = (
-        '<li><strong>HPMR not yet modeled:</strong> heat pipe '
-        'steel cladding and the Na working fluid are not currently '
-        'tracked in MOUSE.</li>'
+        '<li><strong>HPMR heat pipes:</strong> steel mass is included '
+        'using the modeled heat-pipe material and geometry; the Na '
+        'working fluid is excluded with coolant inventories.</li>'
         if reactor_type == 'HPMR' else ''
     )
     _gv_na_note = (
