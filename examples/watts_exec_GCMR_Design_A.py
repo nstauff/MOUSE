@@ -33,8 +33,8 @@ def update_params(updates):
 # **************************************************************************************************************************
 update_params({
     'plotting': "Y",  # "Y" or "N": Yes or No
-    'cross_sections_xml_location': '/projects/MRP_MOUSE/openmc_data/endfb-viii.0-hdf5/cross_sections.xml', # on INL HPC
-    'simplified_chain_thermal_xml': '/projects/MRP_MOUSE/openmc_data/simplified_thermal_chain11.xml'       # on INL HPC
+    'cross_sections_xml_location': '/home/nstauff/PROCEDURES/OpenMC/lib/e81/endfb-viii.1b2-hdf5/cross_sections.xml',
+    'simplified_chain_thermal_xml': '/home/nstauff/PROCEDURES/OpenMC/lib/chain_endfb80_pwr.xml'
 })
 
 # **************************************************************************************************************************
@@ -122,7 +122,7 @@ params['Heat Flux'] = calculate_heat_flux_TRISO(params) # MW/m^2
 # A positive SDM means the reactor can be safely shut down with all drums inserted.
 # Recommended: True for final design verification; can be set to False to save
 # computation time during early design exploration.
-# params['Shutdown Margin Calc'] = False  # True or False
+params['Shutdown Margin Calc'] = True  # True or False
 
 # --- Isothermal Temperature Coefficient ---
 # When True, two additional OpenMC simulations are run: one at 'Common Temperature'

@@ -457,20 +457,23 @@ def parametric_studies(cost_database_filename, tracked_params_list):
         print(f"Results are being saved on {output_csv_filename}")
 
 
-def detailed_bottom_up_cost_estimate(cost_database_filename):
+def detailed_bottom_up_cost_estimate(cost_database_filename, output_filename=None):
     import inspect
     import os
 
-    # Grab params and the calling script's path from the caller's frame automatically
+    # Grab params and the calling script's path from the caller's frame automatically.
+    # Check f_locals first (script-level or function-local 'params'), then f_globals
+    # (module-level 'params' accessed via global scope from within a function).
     caller_frame = inspect.stack()[1][0]
-    params = caller_frame.f_locals.get('params')
+    params = caller_frame.f_locals.get('params') or caller_frame.f_globals.get('params')
     if params is None:
         raise RuntimeError(
             "detailed_bottom_up_cost_estimate could not find 'params' in the calling scope. "
             "Make sure a variable named 'params' exists in the script that calls this function."
         )
-    caller_file = caller_frame.f_globals.get('__file__', 'output')
-    output_filename = os.path.splitext(os.path.abspath(caller_file))[0] + '_output.xlsx'
+    if output_filename is None:
+        caller_file = caller_frame.f_globals.get('__file__', 'output')
+        output_filename = os.path.splitext(os.path.abspath(caller_file))[0] + '_output.xlsx'
 
     detailed_cost_table = bottom_up_cost_estimate(cost_database_filename, params)
     detailed_central_cost_table = bottom_up_cost_estimate_central(cost_database_filename, params)
