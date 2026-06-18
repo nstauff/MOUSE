@@ -172,7 +172,8 @@ class OpenMC_HPMR:
     default_batches = 500
     default_inactive = 50
     default_low_pf = False
-    def __init__(self, working_dir = Path(".")):
+    def __init__(self, working_dir = Path("."), chain_file = None):
+        self.chain_file = chain_file  # depletion chain XML; required for deplete()
         self.nominal_parms = {
                 "compact_radius" : 1.00, #cm
                 "moderator_radius" : 0.825, #cm; radius of moderator material in mod pin, cladding thickness stays const
@@ -249,9 +250,12 @@ class OpenMC_HPMR:
             
 
     def deplete(self, rundir, model, fuel_mats, deplete):
-        operator = openmc.deplete.CoupledOperator(model,
-                #chain_file = "/home/pricdr/xsdir/chain_endfb80_pwr.xml") #Dean
-                chain_file = "/home/seurpr/Desktop/LDRD/LDRD_microreactor/Examples/libraries/chain_endfb80_pwr.xml") #Paul
+        if self.chain_file is None:
+            raise ValueError(
+                "OpenMC_HPMR.chain_file is not set. Pass chain_file=... to the "
+                "constructor, e.g. OpenMC_HPMR(chain_file=params['simplified_chain_thermal_xml'])."
+            )
+        operator = openmc.deplete.CoupledOperator(model, chain_file = self.chain_file)
         pi = openmc.deplete.PredictorIntegrator(timestep_units = "d",
                 timesteps = deplete,
                 operator = operator,
