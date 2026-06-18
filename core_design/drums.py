@@ -494,13 +494,35 @@ def calculate_reflector_and_moderator_mass_HPMR_vtb(params):
 
     fuel_area = params['Fuel Pin Count'] * circle_area(params['Fuel Pin Radii'][-1])
     heatpipe_area = params['Number of Heatpipes'] * circle_area(params['Heat Pipe Radii'][-1])
-    moderator_booster_area = params['Number of Moderator Booster'] * circle_area(params['Moderator Booster Raddi'])
-    params['Moderator Booster Mass'] = (
-        moderator_booster_area
-        * params['Active Height']
-        * materials_database[params['Moderator Booster']].density
-        / 1000
-    )
+
+    # The moderator booster may be a single homogeneous pin (scalar material + radius)
+    # or a set of concentric layers (e.g. Booster / Liner / Envelope), in which case
+    # both 'Moderator Booster' and 'Moderator Booster Raddi' are lists ordered
+    # innermost -> outermost. Normalize to lists and compute per-layer (annular) mass.
+    booster_materials = params['Moderator Booster']
+    booster_radii = params['Moderator Booster Raddi']
+    if not isinstance(booster_radii, (list, tuple)):
+        booster_materials = [booster_materials]
+        booster_radii = [booster_radii]
+
+    n_booster = params['Number of Moderator Booster']
+    tot_booster_mass = 0.0
+    for i, (mat_name, r_outer) in enumerate(zip(booster_materials, booster_radii)):
+        r_inner = booster_radii[i - 1] if i > 0 else 0.0
+        annular_area = circle_area(r_outer) - circle_area(r_inner)
+        region_mass = (
+            n_booster
+            * annular_area
+            * params['Active Height']
+            * materials_database[mat_name].density
+            / 1000
+        )
+        params[f'Moderator Booster Mass {mat_name}'] = region_mass
+        tot_booster_mass += region_mass
+    params['Moderator Booster Mass'] = tot_booster_mass
+
+    # Area displaced from the surrounding moderator is the full (outermost) footprint.
+    moderator_booster_area = n_booster * circle_area(booster_radii[-1])
 
     drum_radius = params['Drum Radius']
     drum_area = np.pi * drum_radius * drum_radius
