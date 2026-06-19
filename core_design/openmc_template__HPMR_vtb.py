@@ -168,8 +168,8 @@ def cylinder_radial_shell(r, h):
 
 class OpenMC_HPMR:
     """Class works on parameter dictionaries, see "self.nomoinal_params" for example"""
-    default_particles = 100000
-    default_batches = 500
+    default_particles = 10000
+    default_batches = 300
     default_inactive = 50
     default_low_pf = False
     def __init__(self, working_dir = Path("."), chain_file = None):
@@ -192,7 +192,7 @@ class OpenMC_HPMR:
         self.Tcombos = [dict(zip(self.Tvalues.keys(), combo)) for combo in itertools.product(*self.Tvalues.values())]
 
     def run_nominal(self,
-            threads = 1, #openmc threads
+            threads = 100, #openmc threads
             particles = default_particles, batches = default_batches, inactive = default_inactive, #MC sampling parameters
             plot = True, #whether or not to generate plots
             axial_divs = 11,
@@ -202,7 +202,7 @@ class OpenMC_HPMR:
 
     def run_perturbed(self,
             perturbed_parms, #dict with parameter names and values
-            threads = 1, #openmc threads
+            threads = 100, #openmc threads
             particles = default_particles, batches = default_batches, inactive = default_inactive, #MC sampling parameters
             plot = True,
             axial_divs = 11,
