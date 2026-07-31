@@ -187,25 +187,43 @@ from st_cookies_manager import EncryptedCookieManager
 
 from reactor_config import SubcriticalError, ShortLifetimeError, ESCALATION_YEAR
 from webapp.fuel_lifetime_estimator import (
+    estimate_ltmr_fuel_lifetime,
     get_ltmr_keff_curve,
     get_ltmr_peaking_factor,
     get_ltmr_leakage,
 )
 from webapp.gcmr_fuel_lifetime_estimator import (
+    estimate_gcmr_fuel_lifetime,
     get_gcmr_peaking_factor,
     get_gcmr_leakage,
     get_gcmr_keff_curve,
 )
 from webapp.hpmr_fuel_lifetime_estimator import (
+    estimate_hpmr_fuel_lifetime,
     get_hpmr_keff_curve,
     get_hpmr_peaking_factor,
     get_hpmr_leakage,
+)
+from webapp.design_constraints import (
+    maximum_emergency_startup_days,
+    safe_height_interval,
 )
 from webapp.estimate_service import (
     EstimateInputs,
     LcoeAtNoakInputs,
     run_estimate,
     run_lcoe_at_noak_unit,
+)
+from cost.cost_drivers import energy_cost_levelized_per_acct
+from webapp.irradiated_transport import (
+    available_shield_materials,
+    estimate_irradiated_transport_shield,
+    load_irradiated_cost_inputs,
+)
+from webapp.display_formatting import (
+    format_cost_for_display,
+    lcoe_y_axis_settings,
+    round_cost_for_display,
 )
 
 # ---------------------------------------------------------------------------
@@ -539,10 +557,10 @@ ASPECT_RATIO_MAX = 2.0
 # Trained N values come directly from the parametric study Excel; intermediate
 # N values are linearly interpolated from the trained table adequate for
 # slider display, but flagged in the UI as interpolated.
-LTMR_TRAINED_N = {10, 12, 14, 18, 24}
+LTMR_TRAINED_N = {6, 8, 10, 12, 14, 18, 24}
 LTMR_N_TO_ACTIVE_RADIUS_CM = {
     n: round(2.836 * n - 1.136, 1)
-    for n in [10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24]
+    for n in range(6, 25)
 }
 LTMR_N_TO_DIAMETER_CM = {
     n: int(round(2 * ar))
@@ -649,6 +667,88 @@ HPMR_DIAMETER_LABELS = [
 HPMR_DIAMETER_LABEL_TO_NC = {
     label: nc for label, nc in zip(HPMR_DIAMETER_LABELS, HPMR_NC_VALUES)
 }
+
+# Increment whenever the candidate geometry domain or constraint policy changes.
+# Passing this value as a cached-function argument prevents a long-running
+# Streamlit process from serving options computed under an older domain.
+GEOMETRY_CONSTRAINT_CACHE_VERSION = 3
+DEFAULT_FUEL_LIFETIME_DAYS = 5 * 365
+
+
+@st.cache_data(show_spinner=False, max_entries=256)
+def _safe_diameter_height_options(reactor_type, power_mwt, enrichment,
+                                  constraint_version):
+    """Map diameter labels to safe height intervals and five-year defaults."""
+    del constraint_version # Used only as an explicit Streamlit cache key.
+    safe_options = {}
+
+    if reactor_type == 'LTMR':
+        candidates = (
+            (label, (LTMR_DIAMETER_LABEL_TO_N[label],),
+             LTMR_N_TO_DIAMETER_CM[LTMR_DIAMETER_LABEL_TO_N[label]])
+            for label in LTMR_DIAMETER_LABELS
+        )
+        estimator = lambda geometry, height: estimate_ltmr_fuel_lifetime(
+            geometry[0], height, enrichment, power_mwt,
+        )
+    elif reactor_type == 'GCMR':
+        candidates = (
+            (label, GCMR_DIAMETER_LABEL_TO_PAIR[label],
+             GCMR_PAIR_TO_DIAMETER_CM[GCMR_DIAMETER_LABEL_TO_PAIR[label]])
+            for label in GCMR_DIAMETER_LABELS
+        )
+        estimator = lambda geometry, height: estimate_gcmr_fuel_lifetime(
+            geometry[0], geometry[1], height, enrichment, power_mwt,
+        )
+    else:
+        candidates = (
+            (label, (HPMR_DIAMETER_LABEL_TO_NC[label],),
+             HPMR_NC_TO_DIAMETER_CM[HPMR_DIAMETER_LABEL_TO_NC[label]])
+            for label in HPMR_DIAMETER_LABELS
+        )
+        estimator = lambda geometry, height: estimate_hpmr_fuel_lifetime(
+            HPMR_NA_FIXED, geometry[0], height, enrichment, power_mwt,
+        )
+
+    for label, geometry, diameter_cm in candidates:
+        minimum_height = max(1, int(round(ASPECT_RATIO_MIN * diameter_cm)))
+        maximum_height = int(round(ASPECT_RATIO_MAX * diameter_cm))
+        lifetime_by_height = {}
+
+        def estimate_at_height(height):
+            if height not in lifetime_by_height:
+                lifetime_by_height[height] = estimator(geometry, height)
+            return lifetime_by_height[height]
+
+        interval = safe_height_interval(
+            estimate_at_height,
+            minimum_height,
+            maximum_height,
+        )
+        if interval is not None:
+            safe_min, safe_max = interval
+            default_height = min(
+                range(safe_min, safe_max + 1),
+                key=lambda height:
+                abs(estimate_at_height(height) - DEFAULT_FUEL_LIFETIME_DAYS),
+            )
+            safe_options[label] = (
+                safe_min,
+                safe_max,
+                default_height,
+                estimate_at_height(default_height),
+            )
+
+    return safe_options
+
+
+def _five_year_geometry_default(safe_geometry):
+    """Return the diameter label whose best safe height is nearest five years."""
+    return min(
+        safe_geometry,
+        key=lambda label:
+        abs(safe_geometry[label][3] - DEFAULT_FUEL_LIFETIME_DAYS),
+    )
 
 
 @st.cache_data(show_spinner=False, max_entries=2)
@@ -929,11 +1029,7 @@ def _get_mean_std(df, account, which='FOAK'):
 def _fmt_cost(mean, std):
     if math.isnan(mean):
         return 'N/A'
-    # Sub-$1M values (e.g. training costs) round to 1 decimal so
-    # they read as "$0.3M" instead of "$0M". Values >= $1M stay as
-    # whole millions to keep OCC/TCI/Direct cards uncluttered.
-    use_decimal = abs(mean) < 1e6
-    fmt = (lambda v: f'${v / 1e6:.1f}M') if use_decimal else (lambda v: f'${round(v / 1e6)}M')
+    fmt = format_cost_for_display
     if math.isnan(std) or std == 0:
         return fmt(mean)
     # "Mean [low – high]" the mean is the headline, the bracketed
@@ -1027,22 +1123,7 @@ def _fmt_table_val(x):
         v = float(x)
     except (TypeError, ValueError):
         return str(x)
-    if v == 0:
-        return '0'
-    sign = '-' if v < 0 else ''
-    a = abs(v)
-    if a >= 1e7:
-        return f'{sign}{round(a / 1e6):.0f}M'
-    elif a >= 1e6:
-        return f'{sign}{round(a / 1e6):.0f}M'
-    elif a >= 1e5:
-        return f'{sign}{round(a / 1e4) * 10:.0f}K'
-    elif a >= 1e4:
-        return f'{sign}{round(a / 1e3):.0f}K'
-    elif a >= 1e3:
-        return f'{sign}{round(a / 1e3):.0f}K'
-    else:
-        return f'{sign}{int(round(a))}'
+    return f'{round_cost_for_display(v):,.0f}'
 
 
 # ---------------------------------------------------------------------------
@@ -2155,6 +2236,25 @@ def _load_state_industrial_price_distribution():
              / 'state_industrial_price_distribution_2024.csv')
     return pd.read_csv(_path)
 
+@st.cache_data(show_spinner=False)
+def _load_transportation_cost_inputs():
+    """Load the version-controlled transportation cost screening inputs."""
+    _path = (Path(__file__).resolve().parent.parent
+             / 'assets' / 'transportation_cost_inputs_2025.csv')
+    _df = pd.read_csv(_path)
+    _required = {
+        'id', 'cost_value_lower_bound', 'cost_value_upper_bound',
+        'units', 'dollar_year',
+    }
+    _missing = _required.difference(_df.columns)
+    if _missing:
+        raise ValueError(
+            'Transportation cost input file is missing columns: '
+            + ', '.join(sorted(_missing))
+        )
+    return _df.set_index('id', drop=False)
+
+
 cookies = _get_cookie_manager()
 if not cookies.ready():
     st.stop()
@@ -2219,7 +2319,7 @@ with streamlit_analytics.track():
                   'Down-blending (diluting higher-enriched U) is not considered.'),
         )
 
-        _power_defaults = {'LTMR': 20, 'GCMR': 15, 'HPMR': 5}
+        _power_defaults = {'LTMR': 20, 'GCMR': 20, 'HPMR': 20}
         _power_max = {'LTMR': 64, 'GCMR': 50, 'HPMR': 60}
 
         power_mwt = st.slider(
@@ -2238,28 +2338,42 @@ with streamlit_analytics.track():
         n_core_rings = None # GCMR / HPMR
         active_height = None
         if reactor_type == 'LTMR':
-            # Default to N=12 (95 cm), a mid-range trained geometry.
-            _default_diameter_label = next(
-                lbl for lbl in LTMR_DIAMETER_LABELS
-                if LTMR_DIAMETER_LABEL_TO_N[lbl] == 12
+            _safe_geometry = _safe_diameter_height_options(
+                reactor_type, power_mwt, enrichment,
+                GEOMETRY_CONSTRAINT_CACHE_VERSION,
             )
+            _diameter_options = list(_safe_geometry)
+            if not _diameter_options:
+                st.error(
+                    'No LTMR geometry in the modeled range has a usable fuel '
+                    'lifetime below 30 years at this power and enrichment.'
+                )
+                st.stop()
+            _default_diameter_label = _five_year_geometry_default(_safe_geometry)
+            if st.session_state.get('ltmr_diameter') not in _diameter_options:
+                st.session_state['ltmr_diameter'] = _default_diameter_label
             _diameter_label = st.select_slider(
                 'Active Core Diameter',
-                options=LTMR_DIAMETER_LABELS,
+                options=_diameter_options,
                 value=_default_diameter_label,
                 key='ltmr_diameter',
                 help=('Active core diameter (does NOT include the radial reflector). '
                       'Discrete values mapped to the number of fuel rings per '
                       'assembly. Values marked with * are interpolated between '
-                      'trained geometries.'),
+                      'trained geometries. The available range is limited to '
+                      'diameters with at least one height that gives a usable '
+                      'fuel lifetime below 30 years.'),
             )
             n_rings_per_assembly = LTMR_DIAMETER_LABEL_TO_N[_diameter_label]
 
             _ar_ltmr = LTMR_N_TO_ACTIVE_RADIUS_CM[n_rings_per_assembly]
             _ad_ltmr = LTMR_N_TO_DIAMETER_CM[n_rings_per_assembly] # active diameter
-            _h_min = max(1, int(round(ASPECT_RATIO_MIN * _ad_ltmr)))
-            _h_max = int(round(ASPECT_RATIO_MAX * _ad_ltmr))
-            _h_default = int(round(_ad_ltmr)) # H/D = 1.0
+            _h_min, _h_max, _h_default, _ = _safe_geometry[_diameter_label]
+            _height_key = f'ltmr_active_height_{n_rings_per_assembly}'
+            if _height_key in st.session_state:
+                st.session_state[_height_key] = min(
+                    max(st.session_state[_height_key], _h_min), _h_max,
+                )
 
             active_height = st.slider(
                 'Active Height (cm)',
@@ -2267,35 +2381,49 @@ with streamlit_analytics.track():
                 max_value=_h_max,
                 value=_h_default,
                 step=1,
-                key=f'ltmr_active_height_{n_rings_per_assembly}',
-                help=(f'Active fuel height in cm. Bounds correspond to aspect ratio '
-                      f'(H / D, where D is the active core diameter) between '
-                      f'{ASPECT_RATIO_MIN} and {ASPECT_RATIO_MAX}. For this geometry '
-                      f'the active core diameter is {_ad_ltmr} cm.'),
+                key=_height_key,
+                help=(f'Active fuel height in cm. The range is restricted to '
+                      f'usable fuel lifetimes below 30 years and remains within '
+                      f'the H/D limits of {ASPECT_RATIO_MIN} to {ASPECT_RATIO_MAX}. '
+                      f'The active core diameter is {_ad_ltmr} cm.'),
             )
 
         elif reactor_type == 'GCMR':
-            # Default to (N_A=6, N_C=5), the reference GCMR design
-            _default_label = next(
-                lbl for lbl in GCMR_DIAMETER_LABELS
-                if GCMR_DIAMETER_LABEL_TO_PAIR[lbl] == (6, 5)
+            _safe_geometry = _safe_diameter_height_options(
+                reactor_type, power_mwt, enrichment,
+                GEOMETRY_CONSTRAINT_CACHE_VERSION,
             )
+            _diameter_options = list(_safe_geometry)
+            if not _diameter_options:
+                st.error(
+                    'No GCMR geometry in the modeled range has a usable fuel '
+                    'lifetime below 30 years at this power and enrichment.'
+                )
+                st.stop()
+            _default_label = _five_year_geometry_default(_safe_geometry)
+            if st.session_state.get('gcmr_diameter') not in _diameter_options:
+                st.session_state['gcmr_diameter'] = _default_label
             _diameter_label = st.select_slider(
                 'Active Core Diameter',
-                options=GCMR_DIAMETER_LABELS,
+                options=_diameter_options,
                 value=_default_label,
                 key='gcmr_diameter',
                 help=('Active core diameter (does NOT include the radial reflector). '
                       'Discrete values mapped to (Assembly Rings, Core Rings). Values '
-                      'marked with * are interpolated between trained geometries.'),
+                      'marked with * are interpolated between trained geometries. '
+                      'The available range is limited to diameters with at least '
+                      'one height that gives a usable fuel lifetime below 30 years.'),
             )
             n_assembly_rings, n_core_rings = GCMR_DIAMETER_LABEL_TO_PAIR[_diameter_label]
 
             _ar_gcmr = _gcmr_active_radius(n_assembly_rings, n_core_rings)
             _ad_gcmr = 2.0 * _ar_gcmr # active diameter
-            _h_min = max(1, int(round(ASPECT_RATIO_MIN * _ad_gcmr)))
-            _h_max = int(round(ASPECT_RATIO_MAX * _ad_gcmr))
-            _h_default = int(round(_ad_gcmr)) # H/D = 1.0
+            _h_min, _h_max, _h_default, _ = _safe_geometry[_diameter_label]
+            _height_key = f'gcmr_active_height_{n_assembly_rings}_{n_core_rings}'
+            if _height_key in st.session_state:
+                st.session_state[_height_key] = min(
+                    max(st.session_state[_height_key], _h_min), _h_max,
+                )
 
             active_height = st.slider(
                 'Active Height (cm)',
@@ -2303,40 +2431,55 @@ with streamlit_analytics.track():
                 max_value=_h_max,
                 value=_h_default,
                 step=1,
-                key=f'gcmr_active_height_{n_assembly_rings}_{n_core_rings}',
-                help=(f'Active fuel height in cm. Bounds correspond to aspect ratio '
-                      f'(H / D, where D is the active core diameter) between '
-                      f'{ASPECT_RATIO_MIN} and {ASPECT_RATIO_MAX}. For this geometry '
-                      f'the active core diameter is {_ad_gcmr:.0f} cm.'),
+                key=_height_key,
+                help=(f'Active fuel height in cm. The range is restricted to '
+                      f'usable fuel lifetimes below 30 years and remains within '
+                      f'the H/D limits of {ASPECT_RATIO_MIN} to {ASPECT_RATIO_MAX}. '
+                      f'The active core diameter is {_ad_gcmr:.0f} cm.'),
             )
 
         elif reactor_type == 'HPMR':
+            _safe_geometry = _safe_diameter_height_options(
+                reactor_type, power_mwt, enrichment,
+                GEOMETRY_CONSTRAINT_CACHE_VERSION,
+            )
+            _diameter_options = list(_safe_geometry)
+            if not _diameter_options:
+                st.error(
+                    'No HPMR geometry in the modeled range has a usable fuel '
+                    'lifetime below 30 years at this power and enrichment.'
+                )
+                st.stop()
             # HPMR's parametric study has N_A locked at 6, so the
             # active diameter slider varies only N_C. H is selected
             # independently with H/D in [ASPECT_RATIO_MIN, ASPECT_RATIO_MAX],
             # matching LTMR / GCMR.
-            _default_label = next(
-                lbl for lbl in HPMR_DIAMETER_LABELS
-                if HPMR_DIAMETER_LABEL_TO_NC[lbl] == 5
-            )
+            _default_label = _five_year_geometry_default(_safe_geometry)
+            if st.session_state.get('hpmr_diameter') not in _diameter_options:
+                st.session_state['hpmr_diameter'] = _default_label
             _diameter_label = st.select_slider(
                 'Active Core Diameter',
-                options=HPMR_DIAMETER_LABELS,
+                options=_diameter_options,
                 value=_default_label,
                 key='hpmr_diameter',
                 help=('Active core diameter (does NOT include the radial '
                       'reflector). Discrete values mapped to Core Rings '
                       '(N_C); Assembly Rings (N_A) is locked at 6 in the '
-                      'HPMR parametric study.'),
+                      'HPMR parametric study. The available range is limited '
+                      'to diameters with at least one height that gives a usable '
+                      'fuel lifetime below 30 years.'),
             )
             n_assembly_rings = HPMR_NA_FIXED # always 6
             n_core_rings = HPMR_DIAMETER_LABEL_TO_NC[_diameter_label]
 
             _ar_hpmr = _hpmr_active_radius(n_core_rings)
             _ad_hpmr = 2.0 * _ar_hpmr # active diameter
-            _h_min = max(1, int(round(ASPECT_RATIO_MIN * _ad_hpmr)))
-            _h_max = int(round(ASPECT_RATIO_MAX * _ad_hpmr))
-            _h_default = int(round(_ad_hpmr)) # H/D = 1.0
+            _h_min, _h_max, _h_default, _ = _safe_geometry[_diameter_label]
+            _height_key = f'hpmr_active_height_{n_core_rings}'
+            if _height_key in st.session_state:
+                st.session_state[_height_key] = min(
+                    max(st.session_state[_height_key], _h_min), _h_max,
+                )
 
             active_height = st.slider(
                 'Active Height (cm)',
@@ -2344,11 +2487,11 @@ with streamlit_analytics.track():
                 max_value=_h_max,
                 value=_h_default,
                 step=1,
-                key=f'hpmr_active_height_{n_core_rings}',
-                help=(f'Active fuel height in cm. Bounds correspond to aspect '
-                      f'ratio (H / D, where D is the active core diameter) '
-                      f'between {ASPECT_RATIO_MIN} and {ASPECT_RATIO_MAX}. For '
-                      f'this geometry the active core diameter is {_ad_hpmr:.0f} cm.'),
+                key=_height_key,
+                help=(f'Active fuel height in cm. The range is restricted to '
+                      f'usable fuel lifetimes below 30 years and remains within '
+                      f'the H/D limits of {ASPECT_RATIO_MIN} to {ASPECT_RATIO_MAX}. '
+                      f'The active core diameter is {_ad_hpmr:.0f} cm.'),
             )
 
         st.divider()
@@ -2365,15 +2508,31 @@ with streamlit_analytics.track():
         )
         emergency_shutdowns = st.slider(
             'Number of emergency shutdowns per year',
-            min_value=0.1, max_value=10.0, value=2.0, step=0.1, format='%.1f',
+            min_value=0.1, max_value=10.0, value=1.0, step=0.1, format='%.1f',
+            key='emergency_shutdowns_per_year',
             help=('Average number of unplanned shutdowns per year. Often higher '
                   'early in operation and decreases as operating experience accumulates.'),
         )
+        _max_emergency_startup_days = maximum_emergency_startup_days(
+            emergency_shutdowns,
+        )
+        _emergency_startup_key = 'startup_duration_emergency'
+        if _emergency_startup_key in st.session_state:
+            st.session_state[_emergency_startup_key] = min(
+                st.session_state[_emergency_startup_key],
+                _max_emergency_startup_days,
+            )
         startup_duration = st.slider(
             'Startup Duration after Emergency Shutdown (days)',
-            min_value=1, max_value=180, value=21, step=1,
+            min_value=1,
+            max_value=_max_emergency_startup_days,
+            value=min(21, _max_emergency_startup_days),
+            step=1,
+            key=_emergency_startup_key,
             help=('Days the reactor is offline after an unplanned emergency shutdown. '
-                  'Varies by event; this is a rough average.'),
+                  'Varies by event; this is a rough average. The maximum is '
+                  'dynamically limited so emergency downtime cannot exceed '
+                  '365 days per year.'),
         )
         startup_duration_refueling = st.slider(
             'Startup Duration after Refueling (days)',
@@ -2525,6 +2684,117 @@ with streamlit_analytics.track():
             )
 
         st.divider()
+        st.markdown('**D Transportability**')
+
+        transport_condition = st.selectbox(
+            'Transportation Condition',
+            options=['Unirradiated', 'Irradiated'],
+            index=0,
+            help=(
+                '**Unirradiated:** preserves the existing MOUSE initial-deployment '
+                'transport screening.\n\n'
+                '**Irradiated:** screens one intact end-of-fuel-cycle reactor-module '
+                'return after onsite cooldown. Additional external shielding is added '
+                'to the reactor module before road, rail, sea, cost, and LCOE checks.'
+            ),
+        )
+
+        cooldown_months = 6
+        shield_material = 'Lead'
+        target_dose_rate_mrem_h = 10.0
+        dose_evaluation_distance_m = 2.0
+        if transport_condition == 'Irradiated':
+            cooldown_months = st.slider(
+                'Cooldown Time (months)',
+                min_value=1,
+                max_value=60,
+                value=6,
+                step=1,
+                help=(
+                    'Time between reactor shutdown and transportation. Source strength '
+                    'is estimated with a finite-irradiation Way-Wigner decay-heat '
+                    'correlation, with 50% of decay heat assumed to be gamma energy. '
+                    'The normalized 48-group spectrum shape is interpolated through '
+                    '36 months; for longer cooldown periods the 36-month shape is '
+                    'retained while total source strength continues to decrease. '
+                    'This is a reference-spectrum screening model, not a '
+                    'reactor-specific depletion calculation.'
+                ),
+            )
+            shield_material = st.selectbox(
+                'Shielding Material',
+                options=list(available_shield_materials()),
+                index=0,
+                help=(
+                    'Available photon-shielding sensitivities are lead, carbon steel, '
+                    'tungsten heavy alloy, and ordinary concrete. Each option uses '
+                    'material-specific attenuation coefficients for all 48 photon-energy '
+                    'groups, its bulk density, and a 2025 raw-material cost proxy. '
+                    'Concrete is included only as a stationary or limited site-transfer '
+                    'sensitivity; it is not treated as a normal over-the-road cask '
+                    'material. Costs exclude fabrication, structural shells, thermal '
+                    'design, and package certification. Hydrogenous neutron shields are '
+                    'not included because this model does not calculate shutdown-neutron '
+                    'dose.'
+                ),
+            )
+            target_dose_rate_mrem_h = st.number_input(
+                'Target Dose Rate (mrem/h)',
+                min_value=1.0,
+                max_value=100.0,
+                value=10.0,
+                step=1.0,
+                help=(
+                    'The default comparison case is 10 mrem/h at 2 m outward from '
+                    'the shield surface. The calculation uses point-source exponential '
+                    'attenuation, does not include photon buildup, and takes no credit '
+                    'for attenuation by the fuel, reflector, vessels, coolant, or '
+                    'existing reactor shielding. It does not demonstrate regulatory '
+                    'compliance.'
+                ),
+            )
+            dose_evaluation_distance_m = st.number_input(
+                'Distance from Shield Surface (m)',
+                min_value=2.0,
+                max_value=30.0,
+                value=2.0,
+                step=1.0,
+                help=(
+                    'Radial distance measured outward from the added shield surface. '
+                    'The source is treated as a point at the module center. MOUSE '
+                    'converts this surface offset to source-to-detector distance by '
+                    'adding the unshielded module radius and calculated shield '
+                    'thickness. Vehicle geometry is not modeled.'
+                ),
+            )
+            if (
+                abs(float(target_dose_rate_mrem_h) - 10.0) > 1.0e-9
+                or abs(float(dose_evaluation_distance_m) - 2.0) > 1.0e-9
+            ):
+                st.warning(
+                    'Custom dose criterion selected. This remains a simplified '
+                    'screening sensitivity, not a regulatory-compliance determination.'
+                )
+
+        road_distance_miles = st.number_input(
+            'Transportation Distance (miles)',
+            min_value=0,
+            max_value=10000,
+            value=1000,
+            step=50,
+            format='%d',
+            help=(
+                'Enter the approximate one-way transportation distance. The value '
+                'is used for direct road transportation and, only when specialized '
+                'rail service is required, as the approximate rail mileage. In '
+                'irradiated road mode it also determines the screening number of '
+                'security/escort travel days using 250 loaded miles per day. Standard '
+                'rail and sea costs remain shipment-based. First- and last-mile '
+                'trucking for rail and sea is excluded.'
+            ),
+        )
+
+        st.divider()
         run_button = st.button('⚡ Run Analysis', type='primary', width='stretch')
         if run_button:
             # Run a generational GC pass before kicking off a new
@@ -2559,6 +2829,12 @@ with streamlit_analytics.track():
                 'tax_credit_type': tax_credit_type,
                 'tax_credit_value': tax_credit_value,
                 'tax_credit_units': tax_credit_units,
+                'transport_condition': transport_condition,
+                'cooldown_months': cooldown_months,
+                'shield_material': shield_material,
+                'target_dose_rate_mrem_h': target_dose_rate_mrem_h,
+                'dose_evaluation_distance_m': dose_evaluation_distance_m,
+                'road_distance_miles': road_distance_miles,
             }
 
         st.divider()
@@ -2759,6 +3035,12 @@ with streamlit_analytics.track():
         'tax_credit_type': tax_credit_type,
         'tax_credit_value': tax_credit_value,
         'tax_credit_units': tax_credit_units,
+        'transport_condition': transport_condition,
+        'cooldown_months': cooldown_months,
+        'shield_material': shield_material,
+        'target_dose_rate_mrem_h': target_dose_rate_mrem_h,
+        'dose_evaluation_distance_m': dose_evaluation_distance_m,
+        'road_distance_miles': road_distance_miles,
     }
     if _current_inputs != _committed:
         st.markdown(
@@ -2794,6 +3076,12 @@ with streamlit_analytics.track():
     tax_credit_type = _committed['tax_credit_type']
     tax_credit_value = _committed['tax_credit_value']
     tax_credit_units = _committed.get('tax_credit_units')
+    transport_condition = _committed.get('transport_condition', 'Unirradiated')
+    cooldown_months = _committed.get('cooldown_months', 6)
+    shield_material = _committed.get('shield_material', 'Lead')
+    target_dose_rate_mrem_h = _committed.get('target_dose_rate_mrem_h', 10.0)
+    dose_evaluation_distance_m = _committed.get('dose_evaluation_distance_m', 2.0)
+    road_distance_miles = _committed.get('road_distance_miles', 1000)
 
     # ── Show single progress banner covering BOTH the basic estimate
     # and the NOAK deployment-scale sweep that follows. ─────────────────────
@@ -3453,7 +3741,8 @@ with streamlit_analytics.track():
         'margin:1.25rem 0 0.4rem 0;">Electricity Costs</div>'
         '<p style="color:#64748b;font-size:0.85rem;margin:0 0 0.85rem 0;">'
         'Ranges shown are <strong>mean &minus; 1&sigma;</strong> to '
-        '<strong>mean + 1&sigma;</strong>.'
+        '<strong>mean + 1&sigma;</strong>. Total-dollar values are displayed '
+        'with approximately half of their integer digits rounded to trailing zeros.'
         '</p>',
         unsafe_allow_html=True,
     )
@@ -4310,84 +4599,73 @@ with streamlit_analytics.track():
     # ─────────────────────────────────────────────────────────────
     # Transportability Considerations
     # ─────────────────────────────────────────────────────────────
-    # Per-component dimensions (height, diameter) and dry mass for
-    # the four nested envelopes that make up a microreactor module.
-    # Per-mode badges compare the outermost (RVACS) envelope to
-    # three transport-mode dimensional limits. No total mass is
-    # computed (per design choice each component is shown alone).
-    #
-    # Rounding rules (match the coolant-inventory card):
-    # weights ≥ 1 ton -> integer tons
-    # weights < 1 ton -> 1 significant figure
-    # dimensions -> meters with 1 decimal
-    # Inner "Can we ship it?" sub-header removed; the band-level
-    # header above already announces the section.
+    # Build the reactor-specific set of functional transport packages,
+    # screen one selected package in detail, and summarize the least-complex
+    # road, rail, and sea option for every package in the deployment.
     st.markdown(
         '<div style="background:#f7f8fa;border:1px solid #bfdbfe;border-radius:8px;'
         'padding:0.85rem 1.1rem;margin-bottom:0.9rem;font-size:0.85rem;line-height:1.45;color:#3c4257;">'
-        'Transportability is one of the headline features of microreactors '
-        'they can move by truck, rail, or sea container, which differentiates '
-        'them from large NPPs. The numbers below check whether each component '
-        'of the current reactor design would fit through standard truck, '
-        'rail, and sea shipping limits.'
+        'Transportability is one of the headline features of microreactors: '
+        'their major equipment can be factory-packaged and moved by road, rail, '
+        'or sea. The section below defines the complete set of functional '
+        'transport packages, screens each package, and identifies the package '
+        'that controls whole-plant logistics.'
         '</div>',
         unsafe_allow_html=True,
     )
 
-    # ── Module Geometry subsection header ──────────────────────
-    st.markdown(
-        '<div style="font-size:1rem;font-weight:700;color:#0a2540;'
-        'border-left:4px solid #0a2540;padding:0.4rem 0 0.4rem 0.75rem;'
-        'margin:0 0 0.4rem 0;">Module Geometry</div>'
-        '<p style="color:#64748b;font-size:0.85rem;margin:0 0 0.85rem 0;">'
-        'The reactor is built up from up to four nested layers, listed '
-        'below from innermost to outermost. Each layer is a separate '
-        'piece that could ship independently.'
-        '</p>',
-        unsafe_allow_html=True,
-    )
+    # Package-based transportation model. The reactor module remains a
+    # detailed nested assembly, while the balance of plant is represented by
+    # screening-level functional transport packages.
 
-    # ── Build per-component rows (height_m, diameter_m, mass_kg) ──
-    def _ton_str(kg):
-        """Match the coolant-inventory rounding convention."""
-        if kg is None:
-            return ''
+    def _tr_lb(kg):
+        """Convert kilograms to pounds."""
         try:
-            kg = float(kg)
+            return float(kg) * 2.2046226218
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _tr_lb_str(kg):
+        value = _tr_lb(kg)
+        return f'{value:,.0f} lb' if value > 0 else ''
+
+    def _tr_m1(cm):
+        try:
+            value = float(cm)
         except (TypeError, ValueError):
             return ''
-        if kg <= 0:
-            return ''
-        t = kg / 1000.0
-        if t >= 1:
-            return f'{round(t):,d} ton'
-        return f'{t:.1g} ton'
+        return f'{value / 100.0:.1f} m' if value > 0 else ''
 
-    def _m1(cm):
-        if cm is None or cm <= 0:
-            return ''
-        return f'{cm/100.0:.1f} m'
+    def _tr_box_dimensions(volume_m3, length_ratio=2.0, height_ratio=1.0,
+                           min_length_m=1.2, min_width_m=0.6,
+                           min_height_m=0.6):
+        """Return a conservative rectangular envelope for a package volume."""
+        volume_m3 = max(float(volume_m3), 0.001)
+        width_m = (volume_m3 / (length_ratio * height_ratio)) ** (1.0 / 3.0)
+        width_m = max(min_width_m, width_m)
+        height_m = max(min_height_m, height_ratio * width_m)
+        length_m = max(min_length_m, length_ratio * width_m)
+        return length_m, width_m, height_m
 
     # MOUSE label disambiguation:
-    # - LTMR: 'Vessel' = reactor vessel, 'Guard Vessel' = guard vessel
-    # - GCMR: 'Vessel' = core barrel (internal),
-    # 'Guard Vessel' = the actual RPV (He pressure boundary)
-    # - HPMR: 'Vessel' = reactor vessel, no guard vessel
+    # - LTMR: Vessel = reactor vessel, Guard Vessel = guard vessel
+    # - GCMR: Vessel = core barrel, Guard Vessel = actual pressure vessel
+    # - HPMR: Vessel = reactor vessel, no guard vessel
     _vessel_height_cm = float(params.get('Vessel Height', 0.0))
     _bottom_depth_cm = float(params.get('Vessel Bottom Depth', 0.0))
     _vessel_thk_cm = float(params.get('Vessel Thickness', 0.0))
     _guard_thk_cm = float(params.get('Guard Vessel Thickness', 0.0))
     _gap_v_g_cm = float(params.get('Gap Between Vessel And Guard Vessel', 0.0))
 
-    # Reactor (core + reflectors + drums). All component masses
-    # are in kg. Use full modeled fuel mass instead of uranium
-    # heavy-metal mass alone. For GCMR, graphite matrix inside fuel
-    # compacts is already counted by the moderator-mass routine, so
-    # subtract it from the moderator term to avoid double counting.
-    _fuel_mass_kg, _fuel_matrix_overlap_kg, _heatpipe_steel_kg = _transport_fuel_masses(params, reactor_type)
+    # Reactor (core + reflectors + drums).
+    _fuel_mass_kg, _fuel_matrix_overlap_kg, _heatpipe_steel_active_kg = (
+        _transport_fuel_masses(params, reactor_type)
+    )
     _reactor_dia_cm = 2.0 * float(params.get('Core Radius', 0.0))
-    _reactor_h_cm = (float(params.get('Active Height', 0.0))
-                        + 2.0 * float(params.get('Axial Reflector Thickness', 0.0)))
+    _reactor_h_cm = (
+        float(params.get('Active Height', 0.0))
+        + 2.0 * float(params.get('Axial Reflector Thickness', 0.0))
+    )
     _reactor_mass_kg = (
         _fuel_mass_kg
         + max(0.0, float(params.get('Moderator Mass', 0.0)) - _fuel_matrix_overlap_kg)
@@ -4395,530 +4673,1556 @@ with streamlit_analytics.track():
         + float(params.get('Radial Reflector Mass', 0.0))
         + float(params.get('Axial Reflector Mass', 0.0))
         + float(params.get('Control Drums Mass', 0.0))
-        + _heatpipe_steel_kg
+        + _heatpipe_steel_active_kg
     )
 
-    # Reactor vessel (the pressure boundary)
+    # Reactor vessel (pressure boundary).
     if reactor_type == 'GCMR':
-        # MOUSE 'Guard Vessel' is the RPV for GCMR
-        _rv_outer_r_cm = (float(params.get('Guard Vessel Radius', 0.0))
-                          + _guard_thk_cm)
-        _rv_height_cm = (_vessel_height_cm
-                          + _bottom_depth_cm + _vessel_thk_cm + _gap_v_g_cm
-                          + _guard_thk_cm)
+        _rv_outer_r_cm = float(params.get('Guard Vessel Radius', 0.0)) + _guard_thk_cm
+        _rv_height_cm = (
+            _vessel_height_cm + _bottom_depth_cm + _vessel_thk_cm
+            + _gap_v_g_cm + _guard_thk_cm
+        )
         _rv_mass_kg = float(params.get('Guard Vessel Mass', 0.0))
     else:
-        _rv_outer_r_cm = (float(params.get('Vessel Radius', 0.0)) + _vessel_thk_cm)
+        _rv_outer_r_cm = float(params.get('Vessel Radius', 0.0)) + _vessel_thk_cm
         _rv_height_cm = _vessel_height_cm + _bottom_depth_cm
         _rv_mass_kg = float(params.get('Vessel Mass', 0.0))
     _rv_dia_cm = 2.0 * _rv_outer_r_cm
 
-    # Guard vessel only for LTMR
-    _has_guard = (reactor_type == 'LTMR'
-                  and float(params.get('Guard Vessel Thickness', 0.0)) > 0)
+    # Guard vessel only for LTMR.
+    _has_guard = (
+        reactor_type == 'LTMR'
+        and float(params.get('Guard Vessel Thickness', 0.0)) > 0
+    )
     if _has_guard:
-        _gv_outer_r_cm = (float(params.get('Guard Vessel Radius', 0.0)) + _guard_thk_cm)
+        _gv_outer_r_cm = float(params.get('Guard Vessel Radius', 0.0)) + _guard_thk_cm
         _gv_dia_cm = 2.0 * _gv_outer_r_cm
-        _gv_height_cm = (_vessel_height_cm
-                          + _bottom_depth_cm + _vessel_thk_cm + _gap_v_g_cm
-                          + _guard_thk_cm)
+        _gv_height_cm = (
+            _vessel_height_cm + _bottom_depth_cm + _vessel_thk_cm
+            + _gap_v_g_cm + _guard_thk_cm
+        )
         _gv_mass_kg = float(params.get('Guard Vessel Mass', 0.0))
     else:
         _gv_dia_cm = _gv_height_cm = _gv_mass_kg = 0.0
 
-    # RVACS (cooling vessel + intake vessel combined)
+    # RVACS (cooling vessel + intake vessel combined).
     _rvacs_outer_r_cm = float(params.get('Vessels Total Radius', 0.0))
     _rvacs_dia_cm = 2.0 * _rvacs_outer_r_cm
     _rvacs_height_cm = float(params.get('Vessels Total Height', 0.0))
-    _rvacs_mass_kg = (float(params.get('Cooling Vessel Mass', 0.0))
-                         + float(params.get('Intake Vessel Mass', 0.0)))
-
-    # ── Render component table ──
-    # Each row carries an always-visible small-font description
-    # under the component name explaining what is included and
-    # what is excluded. The hover-only title= tooltip approach
-    # was unreliable across browsers/themes, so the notes are
-    # shown inline in the table itself. Explicit colors
-    # throughout so the table is readable regardless of the
-    # Streamlit theme.
-    _CELL = ('padding:0.55rem 0.8rem;color:#0a2540;'
-             'border-bottom:1px solid #bfdbfe;'
-             'vertical-align:top;')
-    _CELL_C = _CELL + 'text-align:center;'
-    _CELL_NAME = _CELL + 'font-weight:600;'
-    _DESC = ('font-size:0.85rem;font-weight:400;color:#64748b;'
-             'line-height:1.4;margin-top:0.2rem;')
-
-    _moderator_for_type = {
-        'LTMR': 'ZrH',
-        'GCMR': 'graphite (with ZrH booster pins)',
-        'HPMR': 'monolith graphite',
-    }.get(reactor_type, 'moderator')
-    _reactor_desc = (
-        f'Includes: modeled fuel mass, moderator ({_moderator_for_type}), '
-        'radial + axial reflector, and control drums.'
-        + (' Fuel mass includes UZrH fuel meat plus modeled Zr and SS304 fuel-pin metal regions.'
-           if reactor_type == 'LTMR' else '')
-        + (' Fuel mass includes UCO kernels, TRISO coating layers, and graphite fuel-compact matrix.'
-           if reactor_type == 'GCMR' else '')
-        + (' Fuel mass includes homogenized TRISO fuel; heat-pipe steel is included, Na working fluid is excluded.'
-           if reactor_type == 'HPMR' else '')
-    )
-    _rv_desc_extra = (
-        ' <span style="color:#1B4F8C;">For GCMR this maps to '
-        'MOUSE\'s internal "Guard Vessel" field (the RPV).</span>'
-        if reactor_type == 'GCMR' else ''
-    )
-    _rv_desc = (
-        'Diameter = 2 × (vessel radius + thickness). '
-        'Height = active core + axial reflector + lower '
-        'plenum + upper plenum + bottom dish. '
-        'Top closure dome not modeled. Mass = vessel wall only.'
-        + _rv_desc_extra
-    )
-    _gv_desc = (
-        'Secondary containment shell around the reactor vessel '
-        'for primary coolant leak containment. Mass = '
-        'guard vessel wall only (no internals).'
-    )
-    _gv_na_desc = (
-        'Intentionally omitted for this reactor type He is '
-        'inert (GCMR) and heat pipes are individually sealed '
-        '(HPMR), so neither has a bulk primary coolant '
-        'requiring secondary containment.'
-    )
-    _rvacs_desc = (
-        'The two outer vessels that comprise the Reactor Vessel '
-        'Auxiliary Cooling System: the cooling vessel + the intake '
-        'vessel, treated here as one shipping envelope. Diameter = '
-        '2 × intake vessel outer radius; height is the full external '
-        'envelope. Mass = cooling vessel wall + intake vessel wall '
-        'only (no air, no insulation, no support structure).'
+    _rvacs_mass_kg = (
+        float(params.get('Cooling Vessel Mass', 0.0))
+        + float(params.get('Intake Vessel Mass', 0.0))
     )
 
-    _rows_html = []
-    _rows_html.append(
-        '<tr style="background:#ffffff;">'
-        f'<td style="{_CELL_NAME}">Reactor (core + reflectors + drums)'
-        f'<div style="{_DESC}">{_reactor_desc}</div></td>'
-        f'<td style="{_CELL_C}">{_m1(_reactor_h_cm)}</td>'
-        f'<td style="{_CELL_C}">{_m1(_reactor_dia_cm)}</td>'
-        f'<td style="{_CELL_C}">{_ton_str(_reactor_mass_kg)}</td>'
-        '</tr>'
+    # HPMR heat pipes are transported with the reactor module. Extend the
+    # modeled active-length steel mass to a full heat-pipe length equal to the
+    # active height plus 2.2 m (0.4 m adiabatic + 1.8 m condenser). Add a small
+    # working-fluid estimate based on a 1 mm wall, 50% liquid fill of the
+    # internal cross section, and 850 kg/m3 sodium density.
+    _hpmr_extra_heatpipe_steel_kg = 0.0
+    _hpmr_heatpipe_sodium_kg = 0.0
+    _hpmr_full_heatpipe_length_m = 0.0
+    if reactor_type == 'HPMR':
+        _active_m = max(float(params.get('Active Height', 0.0)) / 100.0, 0.001)
+        _hpmr_full_heatpipe_length_m = _active_m + 2.2
+        _full_hp_steel_kg = _heatpipe_steel_active_kg * (
+            _hpmr_full_heatpipe_length_m / _active_m
+        )
+        _hpmr_extra_heatpipe_steel_kg = max(
+            0.0, _full_hp_steel_kg - _heatpipe_steel_active_kg
+        )
+        _hp_radii_cm = params.get('Heat Pipe Radii', [0.0])
+        _hp_outer_radius_m = (
+            float(_hp_radii_cm[0]) / 100.0 if _hp_radii_cm else 0.0
+        )
+        _hp_inner_radius_m = max(0.0, _hp_outer_radius_m - 0.001)
+        _hp_count = int(params.get('Number of Heatpipes', 0))
+        _hpmr_heatpipe_sodium_kg = (
+            math.pi * _hp_inner_radius_m ** 2
+            * _hpmr_full_heatpipe_length_m * _hp_count
+            * 0.50 * 850.0
+        )
+
+    _reactor_package_mass_kg = (
+        _reactor_mass_kg + _rv_mass_kg + _gv_mass_kg + _rvacs_mass_kg
+        + _hpmr_extra_heatpipe_steel_kg + _hpmr_heatpipe_sodium_kg
     )
-    _rows_html.append(
-        '<tr style="background:#f7f8fa;">'
-        f'<td style="{_CELL_NAME}">Reactor vessel'
-        f'<div style="{_DESC}">{_rv_desc}</div></td>'
-        f'<td style="{_CELL_C}">{_m1(_rv_height_cm)}</td>'
-        f'<td style="{_CELL_C}">{_m1(_rv_dia_cm)}</td>'
-        f'<td style="{_CELL_C}">{_ton_str(_rv_mass_kg)}</td>'
-        '</tr>'
-    )
+    _reactor_package_length_m = _rvacs_height_cm / 100.0
+    if reactor_type == 'HPMR':
+        _reactor_package_length_m = max(
+            _reactor_package_length_m,
+            _hpmr_full_heatpipe_length_m,
+        )
+    _reactor_package_width_m = _rvacs_dia_cm / 100.0
+    _reactor_package_height_m = _reactor_package_width_m
+
+    _unirradiated_reactor_package_mass_kg = _reactor_package_mass_kg
+    _unirradiated_reactor_package_length_m = _reactor_package_length_m
+    _unirradiated_reactor_package_width_m = _reactor_package_width_m
+    _unirradiated_reactor_package_height_m = _reactor_package_height_m
+    _irradiated_shield = None
+    if transport_condition == 'Irradiated':
+        try:
+            _irradiated_shield = estimate_irradiated_transport_shield(
+                reactor_type=reactor_type,
+                params=params,
+                cooldown_months=cooldown_months,
+                target_dose_mrem_h=target_dose_rate_mrem_h,
+                dose_distance_m=dose_evaluation_distance_m,
+                shield_material=shield_material,
+                module_mass_kg=_reactor_package_mass_kg,
+                module_length_m=_reactor_package_length_m,
+                module_width_m=_reactor_package_width_m,
+                module_height_m=_reactor_package_height_m,
+            )
+            _shield_required_keys = {
+                'shield_thickness_cm',
+                'shield_mass_kg',
+                'shield_raw_material_cost_2025_usd',
+                'photon_model',
+            }
+            _shield_missing_keys = sorted(
+                _shield_required_keys.difference(_irradiated_shield)
+            )
+            if _shield_missing_keys:
+                raise RuntimeError(
+                    'The irradiated-transport files are from different update '
+                    'versions. webapp/app.py expects the 48-group shielding '
+                    'result, but webapp/irradiated_transport.py returned an '
+                    'incompatible result. Replace both files from the same '
+                    'MOUSE shielding update and restart the app. '
+                    'Missing result fields: '
+                    + ', '.join(_shield_missing_keys)
+                )
+            if _irradiated_shield['photon_model'] != 'multigroup_48_group':
+                raise RuntimeError(
+                    'The irradiated-transport calculation did not return the '
+                    'required 48-group photon model.'
+                )
+            _reactor_package_mass_kg = float(
+                _irradiated_shield['shielded_module_mass_kg']
+            )
+            _reactor_package_length_m = float(
+                _irradiated_shield['shielded_module_length_m']
+            )
+            _reactor_package_width_m = float(
+                _irradiated_shield['shielded_module_width_m']
+            )
+            _reactor_package_height_m = float(
+                _irradiated_shield['shielded_module_height_m']
+            )
+        except Exception as _irr_exc:
+            st.error(f'Irradiated transport shielding calculation failed: {_irr_exc}')
+            st.stop()
+
+    # Build the functional transportation packages.
+    _transport_packages = []
+
+    _reactor_breakdown = [
+        {
+            'name': 'Reactor: core, reflectors and drums',
+            'mass_lb': _tr_lb(_reactor_mass_kg),
+        },
+        {
+            'name': 'Reactor vessel',
+            'mass_lb': _tr_lb(_rv_mass_kg),
+        },
+    ]
     if _has_guard:
-        _rows_html.append(
-            '<tr style="background:#ffffff;">'
-            f'<td style="{_CELL_NAME}">Guard vessel'
-            f'<div style="{_DESC}">{_gv_desc}</div></td>'
-            f'<td style="{_CELL_C}">{_m1(_gv_height_cm)}</td>'
-            f'<td style="{_CELL_C}">{_m1(_gv_dia_cm)}</td>'
-            f'<td style="{_CELL_C}">{_ton_str(_gv_mass_kg)}</td>'
-            '</tr>'
+        _reactor_breakdown.append({
+            'name': 'Guard vessel',
+            'mass_lb': _tr_lb(_gv_mass_kg),
+        })
+    _reactor_breakdown.append({
+        'name': 'Reactor Vessel Auxiliary Cooling System',
+        'mass_lb': _tr_lb(_rvacs_mass_kg),
+    })
+    if reactor_type == 'HPMR':
+        _reactor_breakdown.append({
+            'name': 'External heat-pipe sections and sodium',
+            'mass_lb': _tr_lb(
+                _hpmr_extra_heatpipe_steel_kg + _hpmr_heatpipe_sodium_kg
+            ),
+        })
+    if _irradiated_shield is not None:
+        _reactor_breakdown.append({
+            'name': f'Additional {shield_material} transport shielding',
+            'mass_lb': _tr_lb(_irradiated_shield['shield_mass_kg']),
+        })
+
+    _reactor_package_help = (
+        'The reactor, reactor vessel, guard vessel when used, and RVACS are '
+        'treated as one assembled reactor module and screened horizontally. '
+    )
+    if _irradiated_shield is None:
+        _reactor_package_help += (
+            'Irradiated-transport shielding is excluded. For HPMR, the package '
+            'includes the full heat-pipe length using a fixed 2.2 m external '
+            'extension and a screening estimate for sealed sodium working fluid.'
         )
     else:
-        _rows_html.append(
-            '<tr style="background:#ffffff;">'
-            f'<td style="{_CELL_NAME};color:#64748b;">Guard vessel'
-            f'<div style="{_DESC}">{_gv_na_desc}</div></td>'
-            f'<td colspan="3" style="{_CELL_C};color:#64748b;">N/A not used for this reactor type</td>'
-            '</tr>'
+        _reactor_package_help += (
+            f'A closed cylindrical {shield_material.lower()} transport shield is '
+            f'added using the selected cooldown and dose target at the specified '
+            f'distance outward from the shield surface. A cooldown-dependent '
+            f'48-group photon spectrum defines the required shielding. No credit '
+            f'is taken for attenuation by fuel, reflector, '
+            f'vessels, coolant, or existing reactor shielding. The estimate excludes '
+            f'activation gamma rays, shutdown neutrons, buildup, impact limiters, '
+            f'penetrations, and certified package structure.'
         )
-    _rows_html.append(
-        '<tr style="background:#f7f8fa;">'
-        f'<td style="{_CELL_NAME}">Reactor Vessel Auxiliary Cooling System (cooling vessel + intake vessel)'
-        f'<div style="{_DESC}">{_rvacs_desc}</div></td>'
-        f'<td style="{_CELL_C}">{_m1(_rvacs_height_cm)}</td>'
-        f'<td style="{_CELL_C}">{_m1(_rvacs_dia_cm)}</td>'
-        f'<td style="{_CELL_C}">{_ton_str(_rvacs_mass_kg)}</td>'
-        '</tr>'
-    )
 
-    _TH = ('padding:0.55rem 0.8rem;font-size:0.85rem;'
-           'text-transform:uppercase;letter-spacing:0.06em;'
-           'color:#3c4257;font-weight:600;')
-    st.markdown(
-        '<div style="margin-bottom:0.9rem;">'
-        '<table style="width:100%;border-collapse:collapse;'
-        'font-size:0.85rem;background:#ffffff;color:#0a2540;'
-        'border:1px solid #bfdbfe;border-radius:8px;overflow:hidden;">'
-        '<thead style="background:#f1f3f5;">'
-        '<tr>'
-        f'<th style="{_TH};text-align:left;">Component</th>'
-        f'<th style="{_TH};text-align:center;">Height</th>'
-        f'<th style="{_TH};text-align:center;">Diameter</th>'
-        f'<th style="{_TH};text-align:center;">Mass</th>'
-        '</tr></thead><tbody>'
-        + ''.join(_rows_html) +
-        '</tbody></table>'
-        '</div>',
-        unsafe_allow_html=True,
-    )
+    _transport_packages.append({
+        'name': 'Reactor module',
+        'quantity': 1,
+        'mass_lb': _tr_lb(_reactor_package_mass_kg),
+        'length_m': _reactor_package_length_m,
+        'width_m': _reactor_package_width_m,
+        'height_m': _reactor_package_height_m,
+        'orientation': 'Horizontal',
+        'basis': (
+            'Calculated by MOUSE'
+            if _irradiated_shield is None
+            else 'MOUSE module + irradiated shielding screening'
+        ),
+        'breakdown': _reactor_breakdown,
+        'dedicated': _irradiated_shield is not None,
+        'help_text': _reactor_package_help,
+    })
 
-    # ── Notes panel ──
-    # Only items NOT already covered by the per-row descriptions in
-    # the table above: global exclusions (shielding, coolant, support
-    # gear), reactor-specific caveats (GCMR labeling, HPMR heat-pipe
-    # treatment), and the "Guard vessel N/A" note for reactor
-    # types without a bulk primary coolant.
-    _gcmr_note = (
-        '<li><strong>GCMR labeling:</strong> what is shown as '
-        '"Reactor vessel" here maps to MOUSE\'s internal '
-        '<em>Guard Vessel</em> field, because for the GCMR the '
-        'outer pressure shell is the RPV, not the inner core '
-        'barrel.</li>'
-        if reactor_type == 'GCMR' else ''
-    )
-    _hpmr_note = (
-        '<li><strong>HPMR heat pipes:</strong> steel mass is included '
-        'using the modeled heat-pipe material and geometry; the Na '
-        'working fluid is excluded with coolant inventories.</li>'
-        if reactor_type == 'HPMR' else ''
-    )
-    _gv_na_note = (
-        ''
-        if _has_guard else
-        '<li><strong>Guard vessel intentionally omitted:</strong> '
-        'helium is inert (GCMR) and each heat pipe is individually '
-        'sealed (HPMR), so neither has a bulk primary coolant '
-        'requiring secondary containment.</li>'
-    )
-    st.markdown(
-        '<div style="background:#eff6ff;border:1px solid #bfdbfe;'
-        'border-radius:8px;padding:0.85rem 1.1rem;margin-bottom:0.9rem;'
-        'font-size:0.85rem;line-height:1.55;color:#1B4F8C;">'
-        '<div style="font-weight:600;font-size:0.85rem;'
-        'text-transform:uppercase;letter-spacing:0.06em;'
-        'color:#1B4F8C;margin-bottom:0.45rem;">Notes &amp; assumptions</div>'
-        '<ul style="margin:0;padding-left:1.2rem;color:#1B4F8C;">'
-        '<li><strong>Shielding excluded:</strong> in vessel '
-        'shielding (B<sub>4</sub>C) and out of vessel shielding '
-        '(WEP / concrete biological shield) are not included. '
-        'Shielding adds significant mass and outer dimension to '
-        'the module as shipped or as installed, depending on '
-        'whether it ships with the reactor or is built on site.</li>'
-        '<li><strong>Coolant excluded:</strong> primary coolant '
-        'inventory (NaK for LTMR, He for GCMR, heat pipe Na for '
-        'HPMR) is not included in the mass column.</li>'
-        + _gcmr_note
-        + _hpmr_note
-        + _gv_na_note +
-        '</ul>'
-        '</div>',
-        unsafe_allow_html=True,
-    )
+    # LTMR and GCMR primary HX / heat-transport package.
+    if reactor_type in ('LTMR', 'GCMR'):
+        _hx_core_kg = max(float(params.get('Primary HX Mass', 0.0)), 0.0)
+        if reactor_type == 'LTMR':
+            _rotating_power_kw = max(
+                float(params.get('Primary Pump Mechanical Power', 0.0)), 0.0
+            )
+            _rotating_mass_lb = max(1000.0, 40.0 * _rotating_power_kw)
+            _hx_name = 'Primary HX / pump package'
+            _rotating_label = 'NaK pump'
+        else:
+            _loop_fraction = float(
+                params.get('Primary Loop per loop load fraction', 1.0)
+            )
+            _loop_fraction = _loop_fraction if _loop_fraction > 0 else 1.0
+            _rotating_power_kw = max(
+                float(params.get('Primary Loop Compressor Power', 0.0))
+                / 1000.0 / _loop_fraction,
+                0.0,
+            )
+            _rotating_mass_lb = (
+                141.0 * _rotating_power_kw ** 0.81
+                if _rotating_power_kw > 0 else 0.0
+            )
+            _hx_name = 'Primary HX / circulator package'
+            _rotating_label = 'full-capacity helium circulator'
+        _rotating_mass_kg = _rotating_mass_lb / 2.2046226218
+        _hx_package_mass_kg = 1.10 * (1.30 * _hx_core_kg + _rotating_mass_kg)
+        _hx_core_volume_m3 = (
+            _hx_core_kg / (7850.0 * 0.40) if _hx_core_kg > 0 else 0.0
+        )
+        _hx_assembly_volume_m3 = 1.30 * _hx_core_volume_m3
+        _rotating_volume_m3 = _rotating_mass_kg / 500.0
+        _hx_package_volume_m3 = 1.10 * (
+            _hx_assembly_volume_m3 + _rotating_volume_m3
+        )
+        _hx_l_m, _hx_w_m, _hx_h_m = _tr_box_dimensions(_hx_package_volume_m3)
+        _hx_allowances_lb = max(
+            0.0,
+            _tr_lb(_hx_package_mass_kg)
+            - _tr_lb(_hx_core_kg)
+            - _rotating_mass_lb,
+        )
+        _hx_breakdown = [
+            {'name': 'Primary HX core', 'mass_lb': _tr_lb(_hx_core_kg)},
+            {'name': _rotating_label.capitalize(), 'mass_lb': _rotating_mass_lb},
+            {
+                'name': 'Headers, local piping, supports and shipping frame',
+                'mass_lb': _hx_allowances_lb,
+            },
+        ]
+        _transport_packages.append({
+            'name': _hx_name,
+            'quantity': 1,
+            'mass_lb': _tr_lb(_hx_package_mass_kg),
+            'length_m': _hx_l_m,
+            'width_m': _hx_w_m,
+            'height_m': _hx_h_m,
+            'orientation': 'Horizontal',
+            'basis': 'MOUSE HX mass + screening allowances',
+            'breakdown': _hx_breakdown,
+            'help_text': (
+                f'One package is used; redundant loop counts do not create a '
+                f'second shipping box. Mass starts from MOUSE Primary HX Mass '
+                f'and adds one {_rotating_label}, 30% for headers, local piping, '
+                f'valves, insulation and supports, and 10% for the shipping '
+                f'frame. Dimensions combine HX-core volume and packaged rotating '
+                f'equipment volume using a 2:1:1 horizontal envelope. Approximate '
+                f'mass uncertainty is +/-30%.'
+            ),
+        })
 
-    # ── Transport-mode subsection header ──────────────────────
+    # Common full-capacity power-conversion/generator package.
+    _power_mwe = max(float(params.get('Power MWe', 0.0)), 0.0)
+    _pcs_mass_lb = 32800.0 * _power_mwe ** 0.62 if _power_mwe > 0 else 0.0
+    _pcs_mass_kg = _pcs_mass_lb / 2.2046226218
+    _pcs_volume_m3 = _pcs_mass_kg / 460.0 if _pcs_mass_kg > 0 else 0.001
+    _pcs_width_m = (_pcs_volume_m3 / 5.2) ** (1.0 / 3.0)
+    _pcs_length_m = 4.0 * _pcs_width_m
+    _pcs_height_m = 1.3 * _pcs_width_m
+    _transport_packages.append({
+        'name': 'Power-conversion / generator package',
+        'quantity': 1,
+        'mass_lb': _pcs_mass_lb,
+        'length_m': _pcs_length_m,
+        'width_m': _pcs_width_m,
+        'height_m': _pcs_height_m,
+        'orientation': 'Horizontal',
+        'basis': 'Common packaged turbine-generator correlation',
+        'help_text': (
+            'A common recuperated air-Brayton package is used for LTMR, GCMR '
+            'and HPMR. Nominal mass = 32,800 x (net MWe)^0.62 lb, based on '
+            'commercial packaged turbine-generator references including '
+            'Capstone C200S/C1000S and Siemens SGT-A05/SGT-300. Source pages: '
+            'https://www.capstonepowersolutions.com/products/ and '
+            'https://www.siemens-energy.com/global/en/home/products-services/product/sgt-a05.html. '
+            'Dimensions use '
+            'an effective packaged density of 460 kg/m3 and a 4:1:1.3 '
+            'length:width:height ratio. The estimate has about +/-30% mass '
+            'uncertainty and about +/-11% dimensional uncertainty. The primary '
+            'HX and external inter-package piping are excluded.'
+        ),
+    })
+
+    # Common control and electrical e-house.
+    _transport_packages.append({
+        'name': 'Control and electrical package',
+        'quantity': 1,
+        'mass_lb': 35000.0,
+        'length_m': 12.19,
+        'width_m': 2.44,
+        'height_m': 2.90,
+        'orientation': 'Standard container orientation',
+        'basis': '40 ft High Cube e-house screening assumption',
+        'precontainerized': 'iso40hc',
+        'help_text': (
+            'One 40 ft High Cube containerized e-house is assumed for all '
+            'reactor types. External dimensions 12.19 x 2.44 x 2.90 m follow '
+            'standard 40 ft High Cube dimensions from Hapag-Lloyd and are '
+            'consistent with the 40 ft CONEX footprint already used in MOUSE. '
+            'The nominal 35,000 lb shipped mass is anchored to Pruitt\'s 20 ft '
+            'Combined Control Room (28,660 lb) and the equipment scope described '
+            'in Eaton e-house documentation. It includes controls, protection, '
+            'switchgear, motor-control equipment, UPS/batteries, HVAC, cabling, '
+            'fire protection and the enclosure. Generator and main transformer '
+            'are excluded. Approximate mass uncertainty is +/-30%. Sources: '
+            'https://www.hapag-lloyd.com/en/services-information/cargo-fleet/container/40-standard-high-cube.html; '
+            'https://pruitt.com/managed-pressure-drilling/pruitt-mpd-combined-control-room/; '
+            'https://www.eaton.com/us/en-us/catalog/low-voltage-power-distribution-controls-systems/integrated-power-assemblies-e-house.html.'
+        ),
+    })
+
+    # LTMR NaK coolant package. GCMR helium is included with the HX/circulator
+    # package; HPMR sodium remains sealed in the heat pipes.
+    if reactor_type == 'LTMR':
+        _coolant_inventory_kg = max(
+            float(params.get('Onsite Coolant Inventory', 0.0)), 0.0
+        )
+        _coolant_density_kg_m3 = max(
+            float(params.get('Coolant Density', 750.0)), 1.0
+        )
+        _coolant_package_mass_kg = 1.25 * _coolant_inventory_kg
+        _coolant_vessel_volume_m3 = (
+            _coolant_inventory_kg / _coolant_density_kg_m3 / 0.80
+        )
+        _cool_l_m, _cool_w_m, _cool_h_m = _tr_box_dimensions(
+            _coolant_vessel_volume_m3
+        )
+        _coolant_breakdown = [
+            {
+                'name': 'NaK coolant inventory',
+                'mass_lb': _tr_lb(_coolant_inventory_kg),
+            },
+            {
+                'name': 'Transport vessels, valves, supports and skid',
+                'mass_lb': _tr_lb(
+                    _coolant_package_mass_kg - _coolant_inventory_kg
+                ),
+            },
+        ]
+        _transport_packages.append({
+            'name': 'NaK coolant package',
+            'quantity': 1,
+            'mass_lb': _tr_lb(_coolant_package_mass_kg),
+            'length_m': _cool_l_m,
+            'width_m': _cool_w_m,
+            'height_m': _cool_h_m,
+            'orientation': 'Horizontal vessel/skid arrangement',
+            'basis': 'MOUSE inventory + vessel allowance',
+            'breakdown': _coolant_breakdown,
+            'help_text': (
+                'The LTMR reactor and HX are assumed to ship drained. NaK is '
+                'transported separately in sealed compatible metal vessels on '
+                'a skid. Package mass equals 1.25 times the MOUSE onsite NaK '
+                'inventory; the additional 25% represents vessels, valves, '
+                'supports and skid hardware. Required vessel volume uses an '
+                '80% fill fraction, leaving 20% headspace for expansion and '
+                'inert cover gas. Dimensions use a 2:1:1 screening envelope.'
+            ),
+        })
+
+    # Package summary. Package totals are shown as parent rows. Selected
+    # packages include a short mass breakdown directly underneath the total.
     st.markdown(
         '<div style="font-size:1rem;font-weight:700;color:#0a2540;'
         'border-left:4px solid #0a2540;padding:0.4rem 0 0.4rem 0.75rem;'
-        'margin:1.25rem 0 0.85rem 0;">Transport Mode Compatibility</div>',
+        'margin:0 0 0.4rem 0;">Transported Package Summary</div>'
+        '<p style="color:#64748b;font-size:0.85rem;margin:0 0 0.85rem 0;">'
+        'The table lists the major functional packages transported for the '
+        'complete plant. Indented rows show the principal mass components '
+        'where a breakdown is useful.'
+        '</p>',
         unsafe_allow_html=True,
     )
 
-    # Caveat panel: the fit-check is a scoping geometry/mass test
-    # against generic shipping envelopes; it does NOT model the
-    # real constraints that govern actual nuclear shipments.
+    _tr_cell = (
+        'padding:0.55rem 0.75rem;color:#0a2540;'
+        'border-bottom:1px solid #bfdbfe;vertical-align:top;'
+    )
+    _tr_th = (
+        'padding:0.55rem 0.75rem;font-size:0.82rem;text-transform:uppercase;'
+        'letter-spacing:0.05em;color:#3c4257;font-weight:600;'
+    )
+    _tr_summary_rows = []
+    _row_index = 0
+    for _pkg in _transport_packages:
+        _bg = '#ffffff' if _row_index % 2 == 0 else '#f7f8fa'
+        _dims = (
+            f'{_pkg["length_m"]:.2f} x {_pkg["width_m"]:.2f} x '
+            f'{_pkg["height_m"]:.2f}'
+        )
+        _tr_summary_rows.append(
+            f'<tr style="background:{_bg};">'
+            f'<td style="{_tr_cell};font-weight:700;">{_pkg["name"]}'
+            f'{_help_icon(_pkg["help_text"])}</td>'
+            f'<td style="{_tr_cell};text-align:center;font-weight:700;">'
+            f'{_pkg["mass_lb"]:,.0f}</td>'
+            f'<td style="{_tr_cell};text-align:center;font-weight:700;">{_dims}</td>'
+            '</tr>'
+        )
+        _row_index += 1
+        for _part in _pkg.get('breakdown', []):
+            _bg = '#ffffff' if _row_index % 2 == 0 else '#f7f8fa'
+            _tr_summary_rows.append(
+                f'<tr style="background:{_bg};">'
+                f'<td style="{_tr_cell};padding-left:2.0rem;color:#475569;">'
+                f'↳ {_part["name"]}</td>'
+                f'<td style="{_tr_cell};text-align:center;color:#475569;">'
+                f'{_part["mass_lb"]:,.0f}</td>'
+                f'<td style="{_tr_cell};text-align:center;color:#94a3b8;">—</td>'
+                '</tr>'
+            )
+            _row_index += 1
+    st.markdown(
+        '<div style="margin-bottom:1rem;">'
+        '<table style="width:100%;border-collapse:collapse;font-size:0.84rem;'
+        'background:#ffffff;color:#0a2540;border:1px solid #bfdbfe;'
+        'border-radius:8px;overflow:hidden;">'
+        '<thead style="background:#f1f3f5;"><tr>'
+        f'<th style="{_tr_th};text-align:left;">Package / component</th>'
+        f'<th style="{_tr_th};text-align:center;">Mass (lb)</th>'
+        f'<th style="{_tr_th};text-align:center;">L x W x H (m)</th>'
+        '</tr></thead><tbody>' + ''.join(_tr_summary_rows) + '</tbody></table>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    if _irradiated_shield is not None:
+        st.markdown(
+            '<div style="font-size:1rem;font-weight:700;color:#0a2540;'
+            'border-left:4px solid #7c3aed;padding:0.4rem 0 0.4rem 0.75rem;'
+            'margin:1.05rem 0 0.65rem 0;">Irradiated Transport Shielding</div>',
+            unsafe_allow_html=True,
+        )
+        _shield_cols = st.columns(4, gap='small')
+        _info_card(
+            _shield_cols[0], 'Cooldown / Criterion',
+            f'{cooldown_months:.0f} months',
+            subtitle=(
+                f'{target_dose_rate_mrem_h:g} mrem/h at '
+                f'{dose_evaluation_distance_m:g} m from shield surface'
+            ),
+            accent='#7c3aed', bg='#faf5ff', border='#d8b4fe',
+        )
+        _info_card(
+            _shield_cols[1], 'Added Shield Thickness',
+            f'{_irradiated_shield["shield_thickness_cm"]:.1f} cm',
+            subtitle=f'{shield_material}; 48-group photon spectrum',
+            accent='#7c3aed', bg='#faf5ff', border='#d8b4fe',
+        )
+        _info_card(
+            _shield_cols[2], 'Added Shield Mass',
+            f'{_tr_lb(_irradiated_shield["shield_mass_kg"]):,.0f} lb',
+            subtitle=(
+                f'{_irradiated_shield["shield_mass_kg"] / 1000.0:,.1f} metric tons'
+            ),
+            accent='#7c3aed', bg='#faf5ff', border='#d8b4fe',
+        )
+        _info_card(
+            _shield_cols[3], 'Raw Shield Material',
+            format_cost_for_display(
+                _irradiated_shield["shield_raw_material_cost_2025_usd"]
+            ),
+            subtitle='2025 USD; package fabrication excluded',
+            accent='#7c3aed', bg='#faf5ff', border='#d8b4fe',
+        )
+        _shield_note = (
+            'Screening source model: MOUSE full-power fuel lifetime, a finite-'
+            'irradiation Way-Wigner decay-heat correlation, a 50% decay-gamma '
+            'energy fraction, and cooldown-dependent 48-group photon-spectrum '
+            'shapes with material-specific photon attenuation coefficients. Dose '
+            'distance is measured outward from the shield surface. '
+            'This result controls package dimensions, transportation screening, '
+            'and transportation cost. '
+            'No credit is taken for attenuation by the fuel, reflector, vessels, '
+            'coolant, or existing reactor shielding. Activation gamma rays, '
+            'shutdown neutrons, coupled neutron/gamma shielding, photon buildup, '
+            'penetrations, impact limiters, '
+            'thermal design, containment, and certified transport-package structure '
+            'are excluded.'
+        )
+        if _irradiated_shield.get('source_spectrum_capped_at_36_months'):
+            _shield_note += (
+                ' The selected cooldown exceeds 36 months; MOUSE retains the '
+                '36-month spectrum shape while continuing to reduce total source '
+                'strength with cooldown time.'
+            )
+        st.markdown(
+            '<div style="background:#faf5ff;border:1px solid #d8b4fe;'
+            'border-radius:8px;padding:0.75rem 0.9rem;margin:0.7rem 0 1rem 0;'
+            'font-size:0.80rem;line-height:1.45;color:#5b21b6;">'
+            + _shield_note + '</div>',
+            unsafe_allow_html=True,
+        )
+
+    # The reactor module receives the detailed compatibility cards. The
+    # whole-plant table below summarizes every other package.
+    _selected_package = next(
+        p for p in _transport_packages if p['name'] == 'Reactor module'
+    )
+
+    if transport_condition == 'Unirradiated':
+        _transport_scope_text = (
+            '<strong>Scope:</strong> initial unirradiated transportation. '
+            'Irradiated-transport shielding and casks are excluded. Geometry, '
+            'mass and transport categories are screening results rather than '
+            'carrier approval.'
+        )
+    else:
+        _transport_scope_text = (
+            '<strong>Scope:</strong> one intact end-of-fuel-cycle irradiated '
+            'reactor-module return after the selected cooldown. The reactor module '
+            'is a dedicated load and receives additional external transport shielding. '
+            'Other plant packages remain in the whole-plant logistics summary but are '
+            'not treated as radioactive. Results are screening estimates, not package '
+            'certification or carrier approval.'
+        )
     st.markdown(
         '<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;'
-        'padding:0.85rem 1.1rem;margin-bottom:0.9rem;'
-        'font-size:0.85rem;line-height:1.45;color:#92400e;">'
-        '<strong>Caveat:</strong> geometry and mass check only. '
-        'Fueled modules, or modules removed after operation, '
-        'require shielded casks that add tens of tonnes and can '
-        'exceed the ISO container envelope.'
-        '</div>',
+        'padding:0.8rem 1rem;margin-bottom:0.9rem;font-size:0.84rem;'
+        'line-height:1.45;color:#92400e;">'
+        + _transport_scope_text + '</div>',
         unsafe_allow_html=True,
     )
 
-    # ── "How to read this" panel ──
-    # Plain-English primer on what the cards below actually check, so
-    # non-specialist readers don't have to reverse-engineer the
-    # comparison from the badge labels.
     st.markdown(
-        '<div style="background:#f7f8fa;border:1px solid #bfdbfe;border-radius:8px;'
-        'padding:0.85rem 1.1rem;margin-bottom:0.9rem;'
-        'font-size:0.85rem;line-height:1.45;color:#3c4257;">'
-        '<strong>How to read this:</strong> the three columns below '
-        '(Road, Rail, Sea) each list standard shipping limits used in '
-        'that mode. Each card compares your reactor module\'s outer '
-        'dimensions and mass to one limit. A green <strong>&#x2713; '
-        'fits</strong> means the geometry could fit; a red '
-        '<strong>&#x2717; exceeds</strong> tells you which dimension '
-        'is the problem (width, height, length, or weight).'
-        '</div>',
+        '<div style="font-size:1rem;font-weight:700;color:#0a2540;'
+        'border-left:4px solid #0a2540;padding:0.4rem 0 0.4rem 0.75rem;'
+        'margin:1.15rem 0 0.65rem 0;">Reactor Module Transport Compatibility</div>',
         unsafe_allow_html=True,
     )
 
-    # ── Transport-mode envelope limits ──
-    # Organised by mode (Road / Rail / Sea), each column listing
-    # the envelopes that apply to that mode. ISO containers appear
-    # under all three modes (they're multimodal); AAR Plate F is
-    # rail-only; US road no-permit is truck-only. Project-specific
-    # heavy options (Schnabel rail, breakbulk sea) get a closing
-    # note per mode rather than a fit-check.
-    # Each envelope carries:
-    # - `gross_t`: the number SHOWN to the user (container structural
-    #   rating for ISOs, Gross Vehicle Weight for US road).
-    # - `payload_t`: what the fit-check actually compares against
-    #   (container gross − tare for ISOs; GVW − tractor+trailer tare
-    #   for US road). This is the realistic cargo mass available.
-    # - `height_note`: optional small qualifier shown after the
-    #   height number (e.g. "(route-dep.)" for state-set limits).
     _envelopes = {
         'iso20': {
-            'name': 'ISO 20 ft container',
-            'width_m': 2.35,
-            'height_m': 2.39,
-            'length_m': 5.90,
-            'payload_t': 21.7,  # 24 t total minus ~2.3 t container weight
+            'name': 'ISO 20 ft container', 'width_m': 2.35,
+            'height_m': 2.39, 'length_m': 5.90,
+            'payload_lb': 47800.0, 'container_tare_lb': 5100.0,
+            'road_loaded_height_m': 3.81,
             'help_text': (
-                'A standard 20 ft shipping container, used worldwide on '
-                'trucks, trains, and ships. Maximum cargo weight is '
-                '~21.7 t (the 24 t total limit minus ~2.3 t for the '
-                'container itself). Key advantage: the same container '
-                'moves between truck, train, and ship without ever '
-                'being unpacked.'
-            ),
-            'cite_html': (
-                'Source: <a href="https://www.iso.org/standard/76912.html" '
-                'target="_blank" style="color:#1B4F8C;">ISO 668:2020</a>'
-            ),
-            'road_note_html': (
-                'Typical cargo limit on US trucks: 21 to 22 t '
-                '(24 t total minus ~2.3 t container weight).'
+                'Standard 20 ft container internal screening envelope. '
+                'Approximate cargo limit is 47,800 lb. Container-door geometry, '
+                'center of gravity and securement are not modeled. Source: '
+                'https://www.iso.org/standard/76912.html.'
             ),
         },
         'iso40': {
-            'name': 'ISO 40 ft container',
-            'width_m': 2.35,
-            'height_m': 2.39,
-            'length_m': 12.03,
-            'payload_t': 26.78,  # 30.48 t total minus ~3.7 t container weight
+            'name': 'ISO 40 ft container', 'width_m': 2.35,
+            'height_m': 2.39, 'length_m': 12.03,
+            'payload_lb': 59000.0, 'container_tare_lb': 8200.0,
+            'road_loaded_height_m': 3.81,
             'help_text': (
-                'A standard 40 ft shipping container with the same '
-                'width and height as the 20 ft, roughly double the '
-                'length. Maximum cargo weight is ~26.8 t (30.5 t total '
-                'minus ~3.7 t container). On US roads, federal truck '
-                'weight rules often reduce what you can actually load '
-                'below this number.'
-            ),
-            'cite_html': (
-                'Source: <a href="https://www.iso.org/standard/76912.html" '
-                'target="_blank" style="color:#1B4F8C;">ISO 668:2020</a>'
-            ),
-            'road_note_html': (
-                'Typical cargo limit on US trucks: 26 to 28 t. '
-                'US federal 80,000 lb truck weight law often reduces '
-                'this further in practice.'
+                'Standard 40 ft container internal screening envelope. '
+                'Approximate cargo limit is 59,000 lb. Container-door geometry, '
+                'center of gravity and securement are not modeled. Source: '
+                'https://www.iso.org/standard/76912.html.'
             ),
         },
         'iso40hc': {
-            'name': 'ISO 40 ft High Cube container',
-            'width_m': 2.35,
-            'height_m': 2.70,
-            'length_m': 12.03,
-            'payload_t': 26.58,  # 30.48 t total minus ~3.9 t container weight
+            'name': 'ISO 40 ft High Cube container', 'width_m': 2.35,
+            'height_m': 2.70, 'length_m': 12.03,
+            'payload_lb': 58600.0, 'container_tare_lb': 8600.0,
+            'road_loaded_height_m': 4.11,
             'help_text': (
-                'Like a standard 40 ft container but ~30 cm taller '
-                'inside. The usual choice when the module is too tall '
-                'for a regular container. Maximum cargo weight ~26.6 t. '
-                'On US trucks, loaded height (~4.1 m) sits right at the '
-                'no permit clearance limit, so the truck chassis '
-                'matters.'
-            ),
-            'cite_html': (
-                'Source: <a href="https://www.iso.org/standard/76912.html" '
-                'target="_blank" style="color:#1B4F8C;">ISO 668:2020</a>'
-            ),
-            'road_note_html': (
-                'Typical cargo limit on US trucks: 26 to 27 t. '
-                'Loaded height on a standard chassis is ~4.1 m, right '
-                'at the US no permit clearance limit.'
-            ),
-        },
-        'us_no_permit': {
-            'name': 'US road (no permits needed)',
-            'width_m': 2.59,
-            'height_m': 4.11,
-            'height_note': '(planning)',
-            'length_m': None,
-            # payload_t = None -> weight fit-check skipped (weight is not
-            # a single-number constraint here; depends on truck setup
-            # and bridge ratings along the route).
-            'payload_t': None,
-            'help_text': (
-                'Maximum truck size on US roads without needing special '
-                'permits or escort vehicles. Wider, taller, or heavier '
-                'loads still ship by road but require state permits, '
-                'multiple axle trailers, and route surveys. The 4.11 m '
-                'height is a planning value (older bridges can be '
-                'lower). Weight depends on truck setup and bridges '
-                'along the route, not a single number.'
-            ),
-            'cite_html': (
-                'Source: <a href="https://www.law.cornell.edu/uscode/text/23/127" '
-                'target="_blank" style="color:#1B4F8C;">US federal '
-                'trucking size and weight law (23 USC § 127)</a>'
-            ),
-        },
-        'aar_plate_f': {
-            'name': 'Rail flatcar (oversized cargo)',
-            'width_m': 3.25,
-            'height_m': 5.18,
-            'height_note': '(above rail)',
-            'length_m': None,
-            'payload_t': None,
-            'help_text': (
-                'For cargo too big for a standard container, ship on '
-                'an open rail flatcar. The shape narrows higher up: '
-                '3.25 m wide at the bottom, less at the top. The '
-                '5.18 m height includes the flatcar deck (~1 m), so '
-                'usable cargo height above the deck is closer to 4 m. '
-                'Weight limits depend on the route and are typically '
-                '100+ t.'
-            ),
-            'cite_html': (
-                'Source: '
-                '<a href="https://en.wikipedia.org/wiki/Loading_gauge#North_American_loading_gauges" '
-                'target="_blank" style="color:#1B4F8C;">North American '
-                'rail loading gauges</a>'
+                'Standard 40 ft High Cube internal screening envelope. '
+                'Approximate cargo limit is 58,600 lb. The control/electrical '
+                'package is modeled as this containerized e-house rather than '
+                'as cargo placed inside a second container. Sources: '
+                'https://www.iso.org/standard/76912.html and '
+                'https://www.hapag-lloyd.com/en/services-information/cargo-fleet/container/40-standard-high-cube.html.'
             ),
         },
     }
+    _direct_road = {
+        'width_m': 2.59, 'loaded_height_m': 4.11,
+        'tare_lb': 32000.0, 'deck_height_m': 1.52,
+        'no_permit_lb': 80000.0, 'superload_lb': 150000.0,
+    }
+    _direct_rail = {'width_m': 3.25, 'height_m': 5.18}
 
-    _mode_groups = [
-        {'name': 'Road',
-         'envelope_keys': ['iso20', 'iso40', 'iso40hc', 'us_no_permit']},
-        {'name': 'Rail',
-         'envelope_keys': ['iso20', 'iso40', 'iso40hc', 'aar_plate_f']},
-        {'name': 'Sea',
-         'envelope_keys': ['iso20', 'iso40', 'iso40hc']},
-    ]
+    _status_colors = {
+        0: ('#15803d', '#dcfce7', '#bbf7d0'),
+        1: ('#a16207', '#fef9c3', '#fde047'),
+        2: ('#c2410c', '#ffedd5', '#fdba74'),
+        3: ('#b91c1c', '#fee2e2', '#fecaca'),
+    }
 
-    # Reactor envelope + total mass used by every fit-check.
-    _rvacs_dia_m = _rvacs_dia_cm / 100.0
-    _rvacs_h_m = _rvacs_height_cm / 100.0
-    _badge_total_kg = (_reactor_mass_kg + _rv_mass_kg
-                       + _gv_mass_kg + _rvacs_mass_kg)
-    _badge_total_t = _badge_total_kg / 1000.0
+    def _tr_iso_fit(pkg, key):
+        env = _envelopes[key]
+        if pkg.get('precontainerized'):
+            fits = pkg['precontainerized'] == key
+            return fits, ([] if fits else ['not the package container type'])
+        failures = []
+        if pkg['width_m'] > env['width_m']:
+            failures.append('width')
+        if pkg['height_m'] > env['height_m']:
+            failures.append('height')
+        if pkg['length_m'] > env['length_m']:
+            failures.append('length')
+        if pkg['mass_lb'] > env['payload_lb']:
+            failures.append('cargo weight')
+        return len(failures) == 0, failures
 
-    def _render_envelope_card(env, mode_name=''):
-        # Fit-check uses payload_t (realistic cargo capacity) for the
-        # weight comparison; the displayed number is gross_t (standard
-        # rating for ISOs, GVW for US road). When payload_t is None
-        # the weight fit-check is SKIPPED and the badge reflects
-        # only width/height/length (e.g. US road no-permit, AAR Plate F).
-        _w_ok = _rvacs_dia_m <= env['width_m']
-        _h_ok = _rvacs_h_m <= env['height_m']
-        _len_ok = (env['length_m'] is None) or (_rvacs_h_m <= env['length_m'])
-        _wt_ok = (env.get('payload_t') is None) or (_badge_total_t <= env['payload_t'])
-        _fits = _w_ok and _h_ok and _len_ok and _wt_ok
-        _bc = ('#15803d', '#dcfce7', '#bbf7d0') if _fits else ('#b91c1c', '#fee2e2', '#fecaca')
-        if _fits:
-            _badge_text = '✓ fits'
-        else:
-            _fails = []
-            if not _w_ok:   _fails.append('width')
-            if not _h_ok:   _fails.append('height')
-            if not _len_ok: _fails.append('length')
-            if not _wt_ok:  _fails.append('weight')
-            _badge_text = '✗ exceeds ' + ', '.join(_fails)
-        _height_note = env.get('height_note', '')
-        _height_note_str = f' <span style="color:#64748b;">{_height_note}</span>' if _height_note else ''
-        _len_str = (f' &nbsp;|&nbsp; len ≤ {env["length_m"]:.2f} m'
-                    if env['length_m'] is not None else '')
-        # Show the actual fit-check number (payload), or hide the
-        # weight column entirely when weight isn't a single-number
-        # constraint (US road, rail flatcar — depends on truck/route).
-        _wt_str = (f' &nbsp;|&nbsp; weight ≤ {env["payload_t"]:.1f} t'
-                   if env.get('payload_t') is not None else '')
-        # Mode-specific extra note (e.g. road_note_html on HC) is
-        # appended after the regular note_html. Only shown when this
-        # envelope is rendered under the matching mode group.
-        _mode_key = (mode_name or '').lower() + '_note_html'
-        _mode_note = env.get(_mode_key, '')
+    def _tr_loaded_road_status(weight_lb, loaded_height_m, width_m=2.59):
+        if weight_lb > _direct_road['superload_lb']:
+            return 2, 'Superload'
+        if (
+            weight_lb > _direct_road['no_permit_lb']
+            or loaded_height_m > _direct_road['loaded_height_m']
+            or width_m > _direct_road['width_m']
+        ):
+            return 1, 'Permit required'
+        return 0, 'No permit needed'
+
+    def _tr_container_mode_status(pkg, key, mode_name, fits):
+        if not fits:
+            return 3, 'Container option unavailable', ''
+        env = _envelopes[key]
+        if mode_name == 'Road':
+            already_containerized = pkg.get('precontainerized') == key
+            loaded_weight_lb = (
+                pkg['mass_lb'] + _direct_road['tare_lb']
+                + (0.0 if already_containerized else env['container_tare_lb'])
+            )
+            severity, text = _tr_loaded_road_status(
+                loaded_weight_lb, env['road_loaded_height_m']
+            )
+            return severity, text, f'Loaded vehicle weight: {loaded_weight_lb:,.0f} lb.'
+        if mode_name == 'Rail':
+            return 0, 'Standard intermodal shipment', ''
+        return 0, 'Standard container shipment', ''
+
+    def _tr_direct_road_status(pkg):
+        loaded_weight_lb = pkg['mass_lb'] + _direct_road['tare_lb']
+        loaded_height_m = pkg['height_m'] + _direct_road['deck_height_m']
+        severity, text = _tr_loaded_road_status(
+            loaded_weight_lb, loaded_height_m, pkg['width_m']
+        )
+        triggers = []
+        if loaded_weight_lb > _direct_road['no_permit_lb']:
+            triggers.append('weight')
+        if pkg['width_m'] > _direct_road['width_m']:
+            triggers.append('width')
+        if loaded_height_m > _direct_road['loaded_height_m']:
+            triggers.append('loaded height')
+        detail = f'Loaded vehicle weight: {loaded_weight_lb:,.0f} lb.'
+        if severity == 1 and triggers:
+            detail += ' Trigger: ' + ', '.join(triggers) + '.'
+        return severity, text, detail
+
+    def _tr_direct_rail_status(pkg):
+        if (
+            pkg['width_m'] <= _direct_rail['width_m']
+            and pkg['height_m'] <= _direct_rail['height_m']
+        ):
+            return 1, 'Clearance required', 'Fits the simplified flatcar envelope.'
+        return 2, 'Specialized rail planning', 'Standard flatcar envelope exceeded.'
+
+    def _tr_direct_sea_status(pkg):
+        return 1, 'Breakbulk / heavy lift', 'Non-containerized sea shipment.'
+
+    def _tr_badge(text, severity):
+        color, bg, border = _status_colors[severity]
         return (
-            '<div style="background:#ffffff;border:1px solid #bfdbfe;'
-            'border-radius:8px;padding:0.7rem 0.85rem;margin-bottom:0.6rem;'
-            'color:#0a2540;">'
-            # Title on its own row (full width of the card).
-            f'<div style="font-weight:600;font-size:0.85rem;color:#0a2540;'
-            f'margin-bottom:0.35rem;">'
-            f'{env["name"]}{_help_icon(env["help_text"])}'
-            f'</div>'
-            # Badge on its own row. inline-block + max-width:100% +
-            # white-space:normal means the pill hugs its content
-            # when short, wraps to multiple lines if needed, and
-            # NEVER overflows past the card edge.
-            f'<div style="display:inline-block;background:{_bc[1]};'
-            f'border:1px solid {_bc[2]};color:{_bc[0]};font-size:0.85rem;'
-            f'font-weight:600;padding:0.15rem 0.5rem;border-radius:8px;'
-            f'margin-bottom:0.4rem;max-width:100%;white-space:normal;'
-            f'line-height:1.3;">'
-            f'{_badge_text}</div>'
-            f'<div style="font-size:0.85rem;color:#3c4257;margin-bottom:0.25rem;">'
-            f'w ≤ {env["width_m"]:.2f} m &nbsp;|&nbsp; '
-            f'h ≤ {env["height_m"]:.2f} m{_height_note_str}{_len_str}{_wt_str}'
-            f'</div>'
-            + (f'<div style="font-size:0.85rem;color:#3c4257;line-height:1.4;'
-               f'margin-bottom:0.25rem;">{env["note_html"]}</div>'
-               if env.get('note_html') else '')
-            + (f'<div style="font-size:0.85rem;color:#3c4257;line-height:1.4;'
-               f'margin-bottom:0.25rem;">{_mode_note}</div>'
-               if _mode_note else '')
-            + f'<div style="font-size:0.85rem;color:#64748b;line-height:1.4;">'
-              f'{env["cite_html"]}</div>'
-            + '</div>'
+            f'<span style="display:inline-block;background:{bg};border:1px solid {border};'
+            f'color:{color};font-size:0.82rem;font-weight:600;padding:0.15rem 0.5rem;'
+            f'border-radius:8px;line-height:1.3;">{text}</span>'
         )
 
-    # Three columns: Road / Rail / Sea. Each column gets a small
-    # uppercase mode-group label followed by the envelope cards and
-    # a project-specific closing note for that mode.
-    _mode_cols = st.columns(3, gap='medium')
-    for _col, _group in zip(_mode_cols, _mode_groups):
-        with _col:
+    def _tr_render_iso_card(pkg, key, mode_name):
+        env = _envelopes[key]
+        fits, failures = _tr_iso_fit(pkg, key)
+        fit_text = 'Already containerized' if (
+            pkg.get('precontainerized') == key
+        ) else ('Fits inside container' if fits else 'Does not fit')
+        fit_severity = 0 if fits else 3
+        mode_severity, mode_text, mode_detail = _tr_container_mode_status(
+            pkg, key, mode_name, fits
+        )
+        fail_note = ''
+        if failures:
+            fail_note = 'Exceeds: ' + ', '.join(failures) + '.'
+        return (
+            '<div style="background:#ffffff;border:1px solid #bfdbfe;border-radius:8px;'
+            'padding:0.7rem 0.85rem;margin-bottom:0.6rem;color:#0a2540;">'
+            f'<div style="font-weight:600;font-size:0.85rem;margin-bottom:0.35rem;">'
+            f'{env["name"]}{_help_icon(env["help_text"])}</div>'
+            f'{_tr_badge(fit_text, fit_severity)}<br>'
+            f'<div style="margin-top:0.35rem;">{_tr_badge(mode_text, mode_severity)}</div>'
+            + (f'<div style="font-size:0.80rem;color:#64748b;margin-top:0.25rem;">'
+               f'{mode_detail}</div>' if mode_detail else '')
+            + (f'<div style="font-size:0.80rem;color:#64748b;margin-top:0.25rem;">'
+               f'{fail_note}</div>' if fail_note else '')
+            + f'<div style="font-size:0.80rem;color:#3c4257;margin-top:0.3rem;">'
+              f'w <= {env["width_m"]:.2f} m | h <= {env["height_m"]:.2f} m | '
+              f'len <= {env["length_m"]:.2f} m | cargo <= {env["payload_lb"]:,.0f} lb'
+              '</div></div>'
+        )
+
+    def _tr_render_direct_card(pkg, mode_name):
+        if mode_name == 'Road':
+            severity, text, detail = _tr_direct_road_status(pkg)
+            title = 'Direct road shipment'
+            help_text = (
+                'The selected package is placed directly on a trailer without '
+                'an ISO container. Loaded vehicle weight equals package mass plus '
+                'a 32,000 lb tractor/trailer allowance. Loaded height equals '
+                'package height plus a 1.52 m trailer deck. Green is no permit, '
+                'yellow is permit required, and orange is above the 150,000 lb '
+                'MOUSE superload screening threshold. State and route rules vary. '
+                'Weight source: https://www.law.cornell.edu/uscode/text/23/127. '
+                'Width source: https://www.ecfr.gov/current/title-23/chapter-I/subchapter-G/part-658/section-658.15.'
+            )
+            limits = (
+                'w <= 2.59 m | loaded h <= 4.11 m | no permit <= 80,000 lb | '
+                'permit > 80,000-150,000 lb | superload > 150,000 lb'
+            )
+        elif mode_name == 'Rail':
+            severity, text, detail = _tr_direct_rail_status(pkg)
+            title = 'Direct rail shipment'
+            help_text = (
+                'The selected package is loaded on an open railcar without an '
+                'ISO container. Yellow means dimensional-load clearance is '
+                'required. Orange means a specialized railcar or special-train '
+                'concept is needed. Carrier and route approval are not modeled.'
+            )
+            limits = 'simplified flatcar envelope: w <= 3.25 m | h <= 5.18 m'
+        else:
+            severity, text, detail = _tr_direct_sea_status(pkg)
+            title = 'Direct sea shipment'
+            help_text = (
+                'The selected package is shipped without an ISO container. '
+                'Breakbulk or heavy-lift service requires vessel, port, lift, '
+                'stowage and securing reviews.'
+            )
+            limits = 'non-containerized breakbulk or heavy-lift concept'
+        return (
+            '<div style="background:#ffffff;border:1px solid #bfdbfe;border-radius:8px;'
+            'padding:0.7rem 0.85rem;margin-bottom:0.6rem;color:#0a2540;">'
+            f'<div style="font-weight:600;font-size:0.85rem;margin-bottom:0.35rem;">'
+            f'{title}{_help_icon(help_text)}</div>'
+            f'{_tr_badge(text, severity)}'
+            f'<div style="font-size:0.80rem;color:#64748b;margin-top:0.3rem;">{detail}</div>'
+            f'<div style="font-size:0.80rem;color:#3c4257;margin-top:0.3rem;">{limits}</div>'
+            '</div>'
+        )
+
+    _mode_columns = st.columns(3, gap='medium')
+    for _column, _mode_name in zip(_mode_columns, ('Road', 'Rail', 'Sea')):
+        with _column:
             st.markdown(
-                f'<div style="font-size:0.85rem;font-weight:600;'
-                f'color:#64748b;text-transform:uppercase;'
-                f'letter-spacing:0.09em;margin-bottom:0.6rem;">'
-                f'{_group["name"]}</div>',
+                f'<div style="font-size:0.84rem;font-weight:600;color:#64748b;'
+                f'text-transform:uppercase;letter-spacing:0.09em;margin-bottom:0.55rem;">'
+                f'{_mode_name}</div>',
                 unsafe_allow_html=True,
             )
-            _cards_html = ''.join(
-                _render_envelope_card(_envelopes[k], mode_name=_group['name'])
-                for k in _group['envelope_keys']
+            _mode_cards = ''.join(
+                _tr_render_iso_card(_selected_package, key, _mode_name)
+                for key in ('iso20', 'iso40', 'iso40hc')
             )
-            st.markdown(_cards_html, unsafe_allow_html=True)
+            _mode_cards += _tr_render_direct_card(_selected_package, _mode_name)
+            st.markdown(_mode_cards, unsafe_allow_html=True)
 
-    # Footnote — what each badge does and doesn't check, plus the
-    # oversized fallback for every mode. Rendered as two parallel
-    # bullets so they read as siblings, not as text + an afterthought.
+    def _tr_best_mode_status(pkg, mode_name):
+        candidates = []
+        for key in ('iso20', 'iso40', 'iso40hc'):
+            fits, _ = _tr_iso_fit(pkg, key)
+            if fits:
+                severity, text, _ = _tr_container_mode_status(
+                    pkg, key, mode_name, True
+                )
+                short = {
+                    'iso20': '20 ft container',
+                    'iso40': '40 ft container',
+                    'iso40hc': '40 ft High Cube',
+                }[key]
+                candidates.append((severity, f'{text} ({short})'))
+        if mode_name == 'Road':
+            severity, text, _ = _tr_direct_road_status(pkg)
+            candidates.append((severity, f'{text} (direct)'))
+        elif mode_name == 'Rail':
+            severity, text, _ = _tr_direct_rail_status(pkg)
+            candidates.append((severity, f'{text} (direct)'))
+        else:
+            severity, text, _ = _tr_direct_sea_status(pkg)
+            candidates.append((severity, f'{text} (direct)'))
+        return min(candidates, key=lambda item: item[0])
+
+    st.markdown(
+        '<div style="font-size:1rem;font-weight:700;color:#0a2540;'
+        'border-left:4px solid #0a2540;padding:0.4rem 0 0.4rem 0.75rem;'
+        'margin:1.3rem 0 0.65rem 0;">Whole-Plant Transportation Summary</div>'
+        '<p style="color:#64748b;font-size:0.84rem;margin:0 0 0.75rem 0;">'
+        'For each package, MOUSE reports the least-complex screened option '
+        'available within each mode. One difficult package can control the '
+        'logistics for the full deployment.'
+        '</p>',
+        unsafe_allow_html=True,
+    )
+
+    _whole_rows = []
+    _mode_results = {'Road': [], 'Rail': [], 'Sea': []}
+    for _i, pkg in enumerate(_transport_packages):
+        road = _tr_best_mode_status(pkg, 'Road')
+        rail = _tr_best_mode_status(pkg, 'Rail')
+        sea = _tr_best_mode_status(pkg, 'Sea')
+        _mode_results['Road'].append((road[0], pkg['mass_lb'], pkg['name'], road[1]))
+        _mode_results['Rail'].append((rail[0], pkg['mass_lb'], pkg['name'], rail[1]))
+        _mode_results['Sea'].append((sea[0], pkg['mass_lb'], pkg['name'], sea[1]))
+        _bg = '#ffffff' if _i % 2 == 0 else '#f7f8fa'
+        _whole_rows.append(
+            f'<tr style="background:{_bg};">'
+            f'<td style="{_tr_cell};font-weight:600;">{pkg["name"]}</td>'
+            f'<td style="{_tr_cell};text-align:center;">{_tr_badge(road[1], road[0])}</td>'
+            f'<td style="{_tr_cell};text-align:center;">{_tr_badge(rail[1], rail[0])}</td>'
+            f'<td style="{_tr_cell};text-align:center;">{_tr_badge(sea[1], sea[0])}</td>'
+            '</tr>'
+        )
+    st.markdown(
+        '<table style="width:100%;border-collapse:collapse;font-size:0.83rem;'
+        'background:#ffffff;color:#0a2540;border:1px solid #bfdbfe;'
+        'border-radius:8px;overflow:hidden;margin-bottom:0.85rem;">'
+        '<thead style="background:#f1f3f5;"><tr>'
+        f'<th style="{_tr_th};text-align:left;">Package</th>'
+        f'<th style="{_tr_th};text-align:center;">Road</th>'
+        f'<th style="{_tr_th};text-align:center;">Rail</th>'
+        f'<th style="{_tr_th};text-align:center;">Sea</th>'
+        '</tr></thead><tbody>' + ''.join(_whole_rows) + '</tbody></table>',
+        unsafe_allow_html=True,
+    )
+
+    _controlling = {}
+    for _mode_name, _results in _mode_results.items():
+        _controlling[_mode_name] = max(
+            _results, key=lambda item: (item[0], item[1])
+        )
+
+    # Convert functional packages into a simple, realistic set of shipping
+    # units. At most two standard packages may share a truck or ISO container.
+    # Packages are tested end-to-end first and then side-by-side. Stacking is
+    # not allowed. Hazardous NaK, pre-containerized control equipment, and
+    # packages already requiring permits or specialized service remain
+    # dedicated shipping units.
+    _road_trailer_length_m = 14.63  # 48 ft screening deck length
+    _container_clearance_m = 0.05   # small packing clearance per dimension
+
+    def _tr_combined_package(pkg_a, pkg_b, arrangement):
+        if arrangement == 'end-to-end':
+            length_m = pkg_a['length_m'] + pkg_b['length_m']
+            width_m = max(pkg_a['width_m'], pkg_b['width_m'])
+        else:
+            length_m = max(pkg_a['length_m'], pkg_b['length_m'])
+            width_m = pkg_a['width_m'] + pkg_b['width_m']
+        return {
+            'name': f'{pkg_a["name"]} + {pkg_b["name"]}',
+            'mass_lb': pkg_a['mass_lb'] + pkg_b['mass_lb'],
+            'length_m': length_m,
+            'width_m': width_m,
+            'height_m': max(pkg_a['height_m'], pkg_b['height_m']),
+        }
+
+    def _tr_dedicated_package(pkg):
+        return (
+            bool(pkg.get('precontainerized'))
+            or bool(pkg.get('dedicated'))
+            or pkg['name'] == 'NaK coolant package'
+        )
+
+    def _tr_best_pairing(packages, pair_check):
+        """Maximize the number of valid two-package shipping units."""
+        packages = list(packages)
+
+        def _solve(remaining):
+            if not remaining:
+                return [], []
+            first = remaining[0]
+            best_pairs, best_singles = _solve(remaining[1:])
+            best_singles = [first] + best_singles
+            best_score = (
+                len(best_pairs),
+                -sum(pair[2].get('rank', 0) for pair in best_pairs),
+            )
+            for idx in range(1, len(remaining)):
+                second = remaining[idx]
+                metadata = pair_check(first, second)
+                if metadata is None:
+                    continue
+                rest = remaining[1:idx] + remaining[idx + 1:]
+                pairs, singles = _solve(rest)
+                candidate_pairs = [(first, second, metadata)] + pairs
+                candidate_score = (
+                    len(candidate_pairs),
+                    -sum(pair[2].get('rank', 0) for pair in candidate_pairs),
+                )
+                if candidate_score > best_score:
+                    best_pairs = candidate_pairs
+                    best_singles = singles
+                    best_score = candidate_score
+            return best_pairs, best_singles
+
+        return _solve(packages)
+
+    def _tr_road_pair_check(pkg_a, pkg_b):
+        if _tr_dedicated_package(pkg_a) or _tr_dedicated_package(pkg_b):
+            return None
+        if _tr_direct_road_status(pkg_a)[0] != 0:
+            return None
+        if _tr_direct_road_status(pkg_b)[0] != 0:
+            return None
+        for rank, arrangement in enumerate(('end-to-end', 'side-by-side')):
+            combined = _tr_combined_package(pkg_a, pkg_b, arrangement)
+            if combined['length_m'] > _road_trailer_length_m:
+                continue
+            severity, _, _ = _tr_direct_road_status(combined)
+            if severity == 0:
+                return {'arrangement': arrangement, 'rank': rank}
+        return None
+
+    def _tr_iso_pair_check(pkg_a, pkg_b):
+        if _tr_dedicated_package(pkg_a) or _tr_dedicated_package(pkg_b):
+            return None
+        if not any(_tr_iso_fit(pkg_a, key)[0] for key in _envelopes):
+            return None
+        if not any(_tr_iso_fit(pkg_b, key)[0] for key in _envelopes):
+            return None
+        for container_rank, key in enumerate(('iso20', 'iso40', 'iso40hc')):
+            env = _envelopes[key]
+            for arrangement_rank, arrangement in enumerate(
+                ('end-to-end', 'side-by-side')
+            ):
+                combined = _tr_combined_package(pkg_a, pkg_b, arrangement)
+                if (
+                    combined['length_m']
+                    <= env['length_m'] - _container_clearance_m
+                    and combined['width_m']
+                    <= env['width_m'] - _container_clearance_m
+                    and combined['height_m']
+                    <= env['height_m'] - _container_clearance_m
+                    and combined['mass_lb'] <= env['payload_lb']
+                ):
+                    return {
+                        'arrangement': arrangement,
+                        'container': key,
+                        'rank': container_rank * 2 + arrangement_rank,
+                    }
+        return None
+
+    _road_pairs, _road_singles = _tr_best_pairing(
+        _transport_packages, _tr_road_pair_check
+    )
+    _iso_pairs, _iso_singles = _tr_best_pairing(
+        _transport_packages, _tr_iso_pair_check
+    )
+
+    def _tr_pair_names(pairs):
+        return '; '.join(
+            f'{pkg_a["name"]} + {pkg_b["name"]}'
+            for pkg_a, pkg_b, _ in pairs
+        )
+
+    def _tr_single_names(singles):
+        return '; '.join(pkg['name'] for pkg in singles)
+
+    _road_loads = len(_transport_packages) - len(_road_pairs)
+    _road_shared_text = _tr_pair_names(_road_pairs)
+    _road_separate_text = _tr_single_names(_road_singles)
+
+    _rail_standard_packages = [
+        pkg for pkg, result in zip(_transport_packages, _mode_results['Rail'])
+        if result[0] == 0
+    ]
+    _rail_standard = len(_rail_standard_packages) - len(_iso_pairs)
+    _rail_dimensional = sum(1 for sev, *_ in _mode_results['Rail'] if sev == 1)
+    _rail_special = sum(1 for sev, *_ in _mode_results['Rail'] if sev >= 2)
+
+    _sea_standard_packages = [
+        pkg for pkg, result in zip(_transport_packages, _mode_results['Sea'])
+        if result[0] == 0
+    ]
+    _sea_standard = len(_sea_standard_packages) - len(_iso_pairs)
+    _sea_heavy = len(_transport_packages) - len(_sea_standard_packages)
+
+    _iso_shared_text = _tr_pair_names(_iso_pairs)
+    _iso_separate_text = _tr_single_names(_iso_singles)
+
+    # Apply the version-controlled transportation cost ranges. Road costs are
+    # distance-based and calculated for each consolidated truckload. Rail uses a
+    # coordinated-shipment range, with a distance-sensitive special-train adder
+    # only when specialized rail service is required. Sea is charged per standard
+    # container and per oversized heavy-lift piece.
+    _transport_cost_error = None
+    _shield_material_cost = 0.0
+    _road_radioactive_low = _road_radioactive_high = 0.0
+    _road_transport_days = 0
+    _sea_irradiated_reactor_low = _sea_irradiated_reactor_high = 0.0
+    _road_base_cost_low = _road_base_cost_high = None
+    _rail_base_cost_low = _rail_base_cost_high = None
+    _sea_base_cost_low = _sea_base_cost_high = None
+    try:
+        _transport_cost_inputs = _load_transportation_cost_inputs()
+
+        def _transport_bounds(input_id):
+            row = _transport_cost_inputs.loc[input_id]
+            return (
+                float(row['cost_value_lower_bound']),
+                float(row['cost_value_upper_bound']),
+            )
+
+        _r1_low, _r1_high = _transport_bounds('R1')
+        _r2_low, _r2_high = _transport_bounds('R2')
+        _r3_low, _r3_high = _transport_bounds('R3')
+        _l1_low, _l1_high = _transport_bounds('L1')
+        _l2_low, _l2_high = _transport_bounds('L2')
+        _l3_low, _l3_high = _transport_bounds('L3')
+        _l4_low, _l4_high = _transport_bounds('L4')
+        _s1_low, _s1_high = _transport_bounds('S1')
+        _s2_low, _s2_high = _transport_bounds('S2')
+
+        _road_shipping_units = []
+        for pkg_a, pkg_b, metadata in _road_pairs:
+            _road_shipping_units.append(
+                _tr_combined_package(
+                    pkg_a, pkg_b, metadata['arrangement']
+                )
+            )
+        _road_shipping_units.extend(_road_singles)
+
+        _road_standard_loads = 0
+        _road_permit_loads = 0
+        _road_superloads = 0
+        for _unit in _road_shipping_units:
+            _severity, _, _ = _tr_direct_road_status(_unit)
+            if _severity == 0:
+                _road_standard_loads += 1
+            elif _severity == 1:
+                _road_permit_loads += 1
+            else:
+                _road_superloads += 1
+
+        _road_heavy_loads = _road_permit_loads + _road_superloads
+        _road_cost_low = float(road_distance_miles) * (
+            _road_standard_loads * _r1_low
+            + _road_heavy_loads * _r2_low
+        )
+        _road_cost_high = float(road_distance_miles) * (
+            _road_standard_loads * _r1_high
+            + _road_heavy_loads * _r2_high
+        )
+        if _road_superloads:
+            # Detailed route planning is applied once to the common deployment
+            # route, not once per superload truck.
+            _road_cost_low += _r3_low
+            _road_cost_high += _r3_high
+
+        _rail_cost_low, _rail_cost_high = _l1_low, _l1_high
+        if _rail_special:
+            # Apply the special-train mileage charge once to the coordinated rail
+            # shipment when one or more packages trigger specialized rail service.
+            _special_train_low = max(
+                _l3_low,
+                float(road_distance_miles) * _l2_low,
+            ) + _l4_low
+            _special_train_high = max(
+                _l3_high,
+                float(road_distance_miles) * _l2_high,
+            ) + _l4_high
+            _rail_cost_low += _special_train_low
+            _rail_cost_high += _special_train_high
+
+        _sea_cost_low = (
+            _sea_standard * _s1_low
+            + _sea_heavy * _s2_low
+        )
+        _sea_cost_high = (
+            _sea_standard * _s1_high
+            + _sea_heavy * _s2_high
+        )
+
+        # Preserve the shielded-package freight estimates before adding raw
+        # shield material or radioactive-content-specific premiums. These
+        # values support a transparent irradiated-mode cost breakdown.
+        _road_base_cost_low, _road_base_cost_high = _road_cost_low, _road_cost_high
+        _rail_base_cost_low, _rail_base_cost_high = _rail_cost_low, _rail_cost_high
+        _sea_base_cost_low, _sea_base_cost_high = _sea_cost_low, _sea_cost_high
+
+        if _irradiated_shield is not None:
+            _irradiated_cost_inputs = load_irradiated_cost_inputs()
+
+            def _irr_bounds(input_id):
+                row = _irradiated_cost_inputs.loc[input_id]
+                return (
+                    float(row['cost_value_lower_bound']),
+                    float(row['cost_value_upper_bound']),
+                )
+
+            _shield_material_cost = float(
+                _irradiated_shield['shield_raw_material_cost_2025_usd']
+            )
+
+            # Road: base freight is recalculated using the shielded package. Add
+            # only radioactive-specific screening premiums from Virgil Peoples.
+            _sec_low, _sec_high = _irr_bounds('IR_ROAD_SECURITY')
+            _ins_low, _ins_high = _irr_bounds('IR_ROAD_INSURANCE')
+            _road_transport_days = (
+                int(math.ceil(float(road_distance_miles) / 250.0))
+                if float(road_distance_miles) > 0 else 0
+            )
+            _road_radioactive_low = (
+                _road_transport_days * _sec_low + _ins_low
+            )
+            _road_radioactive_high = (
+                _road_transport_days * _sec_high + _ins_high
+            )
+            _road_cost_low += _shield_material_cost + _road_radioactive_low
+            _road_cost_high += _shield_material_cost + _road_radioactive_high
+
+            # Rail: the broad L1 range already states that dedicated service,
+            # security, Type B packaging, and emergency planning may be included.
+            # Add the raw shield material only to avoid double counting.
+            _rail_cost_low += _shield_material_cost
+            _rail_cost_high += _shield_material_cost
+
+            # Sea: replace the ordinary sea charge for the irradiated reactor
+            # module with Virgil's broad INF-Class 3 irradiated-shipment range.
+            # Other unirradiated plant packages retain the ordinary sea charges.
+            _reactor_sea_severity = _mode_results['Sea'][0][0]
+            if _reactor_sea_severity == 0:
+                _reactor_sea_base_low, _reactor_sea_base_high = _s1_low, _s1_high
+            else:
+                _reactor_sea_base_low, _reactor_sea_base_high = _s2_low, _s2_high
+            _sea_irradiated_reactor_low, _sea_irradiated_reactor_high = (
+                _irr_bounds('IR_SEA_TOTAL')
+            )
+            _sea_cost_low = (
+                _sea_cost_low - _reactor_sea_base_low
+                + _sea_irradiated_reactor_low + _shield_material_cost
+            )
+            _sea_cost_high = (
+                _sea_cost_high - _reactor_sea_base_high
+                + _sea_irradiated_reactor_high + _shield_material_cost
+            )
+    except Exception as _exc:
+        _transport_cost_error = str(_exc)
+        _road_cost_low = _road_cost_high = None
+        _rail_cost_low = _rail_cost_high = None
+        _sea_cost_low = _sea_cost_high = None
+
+    # Unirradiated deployment cost is incurred at year 0. Irradiated return
+    # cost is incurred after the full-power fuel lifetime plus onsite cooldown;
+    # discount it to year 0 before passing it to the existing LCOE helper.
+    def _transport_lcoe_increase(capital_cost):
+        if capital_cost is None:
+            return None
+        present_cost = float(capital_cost)
+        if transport_condition == 'Irradiated':
+            _event_year = (
+                float(params.get('Fuel Lifetime', 0.0)) / 365.0
+                + float(cooldown_months) / 12.0
+            )
+            _discount = float(params.get('Discount Rate', discount_rate / 100.0))
+            present_cost = present_cost / ((1.0 + _discount) ** _event_year)
+        return float(energy_cost_levelized_per_acct(
+            params, present_cost, 0.0
+        ))
+
+    try:
+        _road_lcoe_low = _transport_lcoe_increase(_road_cost_low)
+        _road_lcoe_high = _transport_lcoe_increase(_road_cost_high)
+        _rail_lcoe_low = _transport_lcoe_increase(_rail_cost_low)
+        _rail_lcoe_high = _transport_lcoe_increase(_rail_cost_high)
+        _sea_lcoe_low = _transport_lcoe_increase(_sea_cost_low)
+        _sea_lcoe_high = _transport_lcoe_increase(_sea_cost_high)
+    except Exception:
+        _road_lcoe_low = _road_lcoe_high = None
+        _rail_lcoe_low = _rail_lcoe_high = None
+        _sea_lcoe_low = _sea_lcoe_high = None
+
+    if transport_condition == 'Unirradiated':
+        _transport_cost_help = (
+            'One-way, unirradiated transportation screening estimate in 2025 USD. '
+            'Road cost applies the entered distance to each consolidated truckload; '
+            'the route-planning adder is included once when any truckload is a superload. '
+            'Rail uses one coordinated-shipment range, with the special-train mileage, '
+            'minimum, and switching charge added once when specialized rail is required. '
+            'Sea applies per-container and heavy-lift ranges. First/last-mile trucking '
+            'for rail and sea, explicit transloads, cranes, installation, and site '
+            'assembly are excluded. Displayed total-dollar costs are rounded so '
+            'approximately half of their integer digits are trailing zeros; the '
+            'underlying calculation retains full precision.'
+        )
+        _transport_lcoe_help = (
+            'Increase caused by treating the one-way initial-deployment transportation '
+            'cost as a capital cost at year 0. Displayed values are rounded to one '
+            'significant digit.'
+        )
+    else:
+        _transport_cost_help = (
+            'One-way irradiated-return screening estimate in 2025 USD. All ordinary '
+            'freight is recalculated using the shielded reactor-module mass and '
+            f'dimensions. Raw {shield_material.lower()} cost is included. Road also '
+            'includes a Virgil '
+            'Peoples screening allowance for HRCQ-like security/escort travel days '
+            '(250 loaded miles/day) and additional driver liability insurance. The '
+            'broad rail range is retained without separate radioactive adders to avoid '
+            'double counting dedicated service and security already described in its '
+            'source basis. The ordinary sea charge for the irradiated reactor module '
+            'is replaced by the $0.8-$1.0 million INF-Class 3 shipment range; ordinary '
+            'charges remain for other plant packages. Cranes, custom cask fabrication, '
+            'package certification, first/last-mile rail or sea legs, and route-specific '
+            'civil modifications are excluded. Displayed total-dollar costs are '
+            'rounded so approximately half of their integer digits are trailing '
+            'zeros; the underlying calculation retains full precision.'
+        )
+        _transport_lcoe_help = (
+            'Increase caused by the one-way irradiated return. MOUSE discounts the '
+            'return cost from the end of the full-power fuel lifetime plus the selected '
+            'cooldown period to year 0, then applies its existing LCOE method. Displayed '
+            'values are rounded to one significant digit.'
+        )
+
+    def _format_first_nonzero(value):
+        """Format a positive value to one significant digit."""
+        if value is None or not math.isfinite(float(value)):
+            return None
+        value = float(value)
+        if value == 0:
+            return '0'
+        order = math.floor(math.log10(abs(value)))
+        rounded = round(value, -order)
+        rounded_order = math.floor(math.log10(abs(rounded))) if rounded else 0
+        decimals = max(0, -rounded_order)
+        return f'{rounded:,.{decimals}f}'
+
+    def _transport_cost_html(low, high, lcoe_low, lcoe_high):
+        if low is None or high is None:
+            return (
+                '<div style="font-size:0.82rem;color:#b91c1c;margin-top:0.65rem;'
+                'padding-top:0.55rem;border-top:1px solid #e2e8f0;">'
+                '<strong>Transportation cost unavailable.</strong></div>'
+            )
+
+        _lcoe_low_text = _format_first_nonzero(lcoe_low)
+        _lcoe_high_text = _format_first_nonzero(lcoe_high)
+        if _lcoe_low_text is None or _lcoe_high_text is None:
+            _lcoe_html = ''
+        else:
+            _lcoe_html = (
+                '<div style="font-size:0.88rem;color:#0a2540;margin-top:0.35rem;'
+                'line-height:1.35;">'
+                f'<strong>Increase in LCOE{_help_icon(_transport_lcoe_help)}:</strong> '
+                f'${_lcoe_low_text}-${_lcoe_high_text}/MWh</div>'
+            )
+
+        _low_cost_text = format_cost_for_display(low)
+        _high_cost_text = format_cost_for_display(high)
+        _cost_text = (
+            _low_cost_text
+            if _low_cost_text == _high_cost_text
+            else f'{_low_cost_text}-{_high_cost_text}'
+        )
+        return (
+            '<div style="font-size:0.92rem;color:#0a2540;margin-top:0.65rem;'
+            'padding-top:0.55rem;border-top:1px solid #e2e8f0;line-height:1.35;">'
+            f'<strong>Estimated transportation cost{_help_icon(_transport_cost_help)}:</strong> '
+            f'{_cost_text} <span style="font-size:0.76rem;'
+            'color:#64748b;">(2025 USD)</span></div>'
+            + _lcoe_html
+        )
+
+    st.markdown(
+        '<div style="font-size:1rem;font-weight:700;color:#0a2540;'
+        'border-left:4px solid #0a2540;padding:0.4rem 0 0.4rem 0.75rem;'
+        'margin:1.05rem 0 0.65rem 0;">Estimated Shipment Requirements</div>',
+        unsafe_allow_html=True,
+    )
+
+    _rail_lines = []
+    if _rail_standard:
+        _rail_lines.append(
+            f'{_rail_standard} standard-container rail load'
+            f'{"s" if _rail_standard != 1 else ""}'
+        )
+    if _rail_dimensional:
+        _rail_lines.append(
+            f'{_rail_dimensional} oversized flatcar load'
+            f'{"s" if _rail_dimensional != 1 else ""} requiring railroad clearance'
+        )
+    if _rail_special:
+        _rail_lines.append(
+            f'{_rail_special} package{"s" if _rail_special != 1 else ""} '
+            'requiring specialized rail planning'
+        )
+
+    _sea_lines = []
+    if _sea_standard:
+        _sea_lines.append(
+            f'{_sea_standard} standard container'
+            f'{"s" if _sea_standard != 1 else ""}'
+        )
+    if _sea_heavy:
+        _sea_lines.append(
+            f'{_sea_heavy} oversized package{"s" if _sea_heavy != 1 else ""} '
+            'requiring heavy-lift or breakbulk service'
+        )
+
+    def _shipment_lines_html(lines):
+        return ''.join(
+            f'<div style="font-size:0.92rem;font-weight:650;color:#0a2540;'
+            f'margin-top:0.28rem;line-height:1.3;">{line}</div>'
+            for line in lines
+        )
+
+    def _shipment_assignment_html(shared_text, separate_text, mode_label):
+        if shared_text:
+            shared_line = (
+                f'<div style="font-size:0.78rem;color:#475569;margin-top:0.45rem;'
+                f'line-height:1.35;"><strong>Packages that can share a {mode_label}:</strong> '
+                f'{shared_text}</div>'
+            )
+        else:
+            shared_line = (
+                f'<div style="font-size:0.78rem;color:#475569;margin-top:0.45rem;'
+                f'line-height:1.35;"><strong>Shared loads:</strong> None</div>'
+            )
+        separate_line = (
+            f'<div style="font-size:0.78rem;color:#475569;margin-top:0.25rem;'
+            f'line-height:1.35;"><strong>Separate loads:</strong> '
+            f'{separate_text or "None"}</div>'
+        )
+        return shared_line + separate_line
+
+    _count_cols = st.columns(3, gap='medium')
+    _count_cols[0].markdown(
+        '<div style="background:#ffffff;border:1px solid #bfdbfe;border-radius:8px;'
+        'padding:0.8rem 0.9rem;min-height:290px;">'
+        '<div style="font-size:0.82rem;font-weight:600;color:#64748b;'
+        'text-transform:uppercase;letter-spacing:0.07em;">Road</div>'
+        f'<div style="font-size:1.25rem;font-weight:700;color:#0a2540;margin-top:0.25rem;">'
+        f'{_road_loads} truckload{"s" if _road_loads != 1 else ""} required</div>'
+        + _shipment_assignment_html(
+            _road_shared_text, _road_separate_text, 'truck'
+        )
+        + f'<div style="font-size:0.80rem;color:#475569;margin-top:0.55rem;">'
+          f'Most difficult package to transport: {_controlling["Road"][2]}</div>'
+        + _transport_cost_html(
+            _road_cost_low, _road_cost_high,
+            _road_lcoe_low, _road_lcoe_high,
+        )
+        + '</div>',
+        unsafe_allow_html=True,
+    )
+    _count_cols[1].markdown(
+        '<div style="background:#ffffff;border:1px solid #bfdbfe;border-radius:8px;'
+        'padding:0.8rem 0.9rem;min-height:290px;">'
+        '<div style="font-size:0.82rem;font-weight:600;color:#64748b;'
+        'text-transform:uppercase;letter-spacing:0.07em;">Rail</div>'
+        + _shipment_lines_html(_rail_lines)
+        + _shipment_assignment_html(
+            _iso_shared_text, _iso_separate_text, 'standard container'
+        )
+        + f'<div style="font-size:0.80rem;color:#475569;margin-top:0.55rem;">'
+          f'Most difficult package to transport: {_controlling["Rail"][2]}</div>'
+        + _transport_cost_html(
+            _rail_cost_low, _rail_cost_high,
+            _rail_lcoe_low, _rail_lcoe_high,
+        )
+        + '</div>',
+        unsafe_allow_html=True,
+    )
+    _count_cols[2].markdown(
+        '<div style="background:#ffffff;border:1px solid #bfdbfe;border-radius:8px;'
+        'padding:0.8rem 0.9rem;min-height:290px;">'
+        '<div style="font-size:0.82rem;font-weight:600;color:#64748b;'
+        'text-transform:uppercase;letter-spacing:0.07em;">Sea</div>'
+        + _shipment_lines_html(_sea_lines)
+        + _shipment_assignment_html(
+            _iso_shared_text, _iso_separate_text, 'standard container'
+        )
+        + f'<div style="font-size:0.80rem;color:#475569;margin-top:0.55rem;">'
+          f'Most difficult package to transport: {_controlling["Sea"][2]}</div>'
+        + _transport_cost_html(
+            _sea_cost_low, _sea_cost_high,
+            _sea_lcoe_low, _sea_lcoe_high,
+        )
+        + '</div>',
+        unsafe_allow_html=True,
+    )
+
+    if _irradiated_shield is not None and _transport_cost_error is None:
+        def _cost_range_text(low, high):
+            if low is None or high is None:
+                return 'Not available'
+            low_text = format_cost_for_display(low)
+            high_text = format_cost_for_display(high)
+            return low_text if low_text == high_text else f'{low_text}-{high_text}'
+
+        _road_premium_text = _cost_range_text(
+            _road_radioactive_low, _road_radioactive_high
+        )
+        _sea_other_low = max(
+            0.0,
+            float(_sea_base_cost_low or 0.0)
+            - (float(_s1_low) if _mode_results['Sea'][0][0] == 0 else float(_s2_low)),
+        )
+        _sea_other_high = max(
+            0.0,
+            float(_sea_base_cost_high or 0.0)
+            - (float(_s1_high) if _mode_results['Sea'][0][0] == 0 else float(_s2_high)),
+        )
+        _irr_cost_rows = [
+            (
+                'Road',
+                _cost_range_text(_road_base_cost_low, _road_base_cost_high),
+                format_cost_for_display(_shield_material_cost),
+                _road_premium_text,
+                f'{_road_transport_days} transport day(s); security plus liability insurance',
+            ),
+            (
+                'Rail',
+                _cost_range_text(_rail_base_cost_low, _rail_base_cost_high),
+                format_cost_for_display(_shield_material_cost),
+                'No separate adder',
+                'Broad rail range retained to avoid double counting dedicated service/security',
+            ),
+            (
+                'Sea',
+                _cost_range_text(_sea_other_low, _sea_other_high),
+                format_cost_for_display(_shield_material_cost),
+                _cost_range_text(
+                    _sea_irradiated_reactor_low, _sea_irradiated_reactor_high
+                ),
+                'INF-Class 3 reactor shipment replaces its ordinary sea charge',
+            ),
+        ]
+        _irr_cost_html = ''.join(
+            '<tr>'
+            f'<td style="padding:0.48rem 0.55rem;border-top:1px solid #e2e8f0;'
+            f'font-weight:700;color:#0a2540;">{mode}</td>'
+            f'<td style="padding:0.48rem 0.55rem;border-top:1px solid #e2e8f0;'
+            f'text-align:right;">{base}</td>'
+            f'<td style="padding:0.48rem 0.55rem;border-top:1px solid #e2e8f0;'
+            f'text-align:right;">{shield}</td>'
+            f'<td style="padding:0.48rem 0.55rem;border-top:1px solid #e2e8f0;'
+            f'text-align:right;">{premium}</td>'
+            f'<td style="padding:0.48rem 0.55rem;border-top:1px solid #e2e8f0;'
+            f'color:#64748b;">{note}</td>'
+            '</tr>'
+            for mode, base, shield, premium, note in _irr_cost_rows
+        )
+        st.markdown(
+            '<div style="font-size:0.95rem;font-weight:700;color:#0a2540;'
+            'margin:1rem 0 0.45rem 0;">Irradiated Cost Breakdown</div>'
+            '<div style="overflow-x:auto;margin-bottom:0.9rem;">'
+            '<table style="width:100%;border-collapse:collapse;background:#ffffff;'
+            'border:1px solid #d8b4fe;border-radius:8px;font-size:0.80rem;">'
+            '<thead style="background:#faf5ff;color:#5b21b6;">'
+            '<tr>'
+            '<th style="padding:0.52rem;text-align:left;">Mode</th>'
+            '<th style="padding:0.52rem;text-align:right;">Shielded-package freight</th>'
+            '<th style="padding:0.52rem;text-align:right;">Raw shield</th>'
+            '<th style="padding:0.52rem;text-align:right;">Radioactive-specific cost</th>'
+            '<th style="padding:0.52rem;text-align:left;">Treatment</th>'
+            '</tr></thead><tbody>'
+            + _irr_cost_html
+            + '</tbody></table></div>',
+            unsafe_allow_html=True,
+        )
+
+    if transport_condition == 'Unirradiated':
+        _cost_scope_note = (
+            'Transportation costs are one-way, unirradiated screening estimates '
+            'from assets/transportation_cost_inputs_2025.csv. Road cost varies with '
+            'the entered distance. Rail distance is used only when specialized '
+            'special-train service is triggered; standard rail and sea travel '
+            'distances are not modeled explicitly.'
+        )
+    else:
+        _cost_scope_note = (
+            'Transportation costs are one-way irradiated-return screening estimates. '
+            'The existing freight model is rerun using the shielded reactor module, '
+            f'then raw {shield_material.lower()} and the documented '
+            'radioactive-specific road or sea '
+            'allowances are added. Rail uses its existing broad range without a '
+            'separate radioactive premium to avoid double counting. Detailed cask '
+            'fabrication/certification, cranes, and route-specific civil work are excluded.'
+        )
+
     st.markdown(
         '<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;'
-        'padding:0.85rem 1.1rem;margin-bottom:1rem;font-size:0.85rem;line-height:1.45;color:#92400e;">'
+        'padding:0.85rem 1.1rem;margin:0.9rem 0 1rem 0;font-size:0.84rem;'
+        'line-height:1.45;color:#92400e;">'
         '<strong>Notes:</strong>'
-        '<ul style="margin:0.4rem 0 0 1.2rem;padding:0;">'
-        '<li>Each badge compares the outermost RVACS envelope (diameter, '
-        'height) and the sum of all component masses against the listed '
-        'envelope. Per component dimensions and masses are shown in the '
-        'table above.</li>'
-        '<li>For modules larger than these envelopes, road uses permitted '
-        'heavy haul (axle bridge limits often the binding constraint), rail '
-        'uses specialized cars such as Schnabel (300 to 500+ tons), and sea '
-        'uses breakbulk or heavy lift vessels (hundreds to 1000+ tons). Each '
-        'oversized shipment is planned per route.</li>'
-        '</ul>'
-        '</div>',
+        '<ul style="margin:0.35rem 0 0 1.15rem;padding:0;">'
+        '<li>All transportation masses are displayed in pounds.</li>'
+        '<li>MOUSE may combine at most two compatible standard packages on '
+        'one truck or in one ISO container. It checks end-to-end placement '
+        'first and side-by-side placement second; stacking is not allowed.</li>'
+        '<li>The NaK coolant package, the pre-containerized control/electrical '
+        'package, and packages requiring permits or specialized service remain '
+        'dedicated loads. Road consolidation uses a 48 ft trailer-length '
+        'screening assumption; container consolidation retains 0.05 m packing '
+        'clearance in each dimension.</li>'
+        '<li>Road screening uses a 32,000 lb tractor/trailer allowance and a '
+        '1.52 m deck for direct shipment. Shipping cradles are included only '
+        'where explicitly stated in the package model.</li>'
+        '<li>Container fit uses internal envelope and payload limits. Door '
+        'opening, concentrated floor loading, center of gravity, lifting and '
+        'securement require later engineering review.</li>'
+        '<li>Rail and sea categories represent logistics complexity, not a '
+        'universal permit hierarchy. Carrier, route, port and vessel review '
+        'remain necessary.</li>'
+        f'<li>{_cost_scope_note}</li>'
+        '</ul></div>',
         unsafe_allow_html=True,
     )
 
@@ -5343,9 +6647,18 @@ with streamlit_analytics.track():
 
     st.markdown('<div style="height:1rem"></div>', unsafe_allow_html=True)
 
+    # Apply the same uncertainty-aware dollar precision to the user-facing
+    # spreadsheet.  Calculations above continue to use the unrounded values.
+    _export_df = display_df.copy()
+    for _column in _export_df.columns:
+        if 'Estimated Cost' in str(_column):
+            _export_df[_column] = pd.to_numeric(
+                _export_df[_column], errors='coerce'
+            ).map(round_cost_for_display)
+
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-        display_df.to_excel(writer, index=False, sheet_name='Cost Estimate')
+        _export_df.to_excel(writer, index=False, sheet_name='Cost Estimate')
     buffer.seek(0)
 
     dl_col, _ = st.columns([1, 3])
@@ -5421,18 +6734,18 @@ with streamlit_analytics.track():
     _means.append(_noak_m)
     _stds.append(_noak_s)
 
-    # NaN-tolerant gating: drop points where the LCOE came back
-    # NaN, plot whatever valid points remain. Scatter markers +
+    # Non-finite-tolerant gating: drop points where the LCOE came back
+    # NaN/inf, plot whatever valid points remain. Scatter markers +
     # mean line are always drawn (they don't need the spline).
     _u_arr = np.array(_units, dtype=float) if _units else np.array([])
     _m_arr = np.array(_means, dtype=float) if _means else np.array([])
     _s_arr = np.array(_stds, dtype=float) if _stds else np.array([])
     if _m_arr.size:
-        _valid = ~np.isnan(_m_arr)
+        _valid = np.isfinite(_m_arr) & (_m_arr > 0)
         _u_arr = _u_arr[_valid]
         _m_arr = _m_arr[_valid]
         _s_arr = _s_arr[_valid]
-        _s_arr = np.nan_to_num(_s_arr, nan=0.0)
+        _s_arr = np.nan_to_num(_s_arr, nan=0.0, posinf=0.0, neginf=0.0)
 
     if _u_arr.size >= 2:
         _fill_color, _edge_color = '#1B4F8C', '#0a2540'
@@ -5449,17 +6762,17 @@ with streamlit_analytics.track():
             _m_smooth = _m_arr
             _s_smooth = _s_arr
 
-        # Y-axis sizing  90th-percentile of (mean + std) rather than
-        # max, so a single outlier point doesn't blow up the y-range
-        # and squash the rest of the data. Hard cap at $800 so even
-        # outliers stay readable.
-        if _m_arr.size:
-            _band_vals = _m_arr + _s_arr
-            _band_p90 = float(np.nanpercentile(_band_vals, 90))
-        else:
-            _band_p90 = 0.0
-        _ymax = max(410.0, _band_p90 * 1.15)
-        _ymax = min(_ymax, 800.0)
+        # Keep the familiar linear scale for ordinary results. If any
+        # uncertainty-band value exceeds $800/MWh, switch to a logarithmic
+        # scale and size it from the actual data instead of hiding the curve.
+        _band_vals = _m_arr + _s_arr
+        _y_scale_type, _ymin, _ymax = lcoe_y_axis_settings(_band_vals)
+        _use_log_y = _y_scale_type == 'log'
+        _y_scale = alt.Scale(
+            type='log' if _use_log_y else 'linear',
+            domain=[_ymin, _ymax],
+            nice=False,
+        )
 
         # Market benchmark ranges. Each market has a top (high) and
         # bottom (low) y-value bracketing an indicative cost range.
@@ -5498,7 +6811,8 @@ with streamlit_analytics.track():
         # ----- LCOE band + mean line + anchor points -----
         _band_df = pd.DataFrame({
             'units': _x_smooth,
-            'lower': _m_smooth - _s_smooth,
+            'lower': np.maximum(_m_smooth - _s_smooth, _ymin)
+                     if _use_log_y else _m_smooth - _s_smooth,
             'upper': _m_smooth + _s_smooth,
             'mean': _m_smooth,
         })
@@ -5527,7 +6841,7 @@ with streamlit_analytics.track():
             stroke=_edge_color, strokeWidth=1.5,
         ).encode(
             x=alt.X('units:Q', scale=alt.Scale(domain=[1, 100]), axis=_x_axis),
-            y=alt.Y('lower:Q', scale=alt.Scale(domain=[0, _ymax]),
+            y=alt.Y('lower:Q', scale=_y_scale,
                     axis=_y_axis),
             y2='upper:Q',
         )
@@ -5535,14 +6849,14 @@ with streamlit_analytics.track():
             color=_edge_color, strokeWidth=2.0,
         ).encode(
             x=alt.X('units:Q', scale=alt.Scale(domain=[1, 100])),
-            y=alt.Y('mean:Q', scale=alt.Scale(domain=[0, _ymax])),
+            y=alt.Y('mean:Q', scale=_y_scale),
         )
         _anchors = alt.Chart(_anchor_df).mark_point(
             color=_edge_color, size=80, filled=True,
             stroke='white', strokeWidth=1.2,
         ).encode(
             x=alt.X('units:Q', scale=alt.Scale(domain=[1, 100])),
-            y=alt.Y('lcoe:Q', scale=alt.Scale(domain=[0, _ymax])),
+            y=alt.Y('lcoe:Q', scale=_y_scale),
         )
 
         # ----- Market benchmark bars -----
@@ -5553,7 +6867,7 @@ with streamlit_analytics.track():
         ).encode(
             x=alt.X('x_left:Q', scale=alt.Scale(domain=[1, 100])),
             x2='x_right:Q',
-            y=alt.Y('y_start:Q', scale=alt.Scale(domain=[0, _ymax])),
+            y=alt.Y('y_start:Q', scale=_y_scale),
             color=alt.Color('color:N', scale=None, legend=None),
         )
         _bottom = alt.Chart(_market_df).mark_rule(
@@ -5561,14 +6875,14 @@ with streamlit_analytics.track():
         ).encode(
             x=alt.X('x_left:Q', scale=alt.Scale(domain=[1, 100])),
             x2='x_right:Q',
-            y=alt.Y('y_end:Q', scale=alt.Scale(domain=[0, _ymax])),
+            y=alt.Y('y_end:Q', scale=_y_scale),
             color=alt.Color('color:N', scale=None, legend=None),
         )
         _vert = alt.Chart(_market_df).mark_rule(
             strokeWidth=2.4, strokeCap='round',
         ).encode(
             x=alt.X('x_mid:Q', scale=alt.Scale(domain=[1, 100])),
-            y=alt.Y('y_start:Q', scale=alt.Scale(domain=[0, _ymax])),
+            y=alt.Y('y_start:Q', scale=_y_scale),
             y2='y_end:Q',
             color=alt.Color('color:N', scale=None, legend=None),
         )
@@ -5576,31 +6890,15 @@ with streamlit_analytics.track():
             fontSize=9, fontWeight='bold', baseline='middle', align='center',
         ).encode(
             x=alt.X('x_mid:Q', scale=alt.Scale(domain=[1, 100])),
-            y=alt.Y('label_y:Q', scale=alt.Scale(domain=[0, _ymax])),
+            y=alt.Y('label_y:Q', scale=_y_scale),
             text='name:N',
             color=alt.Color('color:N', scale=None, legend=None),
         )
 
-        # If the LCOE band sits entirely above the y-axis cap, warn
-        # the user before rendering the (invisible) curve.
-        _band_min_visible = (_m_arr - _s_arr).min() if _m_arr.size else 0.0
-        if _band_min_visible > _ymax:
-            _band_lo = (_m_arr - _s_arr).min()
-            _band_hi = (_m_arr + _s_arr).max()
-            st.markdown(
-                f'<div style="background:#fffbeb;border:1px solid #f59e0b;'
-                f'border-radius:8px;padding:0.85rem 1.1rem;margin-bottom:0.6rem;'
-                f'color:#92400e;font-size:0.85rem;line-height:1.55;">'
-                f'<strong style="color:#92400e;">⚠️ Reactor LCOE off the chart.</strong> '
-                f'The reactor LCOE band ranges roughly '
-                f'<strong>${_band_lo:,.0f}-${_band_hi:,.0f}/MWh</strong>, which is above '
-                f'the chart\'s <strong>${int(_ymax)}/MWh</strong> ceiling, so the curve is '
-                f'not visible on the plot below. The market benchmarks remain visible for '
-                f'reference. To bring the curve into the chart, try a higher reactor power, '
-                f'higher enrichment, longer plant lifetime, or a larger NOAK Unit Number '
-                f'any of those reduces the LCOE.'
-                f'</div>',
-                unsafe_allow_html=True,
+        if _use_log_y:
+            st.caption(
+                'The y-axis uses a logarithmic scale because the modeled LCOE '
+                'exceeds $800/MWh.'
             )
 
         _lcoe_chart = (
