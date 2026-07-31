@@ -10,6 +10,8 @@ output*.xlsx
 !docs/assets/mouse-packing-fraction-tradeoff.png
 !docs/assets/mouse-reflector-material-tradeoff.png
 .DS_Store
+__pycache__/
+NS_TESTS/results/
 webapp/.venv/
 webapp/.streamlit/secrets.toml
 webapp/analytics.db
