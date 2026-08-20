@@ -39,7 +39,7 @@ def redirect_all_output(log_file):
 # **************************************************************************************************************************
 #                                           Enrichment Sensitivity Study (15% to 20%)
 # **************************************************************************************************************************
-enrichment_values = [0.1975] #np.linspace(0.1975, 0.90, 4)
+enrichment_values = [0.125, 0.15, 1.175, 0.1975] #np.linspace(0.1975, 0.90, 4)
 moderator_options1 = {
     'Moderator Booster':   'YHx',
     'Moderator Liner':   'Nb',
@@ -65,8 +65,8 @@ base_params = {
     'Moderator Liner Thickness': 0.01,
     'Moderator Envelope Thickness': 0.04,
     'Moderator Envelope Radius': 0.60,
-    'Packing Fraction':    0.4,
-    'Compact Fuel Radius': 1.0,
+    'Packing Fraction':    0.3,
+    'Compact Fuel Radius': 0.6225,
     'Active Height': 250,
 }
 
