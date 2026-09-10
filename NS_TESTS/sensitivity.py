@@ -56,9 +56,9 @@ moderator_options3 = {
     'Moderator Envelope':   'FeCrAl',
 }
 moderator_scan = [
-    ('YHx-Nb-SiC',   moderator_options1),
+    ('ZrH-Nb-SiC',   moderator_options1),
     ('Graphite',     moderator_options2),
-    ('YHx-FeCrAl',   moderator_options3),
+    ('ZrH-FeCrAl',   moderator_options3),
 ]
 
 # Only the moderator booster layering is driven from here. Everything else
