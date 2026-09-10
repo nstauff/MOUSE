@@ -56,8 +56,8 @@ moderator_options3 = {
     'Moderator Envelope':   'FeCrAl',
 }
 moderator_scan = [
-    ('ZrH-Nb-SiC',   moderator_options1),
-    ('Graphite',     moderator_options2),
+#    ('ZrH-Nb-SiC',   moderator_options1),
+#    ('Graphite',     moderator_options2),
     ('ZrH-FeCrAl',   moderator_options3),
 ]
 
