@@ -1,7 +1,7 @@
 # Copyright 2025, Battelle Energy Alliance, LLC, ALL RIGHTS RESERVED
 
 """
-Enrichment sensitivity study for GCMR Design A.
+Enrichment sensitivity study for GCMR Design A, E5 screening case (enr 15%, 5 y).
 Sweeps enrichment from 15% to 20% and plots LCOE (FOAK and NOAK).
 """
 
@@ -10,7 +10,7 @@ import os
 import sys
 import numpy as np
 import matplotlib.pyplot as plt
-from .def_watts_exec_GCMR_Design_A import gcmr_calc
+from .def_watts_exec_GCMR_A_E5_enr_15p_5y import gcmr_calc
 
 
 @contextlib.contextmanager
@@ -41,7 +41,7 @@ def redirect_all_output(log_file):
 # **************************************************************************************************************************
 enrichment_values = [0.099, 0.15, 0.1975] #np.linspace(0.1975, 0.90, 4)
 moderator_options1 = {
-    'Moderator Booster':   'YHx',
+    'Moderator Booster':   'ZrH',
     'Moderator Liner':   'Nb',
     'Moderator Envelope':   'SiC',
 }
@@ -51,7 +51,7 @@ moderator_options2 = {
     'Moderator Envelope':   'Graphite',
 }
 moderator_options3 = {
-    'Moderator Booster':   'YHx',
+    'Moderator Booster':   'ZrH',
     'Moderator Liner':   'FeCrAl',
     'Moderator Envelope':   'FeCrAl',
 }
@@ -61,13 +61,15 @@ moderator_scan = [
     ('YHx-FeCrAl',   moderator_options3),
 ]
 
+# Only the moderator booster layering is driven from here. Everything else
+# (Active Height, Packing Fraction, Compact Fuel Radius, and the explicit
+# assembly/core/drum/shutdown-rod geometry) is left at the values the E5 case
+# pins down, since the geometry helpers validate that set for consistency.
+# The envelope radius matches E5's booster pin radius of 0.5 cm.
 base_params = {
     'Moderator Liner Thickness': 0.01,
     'Moderator Envelope Thickness': 0.04,
-    'Moderator Envelope Radius': 0.60,
-    'Packing Fraction':    0.3,
-    'Compact Fuel Radius': 0.6225,
-    'Active Height': 250,
+    'Moderator Envelope Radius': 0.50,
 }
 
 lcoe_foak = {label: [] for label, _ in moderator_scan}
@@ -104,10 +106,10 @@ for color, (mod_label, _) in zip(colors, moderator_scan):
     ax.plot(enrichment_pct, lcoe_noak[mod_label], 's--', color=color, label=f'{mod_label} NOAK')
 ax.set_xlabel('Enrichment (%)')
 ax.set_ylabel('LCOE ($/MWh)')
-ax.set_title('LCOE vs. Enrichment — GCMR Design A')
+ax.set_title('LCOE vs. Enrichment — GCMR Design A (E5, enr 15%, 5 y)')
 ax.legend()
 ax.grid(True)
 plt.tight_layout()
-plt.savefig('NS_TESTS/LCOE_vs_enrichment_GCMR.png', dpi=150)
+plt.savefig('NS_TESTS/LCOE_vs_enrichment_GCMR_A_E5.png', dpi=150)
 plt.show()
-print("Plot saved to NS_TESTS/LCOE_vs_enrichment_GCMR.png")
+print("Plot saved to NS_TESTS/LCOE_vs_enrichment_GCMR_A_E5.png")
