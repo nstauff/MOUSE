@@ -244,7 +244,12 @@ def collect_materials_data(params):
     
     SS304 = openmc.Material(name="SS304", temperature=params['Common Temperature'])
     SS304.set_density("g/cm3", 7.98)
-    SS304.add_element("carbon", 0.04, "wo")
+    # Natural carbon as explicit nuclides: the ENDF/B-VIII.1 library ships C12/C13
+    # but no elemental C0, so add_element("carbon", ...) fails to resolve.
+    # Weight split of the 0.04 wo carbon: 98.93/1.07 at.% at 12.000/13.003 u
+    # -> 0.988416/0.011584 by weight.
+    SS304.add_nuclide("C12", 0.04 * 0.988416, "wo")
+    SS304.add_nuclide("C13", 0.04 * 0.011584, "wo")
     SS304.add_element("silicon", 0.50, "wo")
     SS304.add_element("phosphorus", 0.023, "wo")
     SS304.add_element("sulfur", 0.015, "wo")
@@ -303,7 +308,8 @@ def collect_materials_data(params):
     ZrC = openmc.Material(name='ZrC')
     ZrC.set_density('g/cm3', 6.73)
     ZrC.add_element('Zr', 1.0)
-    ZrC.add_element('C', 1.0)
+    ZrC.add_nuclide('C12' , 0.9893, 'ao')
+    ZrC.add_nuclide('C13' , 0.0107, 'ao')
 
     materials.extend([B4C_natural, B4C_enriched, SiC])
     materials_database.update({'B4C_natural':  B4C_natural, 
@@ -381,7 +387,8 @@ def collect_materials_data(params):
     WC = openmc.Material(name='WC')
     WC.set_density('g/cm3', 15.32)
     WC.add_element('W', 1.0)
-    WC.add_element('C', 1.0)
+    WC.add_nuclide('C12' , 0.9893, 'ao')
+    WC.add_nuclide('C13' , 0.0107, 'ao')
 
     materials_database.update({'WB': WB, 'W2B': W2B, 'WB4': WB4, 'WC': WC})
 
