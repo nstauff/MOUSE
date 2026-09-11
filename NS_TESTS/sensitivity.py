@@ -39,7 +39,7 @@ def redirect_all_output(log_file):
 # **************************************************************************************************************************
 #                                           Enrichment Sensitivity Study (15% to 20%)
 # **************************************************************************************************************************
-enrichment_values = [0.099, 0.15, 0.1975] #np.linspace(0.1975, 0.90, 4)
+enrichment_values = [0.1975] #np.linspace(0.1975, 0.90, 4)
 moderator_options1 = {
     'Moderator Booster':   'ZrH',
     'Moderator Liner':   'Nb',
@@ -57,8 +57,8 @@ moderator_options3 = {
 }
 moderator_scan = [
 #    ('ZrH-Nb-SiC',   moderator_options1),
-#    ('Graphite',     moderator_options2),
-    ('ZrH-FeCrAl',   moderator_options3),
+    ('Graphite',     moderator_options2),
+#    ('ZrH-FeCrAl',   moderator_options3),
 ]
 
 # Only the moderator booster layering is driven from here. Everything else
